@@ -1,11 +1,17 @@
 # syntax=docker/dockerfile:1
 
-# Debian rather than Alpine: better-sqlite3 and sharp both ship glibc prebuilds,
-# so nothing has to be compiled from source at image-build time.
+# Debian rather than Alpine so the glibc prebuilds work as shipped.
+#
+# --ignore-scripts is load-bearing. better-sqlite3 bundles prebuilt binaries for
+# linux/darwin/win x64+arm64 and declares no install script, but npm runs
+# `node-gyp rebuild` by default for any package carrying a binding.gyp — which
+# needs python3 and a C++ toolchain, and would compile from source what is
+# already sitting in the tarball. Nothing else in the tree needs an install
+# script; if that changes, this flag has to be revisited.
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
