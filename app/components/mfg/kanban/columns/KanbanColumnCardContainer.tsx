@@ -1,5 +1,5 @@
 import { PlusCircle, SquareDashedKanban, ArrowRight } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "@tanstack/react-router";
 import type { KanbanCardRow, UserRow } from "~/lib/db/types";
 import { KanbanCard } from "../cards/KanbanCard";
 import { Button } from "~/components/ui/button";
@@ -34,7 +34,7 @@ export function KanbanColumnCardContainer({
   selectedColumnId = null,
   onCardSelect,
 }: KanbanColumnCardContainerProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   if (isDraggingCard) {
     return (
@@ -71,7 +71,7 @@ export function KanbanColumnCardContainer({
         <Button
           variant="outline"
           className="hover:bg-muted/50 flex w-full items-center justify-center gap-2 border-dashed py-6"
-          onClick={() => router.push("/kanban/done")}
+          onClick={() => navigate({ to: "/kanban/done" })}
         >
           <span className="text-sm font-medium">
             View {olderCardsCount} older card{olderCardsCount !== 1 ? "s" : ""}

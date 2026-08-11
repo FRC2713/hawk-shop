@@ -4,11 +4,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Calendar, User, Wrench, Package } from "lucide-react";
 import { toast } from "sonner";
-import Image from "next/image";
 import { Card, CardContent } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import { Sheet, SheetTrigger } from "~/components/ui/sheet";
-import type { KanbanCardRow, UserRow, ProcessRow } from "~/lib/db/types";
+import type { UserRow } from "~/lib/db/types";
+import {
+  deleteKanbanCard,
+  queryKeys,
+  type KanbanCardWithProcesses,
+} from "~/lib/api";
 import { KanbanCardHeader } from "./KanbanCardHeader";
 import { KanbanCardDetails } from "./KanbanCardDetails";
 
@@ -70,24 +74,8 @@ function getDueDateUrgency(dateString: string): {
   return { variant: "secondary" };
 }
 
-/**
- * Delete a card via the API
- */
-async function deleteCardRequest(cardId: string): Promise<unknown> {
-  const response = await fetch(`/api/kanban/cards/${cardId}`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.error || "Failed to delete card");
-  }
-
-  return response.json();
-}
-
 interface KanbanCardProps {
-  card: KanbanCardRow & { processes?: ProcessRow[] };
+  card: KanbanCardWithProcesses;
   hideImages?: boolean;
   usersMap: Map<string, UserRow>;
   isSelected?: boolean;
@@ -141,11 +129,11 @@ export const KanbanCard = memo(function KanbanCard({
 
   // Delete card mutation with retry logic
   const deleteCardMutation = useMutation({
-    mutationFn: deleteCardRequest,
+    mutationFn: deleteKanbanCard,
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["kanban-cards"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
       toast.success("Card deleted");
       setSheetOpen(false);
     },
@@ -204,13 +192,11 @@ export const KanbanCard = memo(function KanbanCard({
                   aria-label="View card details"
                 >
                   <div className="relative w-full" style={{ height: "120px" }}>
-                    <Image
+                    <img
                       src={imageUrl}
                       alt={card.title}
-                      fill
-                      className="pointer-events-none object-contain"
+                      className="pointer-events-none absolute inset-0 size-full object-contain"
                       onError={() => setImageError(true)}
-                      unoptimized
                     />
                   </div>
                 </button>

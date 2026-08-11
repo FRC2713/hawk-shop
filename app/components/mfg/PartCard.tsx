@@ -7,7 +7,7 @@ import { Checkbox } from "~/components/ui/checkbox";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { KanbanCardRow } from "~/lib/db/types";
 import { cn } from "~/lib/utils";
-import type { PartsPageSearchParams } from "~/onshape_connector/page";
+import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 import {
   Collapsible,
   CollapsibleContent,

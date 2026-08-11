@@ -9,7 +9,8 @@ import {
   DialogTrigger,
 } from "~/components/ui/dialog";
 import { UsersList } from "~/components/users/UsersList";
-import { KanbanCardRow, UserRow } from "~/lib/db/types";
+import { KanbanCardRow } from "~/lib/db/types";
+import { assignKanbanCard, queryKeys, userQuery } from "~/lib/api";
 
 type AssignCardDialogProps = {
   card: KanbanCardRow;
@@ -19,35 +20,14 @@ export function AssignCardDialog({ card }: AssignCardDialogProps) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const assignedUser = useQuery<UserRow>({
-    queryKey: ["users", card.assignee],
-    queryFn: async () => {
-      const response = await fetch(`/api/users/${card.assignee}`);
-      return response.json();
-    },
-    enabled: !!card.assignee,
-  });
+  const assignedUser = useQuery(userQuery(card.assignee));
 
   const assignCard = useMutation({
-    mutationFn: async (assignee: string | null) => {
-      const response = await fetch(`/api/kanban/cards/${card.id}/assign`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ assignee }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to assign card");
-      }
-
-      return response.json();
-    },
+    mutationFn: (assignee: string | null) =>
+      assignKanbanCard(card.id, assignee),
     onSuccess: () => {
       setOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["kanban-cards"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
     },
   });
 

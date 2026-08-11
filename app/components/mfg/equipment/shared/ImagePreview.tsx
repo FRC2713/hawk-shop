@@ -1,5 +1,4 @@
 import { X } from "lucide-react";
-import Image from "next/image";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
@@ -27,12 +26,10 @@ export function ImagePreview({
       )}
       onClick={onClick}
     >
-      <Image
+      <img
         src={imageUrl}
         alt="Preview"
-        fill
-        className="object-cover transition-transform group-hover:scale-105"
-        sizes="(max-width: 768px) 50vw, 25vw"
+        className="absolute inset-0 size-full object-cover transition-transform group-hover:scale-105"
       />
       {showDelete && onDelete && (
         <Button

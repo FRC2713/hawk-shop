@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -20,6 +18,12 @@ import {
   type EquipmentFormErrors,
 } from "./shared/EquipmentFormFields";
 import { ImageUploadZone } from "./shared/ImageUploadZone";
+import {
+  deleteEquipmentImage,
+  queryKeys,
+  updateEquipment as updateEquipmentRequest,
+  uploadEquipmentImages,
+} from "~/lib/api";
 
 interface EditEquipmentDialogProps {
   open: boolean;
@@ -70,51 +74,15 @@ export function EditEquipmentDialog({
       equipment: EquipmentFormData;
       imageFiles: File[];
     }) => {
-      // Update the equipment
-      const response = await fetch(`/api/equipment/${data.equipmentId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: data.equipment.name,
-          description: data.equipment.description || undefined,
-          processIds: data.equipment.processIds || [],
-          location: data.equipment.location || undefined,
-          status: data.equipment.status || undefined,
-          documentationUrl: data.equipment.documentationUrl || undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update equipment");
-      }
-
-      // Upload new images if any
-      if (data.imageFiles.length > 0) {
-        const uploadPromises = data.imageFiles.map(async (file) => {
-          const formData = new FormData();
-          formData.append("file", file);
-
-          const uploadResponse = await fetch(
-            `/api/equipment/${data.equipmentId}/image`,
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
-
-          if (!uploadResponse.ok) {
-            throw new Error("Failed to upload image");
-          }
-        });
-
-        await Promise.all(uploadPromises);
-      }
-
-      return await response.json();
+      const updated = await updateEquipmentRequest(
+        data.equipmentId,
+        data.equipment
+      );
+      await uploadEquipmentImages(data.equipmentId, data.imageFiles);
+      return updated;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Equipment updated successfully");
       handleClose();
     },
@@ -126,20 +94,10 @@ export function EditEquipmentDialog({
   const deleteImage = useMutation({
     mutationFn: async (imageUrl: string) => {
       if (!equipment) return;
-
-      const response = await fetch(
-        `/api/equipment/${equipment.id}/image?imageUrl=${encodeURIComponent(imageUrl)}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to delete image");
-      }
+      await deleteEquipmentImage(equipment.id, imageUrl);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Image deleted successfully");
     },
     onError: () => {

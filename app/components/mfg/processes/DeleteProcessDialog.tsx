@@ -1,5 +1,3 @@
-"use client";
-
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -14,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import type { ProcessRow } from "~/lib/db/types";
+import { deleteProcess as deleteProcessRequest, queryKeys } from "~/lib/api";
 
 interface DeleteProcessDialogProps {
   open: boolean;
@@ -29,21 +28,11 @@ export function DeleteProcessDialog({
   const queryClient = useQueryClient();
 
   const deleteProcess = useMutation({
-    mutationFn: async (processId: string) => {
-      const response = await fetch(`/api/processes/${processId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete process");
-      }
-
-      return response.json();
-    },
+    mutationFn: deleteProcessRequest,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["processes"] });
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.processes.all() });
+      // Equipment rows embed their processes, so they go stale too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Process deleted successfully");
       onOpenChange(false);
     },

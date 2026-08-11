@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -17,6 +15,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 import type { ProcessRow } from "~/lib/db/types";
+import { queryKeys, updateProcess as updateProcessRequest } from "~/lib/api";
 
 interface EditProcessDialogProps {
   open: boolean;
@@ -47,26 +46,11 @@ export function EditProcessDialog({
       id: string;
       name: string;
       description: string;
-    }) => {
-      const response = await fetch(`/api/processes/${data.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: data.name.trim(),
-          description: data.description.trim() || null,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update process");
-      }
-
-      return response.json();
-    },
+    }) => updateProcessRequest(data.id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["processes"] });
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.processes.all() });
+      // Equipment rows embed their processes, so they go stale too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Process updated successfully");
       onOpenChange(false);
     },

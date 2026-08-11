@@ -14,6 +14,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Same pin as the Dockerfile, for the same reason: node:22 ships npm 10,
+      # which resolves nitro's optional peer on lru-cache differently and calls
+      # the committed lockfile out of sync. The lockfile is npm 11's.
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm run typecheck
       - run: npm run format:check

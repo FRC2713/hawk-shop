@@ -1,11 +1,10 @@
 import { useMemo, useState } from "react";
-import Image from "next/image";
 import { Badge } from "~/components/ui/badge";
 import { Checkbox } from "~/components/ui/checkbox";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { KanbanCardRow } from "~/lib/db/types";
 import type { KanbanColumn } from "~/lib/kanbanApi/columnTypes";
-import type { PartsPageSearchParams } from "~/onshape_connector/page";
+import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 import { ManufacturingStateBadge } from "./ManufacturingStateBadge";
 import { cn } from "~/lib/utils";
 
@@ -45,13 +44,11 @@ function PartListThumbnail({ part }: { part: BtPartMetadataInfo }) {
 
   return (
     <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded border">
-      <Image
+      <img
         src={thumbnailHref}
         alt={`Thumbnail for ${part.name || part.partId || part.id || "part"}`}
-        fill
-        className="object-contain"
+        className="absolute inset-0 size-full object-contain"
         onError={() => setThumbnailError(true)}
-        unoptimized
       />
     </div>
   );

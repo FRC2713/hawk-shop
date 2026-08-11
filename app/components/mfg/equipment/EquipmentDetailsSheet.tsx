@@ -1,5 +1,3 @@
-"use client";
-
 import { ExternalLink, MapPin } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -11,7 +9,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
-import type { EquipmentRow, ProcessRow } from "~/lib/db/types";
+import {
+  deleteEquipmentImage,
+  queryKeys,
+  uploadEquipmentImages,
+  type EquipmentWithProcesses,
+} from "~/lib/api";
 import { EquipmentProcessChip } from "./shared/EquipmentCategoryChip";
 import { EquipmentStatusBadge } from "./shared/EquipmentStatusBadge";
 import { EquipmentActionsMenu } from "./shared/EquipmentActionsMenu";
@@ -20,7 +23,7 @@ import { EquipmentImageGallery } from "./EquipmentImageGallery";
 interface EquipmentDetailsSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  equipment: (EquipmentRow & { processes?: ProcessRow[] }) | null;
+  equipment: EquipmentWithProcesses | null;
   onEdit: () => void;
   onDelete: () => void;
 }
@@ -37,25 +40,10 @@ export function EquipmentDetailsSheet({
   const uploadImage = useMutation({
     mutationFn: async (files: File[]) => {
       if (!equipment) return;
-
-      const uploadPromises = files.map(async (file) => {
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const response = await fetch(`/api/equipment/${equipment.id}/image`, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to upload image");
-        }
-      });
-
-      await Promise.all(uploadPromises);
+      await uploadEquipmentImages(equipment.id, files);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Image uploaded successfully");
     },
     onError: () => {
@@ -66,20 +54,10 @@ export function EquipmentDetailsSheet({
   const deleteImage = useMutation({
     mutationFn: async (imageUrl: string) => {
       if (!equipment) return;
-
-      const response = await fetch(
-        `/api/equipment/${equipment.id}/image?imageUrl=${encodeURIComponent(imageUrl)}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to delete image");
-      }
+      await deleteEquipmentImage(equipment.id, imageUrl);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Image deleted successfully");
     },
     onError: () => {

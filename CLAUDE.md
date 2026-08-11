@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev            # Next.js dev server (http://localhost:3000)
-npm run build          # production build (standalone output)
+npm run dev            # Vite dev server (http://localhost:3000)
+npm run build          # production build -> .output/ (client + Nitro server bundle)
+npm run start          # run the built server: node .output/server/index.mjs
 npm run typecheck      # tsc --noEmit — the only static check besides prettier
 npm run format         # prettier --write . (prettier-plugin-tailwindcss sorts classes)
 npm run format:check
@@ -20,7 +21,7 @@ There is no test suite and no linter. `npm run typecheck` + `npm run format:chec
 
 ## Architecture
 
-Manufacturing workflow tool for an FRC team, deployed as a **single self-hosted Docker container**. Parts are pulled from an Onshape CAD Part Studio, "released" onto a kanban board, and tracked through manufacturing processes on shop equipment.
+Manufacturing workflow tool for an FRC team, built with **TanStack Start** (React 19, Vite, Nitro) and deployed as a **single self-hosted Docker container**. Parts are pulled from an Onshape CAD Part Studio, "released" onto a kanban board, and tracked through manufacturing processes on shop equipment.
 
 This is a port of [rhr-mfg](https://github.com/FRC2713/rhr-mfg) off Supabase. If you are looking at that repo for reference, the app/UI layer is nearly identical; everything below the data-access modules is different.
 
@@ -38,11 +39,11 @@ There is no per-user DB authorization. Access control is entirely "does the requ
 - `app/lib/db/client.ts` — the `db` singleton. Opens SQLite, sets pragmas (**WAL**, `foreign_keys = ON` — SQLite needs the latter per-connection or the junction-table cascades silently do nothing), **runs migrations**, and seeds. Parked on `globalThis` so dev-mode module reloads don't leak handles.
 - `app/lib/db/schema.ts` — Drizzle tables. **Column properties are deliberately snake_case** so `$inferSelect` produces exactly the row shape the UI was already written against; `app/lib/db/types.ts` re-exports those inferred types under the old `KanbanCardRow` / `EquipmentRow` / … names. Keep new columns snake_case.
 - `app/lib/storage/files.ts` — the local replacement for Supabase Storage. `resolveStoragePath` is the **only** place a user-influenced string gets joined onto the uploads root, and it rejects anything that escapes; don't build absolute upload paths anywhere else.
-- `app/api/files/[...path]/route.ts` — serves stored files.
+- `app/routes/api/files.$.ts` — serves stored files (splat route; the path arrives as `params._splat`).
 
 Timestamps are ISO-8601 **strings**, not SQLite integers, so dates round-trip through the API unchanged.
 
-Anything that resolves a runtime path needs a `/* turbopackIgnore: true */` comment, or Turbopack traces the entire project into the standalone build.
+better-sqlite3 is a native addon, so it is marked external in `vite.config.ts` (`ssr.external`) and Nitro traces it into `.output/server/node_modules/` at build time rather than bundling it.
 
 ### Migrations
 
@@ -50,20 +51,38 @@ Anything that resolves a runtime path needs a `/* turbopackIgnore: true */` comm
 
 ### Live updates
 
-`app/lib/events/bus.ts` is an in-process `EventEmitter`; mutations call `publishKanbanEvent`, `/api/kanban/events` streams them as SSE, and `useKanbanRealtime` invalidates the cards query. **This is single-process by design** — one container. Running more than one replica needs that module swapped for Redis pub/sub; nothing else would change.
+`app/lib/events/bus.ts` is an in-process `EventEmitter`; mutations call `publishKanbanEvent`, `app/routes/api/kanban/events.ts` streams them as SSE, and `useKanbanRealtime` invalidates the cards query. **This is single-process by design** — one container. Running more than one replica needs that module swapped for Redis pub/sub; nothing else would change.
 
 ### Auth flow
 
-`proxy.ts` is the Next 16 middleware (renamed `proxy`). It gates every non-`/signin`, non-`/auth/*` route on the presence of Onshape cookies and redirects page routes to `/auth/onshape`. It deliberately lets **all** `/api/*` through — cookies are unreliable in middleware inside Onshape's iframe, so route handlers re-verify via `cookies()`. A `?auth=success` query param bypasses the check for the same reason.
+`app/start.ts` registers a global **request middleware** via `createStart({ requestMiddleware })`. It gates every non-`/signin`, non-`/auth/*` route on valid Onshape cookies and redirects page routes to `/auth/onshape`. It deliberately lets **all** `/api/*` and `/_serverFn/*` through, because those handlers verify themselves. `/_serverFn/*` in particular must not be redirected: `fetchOnshapeAuthState` is invoked over it precisely when the user may be signed out, and an HTML redirect there reads as a successful response to the caller.
 
-Tokens live in httpOnly cookies (`onshape_access_token` / `_refresh_token` / `_expires_at`), managed in `app/lib/onshapeAuth.ts` (`server-only`).
+**`requireAuth()` (`app/lib/requireAuth.ts`) is that verification, and every DB-backed handler starts with it** — `api/kanban/*`, `api/equipment*`, `api/processes*`, `api/users*`, `api/files/*`, and `api/onshape/thumbnail` (which answers cache hits without ever needing a token). It returns a 401 `Response` to hand straight back, or null to proceed. `api/health` is deliberately ungated: the container healthcheck calls it with no cookies. The Onshape-proxying routes are gated by needing a token to function. Skipping `requireAuth` on a new DB-backed route reopens the hole — until this was added, those routes answered any caller on the network, reads and writes alike.
+
+`requireAuth` does **not** refresh. `refreshOnshapeTokenIfNeeded` rotates the refresh token, and a board view fires several API calls at once; parallel refreshes would race to invalidate each other's rotated token. Renewal happens only where one request drives it — the `/auth/onshape` route the loader bounces through.
+
+There is exactly **one** definition of "signed in": `hasUsableSession` in `app/lib/onshapeAuthRequest.ts`, which requires a token **and** a known, future expiry. Everything defers to it — the middleware, `isOnshapeAuthenticated`, `getOnshapeTokenWithoutRefresh`. Do not add a second predicate. Five of them used to exist, they drifted, and a route that checked only for a token's _presence_ disagreed with the two that also checked expiry — which is an infinite redirect loop, not a subtle bug. Requiring the expiry also matters on its own: the old `if (expiresAt && …)` shape treated a _missing_ `onshape_expires_at` as valid forever, so a hand-set token cookie walked through the gate.
+
+Cookie parsing lives in the same module and must not throw: `decodeURIComponent` raises `URIError` on a stray `%`, and one malformed cookie from anything else on the hostname used to 500 every request in the app.
+
+Redirect targets from `?redirect=` (and the cookie it is parked in) go through `safeRedirectPath` (`app/lib/safeRedirect.ts`), which reduces them to a rooted same-origin path. `new URL(value, origin)` lets an absolute or protocol-relative value replace the origin outright, so this was an open redirect that handed out a freshly minted session.
+
+There is no `?auth=success` bypass any more. It let an unauthenticated request into any page in the app, and the loop it papered over is fixed at the source above. Unlike Next's `config.matcher`, request middleware sees _every_ request, so the static-asset exclusions are spelled out in `isPublicPath`.
+
+The middleware only ever sees **document** requests, so it gates the first page load and nothing after it — in-app navigation is client-side. `app/routes/_main.tsx`'s loader re-checks auth and bounces into `/auth/onshape` itself; that is the gate for everything under the app chrome.
+
+`start.ts` is in the client module graph, so it must not import anything `server-only`. The pure request-cookie helpers therefore live in `app/lib/onshapeAuthRequest.ts` (no marker) and are re-exported from `onshapeAuth.ts`.
+
+Tokens live in httpOnly cookies (`onshape_access_token` / `_refresh_token` / `_expires_at`), managed in `app/lib/onshapeAuth.ts` via `getCookie`/`setCookie`/`deleteCookie` from `@tanstack/react-start/server`. Those helpers are synchronous, but the exported wrappers stay `async` because every call site awaits them.
+
+Handlers that set cookies may return a fresh `Response`: the runtime merges the ambient `Set-Cookie` headers into it. For redirects use `redirectResponse()` from `app/lib/httpRedirect.ts` rather than `Response.redirect()`, whose headers are immutable.
 
 Cookie policy is in `app/lib/cookieOptions.ts` and is **not** keyed off `NODE_ENV`. `SameSite=None` requires `Secure`, which browsers only honor over HTTPS, so a plain-HTTP LAN install must use `Lax` or sign-in fails outright. `ONSHAPE_IFRAME_EMBED=true` (plus HTTPS) opts into the iframe-compatible `None`.
 
-**Critical constraint:** Server Components cannot write cookies, so token refresh must never happen during render. `app/lib/tokenRefresh.ts` exposes two paths and picking the wrong one breaks rendering:
+`app/lib/tokenRefresh.ts` still exposes two paths. The Next constraint that forced the split (Server Components cannot write cookies) is gone — server functions and route handlers can both write — but the read-only path is still what you want anywhere a token refresh would be a surprising side effect:
 
-- `getOnshapeTokenWithoutRefresh()` / `createOnshapeClientFromTokens()` / `createOnshapeApiClientReadOnly()` — **server components only**; return `null` on expiry.
-- `getValidOnshapeToken*()` / `refreshOnshapeTokenIfNeeded()` / `createOnshapeClient()` — **route handlers and server actions only**; these mutate cookies.
+- `getOnshapeTokenWithoutRefresh()` / `createOnshapeClientFromTokens()` / `createOnshapeApiClientReadOnly()` — no refresh; return `null` on expiry.
+- `getValidOnshapeToken*()` / `refreshOnshapeTokenIfNeeded()` / `createOnshapeClient()` — these mutate cookies.
 
 ### Onshape API — two clients coexist
 
@@ -72,7 +91,22 @@ Cookie policy is in `app/lib/cookieOptions.ts` and is **not** keyed off `NODE_EN
 
 ### Data fetching pattern
 
-Server component prefetches into a TanStack Query `QueryClient`, dehydrates, and wraps a `*-client.tsx` in `HydrationBoundary`; the client component re-runs the same query key against an `/api/*` route. See `app/onshape_connector/page.tsx` + `parts-client.tsx` and `app/(main)/kanban/`. Keep the server prefetch (`queries.server.ts`) and browser fetcher (`queries.ts`) producing identical shapes under the same key from `kanbanQueryKeys`.
+**The app does not server-render page content.** `app/routes/__root.tsx` sets `ssr: false`, so the server renders the HTML shell and nothing else; every route component, loader, and query runs in the browser. The whole app is behind Onshape OAuth on a shop LAN, so there was no SEO or first-paint case that justified maintaining two data paths.
+
+That makes the rule simple: **all page data comes from `/api/*` through TanStack Query, and there is exactly one fetcher per query key.** There is no server prefetch and no `dehydrate`/`HydrationBoundary`. Server-side data modules (`app/lib/<domain>Api/`) exist for the `/api/*` handlers to call, not for the UI to call.
+
+**`app/lib/api/` is the browser's entire view of `/api/*`.** Components never call `fetch` themselves — a URL, a payload shape, and a query key each exist in exactly one place:
+
+- `client.ts` — `apiFetch<T>()`, the single wrapper. Every handler answers with JSON and reports failure as `{ error }` plus a non-2xx status, so it unwraps that once and throws `ApiError` carrying the handler's own message. Pass `json:` for a JSON body, `body:` for `FormData`.
+- `keys.ts` — `queryKeys`, every key in the app. Nothing else may write a key literal: a mutation's invalidation and the `useQuery` it is meant to refresh only agree by construction if they call the same function.
+- `equipment.ts` / `processes.ts` / `users.ts` / `kanban.ts` / `onshape.ts` — `queryOptions()` factories for reads (`useQuery(equipmentQuery())`) and plain async functions for writes (`useMutation({ mutationFn: deleteEquipment })`). `staleTime` belongs on the factory, not on each call site. Mutations keep their own `onSuccess` in the component, because the toast and the dialog it closes are local to it.
+- `partActions.ts` — the one endpoint that does **not** go through `apiFetch`. `/api/mfg/parts/actions` answers a rejected operation with HTTP 400 _and_ a `{ success: false, error }` body, and the UI wants that body as an inline validation message, so the status is ignored and the body is the contract. It does guard the content type: the auth middleware can answer with an HTML redirect, and a bare `.json()` on that fails unreadably.
+
+Everything under `app/lib/api/` must stay client-safe — no `server-only` imports.
+
+Route loaders now always run in the browser, so anything cookie-backed still has to go through `createServerFn()` — that is what `app/lib/authServerFns.ts` is for. Those calls travel over `/_serverFn/*`, which is why `app/start.ts` lets that prefix through the auth gate alongside `/api/*`.
+
+Keep SSR off unless something genuinely needs it. Turning it back on means restoring the isomorphic-loader constraint and the serializability workarounds that came with it.
 
 ### Thumbnail caching
 
@@ -82,19 +116,25 @@ Stored `image_url` values may be legacy proxy URLs (`/api/onshape/thumbnail?url=
 
 ### Routing layout
 
-- `app/(main)/` — the chrome'd app: home, `/kanban`, `/kanban/done`, `/equipment`.
-- `app/onshape_connector/` — the page Onshape embeds in an iframe. It reads `documentId` / `instanceType` (`w`|`v`|`m`) / `instanceId` / `elementId` from search params; the whole route is meaningless without them. Release eligibility (material + part number + no existing card) lives in `utils/partEligibility.ts`.
-- `app/api/` — route handlers; each domain also has an `app/lib/<domain>Api/` module holding the queries so handlers stay thin.
-- `app/api/health` — container healthcheck; touches SQLite so an unwritable volume surfaces immediately.
+File-based routing under `app/routes/` (`srcDirectory: "app"` in `vite.config.ts`, so the `~/*` alias still points at `./app/*`). `app/routeTree.gen.ts` is generated — never edit it. `app/router.tsx` builds the router; `app/routes/__root.tsx` is the HTML shell.
+
+- `app/routes/_main.tsx` — pathless layout for the chrome'd app (home, `/kanban`, `/kanban/done`, `/equipment`), the equivalent of the old `(main)` route group. Its children are `_main.index.tsx`, `_main.kanban.index.tsx`, etc.
+- `app/routes/onshape_connector.tsx` — the page Onshape embeds in an iframe. It reads `documentId` / `instanceType` (`w`|`v`|`m`) / `instanceId` / `elementId` from search params via `validateSearch`; the whole route is meaningless without them. Release eligibility (material + part number + no existing card) lives in `app/onshape_connector/utils/partEligibility.ts`.
+- `app/routes/api/` — server routes, i.e. `createFileRoute(...)({ server: { handlers: { GET, POST, ... } } })`. Each domain also has an `app/lib/<domain>Api/` module holding the queries so handlers stay thin.
+- `app/routes/api/health.ts` — container healthcheck; touches SQLite so an unwritable volume surfaces immediately.
+- `app/routes/auth/` — the OAuth server routes. `auth/status.tsx` is a page; the rest are handlers.
+
+Page bodies live in `app/components/app/*` so the route files stay thin, and dynamic segments use `$id` (`api/users.$id.ts`) rather than `[id]`.
 
 Kanban columns are not a table: they're a JSON blob in `kanban_config` row `id = 'default'` (see `app/lib/kanbanApi/config.ts`), with `DEFAULT_KANBAN_COLUMNS` as the fallback. Card `column_id` values are those JSON ids.
 
-**Client components must not import types from route handlers.** Shared column types live in `app/lib/kanbanApi/columnTypes.ts`, which has zero imports on purpose — pulling them from a route or from `schema.ts` drags `server-only` code into the browser bundle and fails the build.
+**Client components must not import types from route modules.** Shared column types live in `app/lib/kanbanApi/columnTypes.ts`, and `PartsPageSearchParams` in `app/onshape_connector/utils/types.ts` — both have minimal imports on purpose, because pulling them from a route or from `schema.ts` drags server-only code into the browser bundle and fails the build.
 
 ## Conventions
 
 - Import alias is `~/*` → `./app/*`.
 - shadcn/ui (new-york, slate) in `app/components/ui/` — regenerate rather than hand-edit; app components live under `app/components/mfg/` by feature.
-- Tailwind v4 (CSS-first config in `app/app.css`; `tailwind.config.ts` is nearly empty).
-- Server-side data modules start with `import "server-only"`.
+- Tailwind v4 (CSS-first config in `app/app.css`, loaded through `@tailwindcss/vite`; `tailwind.config.ts` is nearly empty).
+- Inter is self-hosted via `@fontsource-variable/inter`, imported at the top of `app/app.css`. A shop-LAN install has no route to a font CDN, so don't replace it with a remote stylesheet.
+- Server-side data modules start with `import "@tanstack/react-start/server-only"`. That marker is enforced by Start's import protection: importing such a module from client code fails the build.
 - `app/lib/logger.ts` exists (debug suppressed in prod) but most code still uses `console.*` with a `[SCOPE]` prefix; match whichever the surrounding file uses.

@@ -1,4 +1,4 @@
-import "server-only";
+import "@tanstack/react-start/server-only";
 
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -16,8 +16,7 @@ import { logger } from "~/lib/logger";
  */
 
 export const UPLOADS_DIR = path.resolve(
-  /* turbopackIgnore: true */ process.env.UPLOADS_DIR ||
-    path.join(DATA_DIR, "uploads")
+  process.env.UPLOADS_DIR || path.join(DATA_DIR, "uploads")
 );
 
 /** URL prefix that `app/api/files/[...path]/route.ts` serves from. */
@@ -119,7 +118,7 @@ export async function readStoredFile(
   try {
     // The path is a runtime value under UPLOADS_DIR, already bounds-checked by
     // resolveStoragePath; without this the bundler traces the whole project in.
-    return await readFile(/* turbopackIgnore: true */ absolute);
+    return await readFile(absolute);
   } catch {
     return null;
   }

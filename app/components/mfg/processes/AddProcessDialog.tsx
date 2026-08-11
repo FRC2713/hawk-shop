@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -16,6 +14,7 @@ import {
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
+import { createProcess as createProcessRequest, queryKeys } from "~/lib/api";
 
 interface AddProcessDialogProps {
   open: boolean;
@@ -32,26 +31,11 @@ export function AddProcessDialog({
   const [nameError, setNameError] = useState<string | null>(null);
 
   const createProcess = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
-      const response = await fetch("/api/processes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: data.name.trim(),
-          description: data.description.trim() || undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create process");
-      }
-
-      return response.json();
-    },
+    mutationFn: createProcessRequest,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["processes"] });
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.processes.all() });
+      // Equipment rows embed their processes, so they go stale too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Process added successfully");
       handleClose();
     },

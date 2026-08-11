@@ -1,5 +1,3 @@
-"use client";
-
 import { X, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -14,7 +12,7 @@ import {
   DropdownMenuSeparator,
 } from "~/components/ui/dropdown-menu";
 import type { EquipmentStatus } from "./shared/EquipmentStatusBadge";
-import type { ProcessRow } from "~/lib/db/types";
+import { processesQuery } from "~/lib/api";
 
 export interface EquipmentFilters {
   processIds: string[];
@@ -44,18 +42,8 @@ export function EquipmentFiltersComponent({
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
 
-  // Fetch processes from API
-  const { data: processesData } = useQuery<{ processes: ProcessRow[] }>({
-    queryKey: ["processes"],
-    queryFn: async () => {
-      const response = await fetch("/api/processes");
-      if (!response.ok) throw new Error("Failed to fetch processes");
-      return response.json();
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
+  const { data: processes = [] } = useQuery(processesQuery());
 
-  const processes = processesData?.processes || [];
   const hasActiveFilters =
     filters.processIds.length > 0 ||
     filters.statuses.length > 0 ||

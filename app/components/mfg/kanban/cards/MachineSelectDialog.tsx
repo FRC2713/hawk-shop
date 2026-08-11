@@ -8,29 +8,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui/dialog";
-import { KanbanCardRow, EquipmentRow } from "~/lib/db/types";
+import { KanbanCardRow } from "~/lib/db/types";
+import { equipmentQuery, queryKeys, updateKanbanCard } from "~/lib/api";
 
 type MachineSelectDialogProps = {
   card: KanbanCardRow;
 };
 
-async function fetchEquipment() {
-  const response = await fetch("/api/equipment");
-  if (!response.ok) {
-    throw new Error("Failed to fetch equipment");
-  }
-  const data = await response.json();
-  return data.equipment as EquipmentRow[];
-}
-
 export function MachineSelectDialog({ card }: MachineSelectDialogProps) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: equipment = [] } = useQuery<EquipmentRow[]>({
-    queryKey: ["equipment"],
-    queryFn: fetchEquipment,
-  });
+  const { data: equipment = [] } = useQuery(equipmentQuery());
 
   const sortedEquipment = useMemo(() => {
     return [...equipment].sort((a, b) =>
@@ -39,25 +28,11 @@ export function MachineSelectDialog({ card }: MachineSelectDialogProps) {
   }, [equipment]);
 
   const assignMachine = useMutation({
-    mutationFn: async (machine: string | null) => {
-      const response = await fetch(`/api/kanban/cards/${card.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ machine }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to assign machine");
-      }
-
-      return response.json();
-    },
+    mutationFn: (machine: string | null) =>
+      updateKanbanCard(card.id, { machine }),
     onSuccess: () => {
       setOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["kanban-cards"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
     },
   });
 

@@ -1,11 +1,11 @@
-import "server-only";
+import "@tanstack/react-start/server-only";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import {
   createOnshapeApiClient,
   createOnshapeApiClientReadOnly,
   getPartsWmve,
 } from "~/lib/onshapeApi/generated-wrapper";
-import type { PartsPageSearchParams } from "../page";
+import type { PartsPageSearchParams } from "./types";
 
 /**
  * Core function to fetch parts from Onshape API

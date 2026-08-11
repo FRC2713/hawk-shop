@@ -1,11 +1,11 @@
-import "server-only";
+import "@tanstack/react-start/server-only";
 
 /**
  * The origin the browser actually reached us on.
  *
  * `new URL(request.url).origin` is the obvious way to build a redirect back into
- * the app, and it is wrong in the standalone container: Next builds `request.url`
- * from HOSTNAME — the *bind* address, `0.0.0.0` — not from the Host header. A
+ * the app, and it is wrong in the container: the server builds `request.url`
+ * from the bind address, `0.0.0.0`, not from the Host header. A
  * browser on http://localhost:3000 therefore gets redirected to
  * http://0.0.0.0:3000, which is a different origin, so the auth cookies just
  * written on localhost are invisible from that point on. Every subsequent

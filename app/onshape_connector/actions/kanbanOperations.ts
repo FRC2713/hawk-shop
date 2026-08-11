@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createCard, updateCard } from "~/lib/kanbanApi/cards";
 import { logger } from "~/lib/logger";
@@ -6,7 +5,7 @@ import { onshapeApiRequest } from "~/lib/onshapeApi/auth";
 import { getValidOnshapeTokenFromRequest } from "~/lib/tokenRefresh";
 import type { ActionResponse } from "../utils/types";
 import { extractVersionId } from "../utils/versionUtils";
-import type { PartsPageSearchParams } from "../page";
+import type { PartsPageSearchParams } from "../utils/types";
 
 /**
  * Onshape user response from /users/current endpoint
@@ -99,12 +98,10 @@ function formDataToObject(
  * Returns the Onshape user ID to be stored in created_by field
  */
 async function fetchOnshapeUserId(
-  request: NextRequest
+  request: Request
 ): Promise<string | undefined> {
   try {
-    const accessToken = await getValidOnshapeTokenFromRequest(
-      request as unknown as Request
-    );
+    const accessToken = await getValidOnshapeTokenFromRequest(request);
 
     if (!accessToken) {
       logger.debug("[Kanban] No access token available");
@@ -139,7 +136,7 @@ async function fetchOnshapeUserId(
  */
 export async function handleAddKanbanCard(
   formData: FormData,
-  request: NextRequest
+  request: Request
 ): Promise<ActionResponse> {
   // Parse and validate form data
   const rawData = formDataToObject(

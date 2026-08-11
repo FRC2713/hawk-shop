@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState, useMemo, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -13,6 +11,7 @@ import {
   PopoverTrigger,
 } from "~/components/ui/popover";
 import { cn } from "~/lib/utils";
+import { partActions, queryKeys } from "~/lib/api";
 import type { KanbanCardRow } from "~/lib/db/types";
 
 interface PartDueDateProps {
@@ -39,11 +38,24 @@ function parseLocalDate(dateString: string): Date {
 export function PartDueDate({ card }: PartDueDateProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [result, setResult] = useState<{
-    success?: boolean;
-    error?: string;
-  } | null>(null);
+
+  const updateDueDate = useMutation({
+    mutationFn: (dueDate: string) =>
+      partActions.updateDueDate(card.id, dueDate),
+    onSuccess: (result) => {
+      if (!result.success) return;
+      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+    },
+  });
+
+  const isSubmitting = updateDueDate.isPending;
+  // A rejection reads the same as a rejected update to the user.
+  const result =
+    updateDueDate.data ??
+    (updateDueDate.error
+      ? { success: false, error: "Failed to update due date" }
+      : null);
 
   // Parse the card's dueDate only when it actually changes
   const cardDueDate = useMemo(() => {
@@ -59,7 +71,6 @@ export function PartDueDate({ card }: PartDueDateProps) {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     cardDueDate
   );
-  const hasRevalidatedRef = useRef(false);
   const lastSubmittedDateRef = useRef<string | null>(null);
 
   // Update selectedDate only when cardDueDate actually changes (but not during user edits)
@@ -73,7 +84,6 @@ export function PartDueDate({ card }: PartDueDateProps) {
       // Handle both cases: clearing (empty string) and setting a date
       if (submittedDateStr === cardDateStr) {
         lastSubmittedDateRef.current = null;
-        hasRevalidatedRef.current = false;
       } else {
         // Still waiting for the update to propagate
         return;
@@ -95,75 +105,21 @@ export function PartDueDate({ card }: PartDueDateProps) {
     }
   }, [cardDueDate, selectedDate, isSubmitting]);
 
-  // Handle successful due date updates
-  useEffect(() => {
-    if (result?.success && !isSubmitting && !hasRevalidatedRef.current) {
-      hasRevalidatedRef.current = true;
-      setOpen(false);
-
-      // Invalidate cards query to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ["kanban-cards"] });
-    }
-  }, [result?.success, isSubmitting, queryClient]);
-
-  const handleDateSelect = async (date: Date | undefined) => {
-    if (date) {
-      setSelectedDate(date);
-      // Format date as ISO 8601 (YYYY-MM-DD)
-      const isoDate = format(date, "yyyy-MM-dd");
-
-      // Track what we're submitting to avoid race conditions
-      lastSubmittedDateRef.current = isoDate;
-      hasRevalidatedRef.current = false;
-      setIsSubmitting(true);
-      setResult(null);
-
-      const formData = new FormData();
-      formData.append("action", "updateDueDate");
-      formData.append("cardId", card.id);
-      formData.append("dueDate", isoDate);
-
-      try {
-        const response = await fetch("/api/mfg/parts/actions", {
-          method: "POST",
-          body: formData,
-        });
-        const data = await response.json();
-        setResult(data);
-      } catch (error) {
-        setResult({ success: false, error: "Failed to update due date" });
-      } finally {
-        setIsSubmitting(false);
-      }
-    }
+  const handleDateSelect = (date: Date | undefined) => {
+    if (!date) return;
+    setSelectedDate(date);
+    const isoDate = format(date, "yyyy-MM-dd");
+    // Track what we're submitting so the sync effect above can tell a stale
+    // card prop from one that already reflects this write.
+    lastSubmittedDateRef.current = isoDate;
+    updateDueDate.mutate(isoDate);
   };
 
-  const handleClearDate = async () => {
+  const handleClearDate = () => {
     setSelectedDate(undefined);
-
-    // Track that we're clearing the date
+    // An empty string is how the action clears the date.
     lastSubmittedDateRef.current = "";
-    hasRevalidatedRef.current = false;
-    setIsSubmitting(true);
-    setResult(null);
-
-    const formData = new FormData();
-    formData.append("action", "updateDueDate");
-    formData.append("cardId", card.id);
-    formData.append("dueDate", "");
-
-    try {
-      const response = await fetch("/api/mfg/parts/actions", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json();
-      setResult(data);
-    } catch (error) {
-      setResult({ success: false, error: "Failed to clear due date" });
-    } finally {
-      setIsSubmitting(false);
-    }
+    updateDueDate.mutate("");
   };
 
   return (

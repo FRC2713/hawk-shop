@@ -1,12 +1,12 @@
-"use client";
-
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { partActions } from "~/lib/api";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
-import type { PartsPageSearchParams } from "~/onshape_connector/page";
+import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 
 interface PartNumberInputProps {
   part: BtPartMetadataInfo;
@@ -18,35 +18,27 @@ interface PartNumberInputProps {
  */
 export function PartNumberInput({ part, queryParams }: PartNumberInputProps) {
   const [partNumberInput, setPartNumberInput] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [result, setResult] = useState<{
-    success?: boolean;
-    error?: string;
-  } | null>(null);
   const router = useRouter();
-  const lastSuccessRef = useRef<string | null>(null);
 
-  // Handle successful part number update - only revalidate once per unique success
-  useEffect(() => {
-    // Only revalidate when we get a new success response (check by data identity)
-    if (result?.success) {
-      const successKey = JSON.stringify(result);
+  const updatePartNumber = useMutation({
+    mutationFn: partActions.updatePartNumber,
+    onSuccess: (result) => {
+      if (!result.success) return;
+      setPartNumberInput("");
+      // Give the write a moment to propagate, then re-run the route loaders —
+      // the equivalent of Next's router.refresh().
+      setTimeout(() => router.invalidate(), 100);
+    },
+  });
 
-      // Only revalidate if this is a new success we haven't handled yet
-      if (lastSuccessRef.current !== successKey) {
-        setPartNumberInput("");
-        lastSuccessRef.current = successKey;
-
-        // Revalidate after a short delay to ensure update has propagated
-        setTimeout(() => {
-          router.refresh();
-        }, 100);
-      }
-    } else if (!isSubmitting && !result) {
-      // Reset when fully resets
-      lastSuccessRef.current = null;
-    }
-  }, [result, isSubmitting, router]);
+  const isSubmitting = updatePartNumber.isPending;
+  // A rejection (network, or a non-JSON response) reads the same as a failed
+  // update to the user, which is what this component showed before.
+  const result =
+    updatePartNumber.data ??
+    (updatePartNumber.error
+      ? { success: false, error: "Failed to update part number" }
+      : null);
 
   // If we don't have required params, show "not set"
   if (
@@ -61,31 +53,16 @@ export function PartNumberInput({ part, queryParams }: PartNumberInputProps) {
     );
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setResult(null);
-
-    const formData = new FormData();
-    formData.append("partId", part.partId || part.id || "");
-    formData.append("partNumber", partNumberInput);
-    formData.append("documentId", queryParams.documentId || "");
-    formData.append("instanceType", queryParams.instanceType);
-    formData.append("instanceId", queryParams.instanceId || "");
-    formData.append("elementId", queryParams.elementId || "");
-
-    try {
-      const response = await fetch("/api/mfg/parts/actions", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json();
-      setResult(data);
-    } catch (error) {
-      setResult({ success: false, error: "Failed to update part number" });
-    } finally {
-      setIsSubmitting(false);
-    }
+    updatePartNumber.mutate({
+      partId: part.partId || part.id || "",
+      partNumber: partNumberInput,
+      documentId: queryParams.documentId || "",
+      instanceType: queryParams.instanceType,
+      instanceId: queryParams.instanceId || "",
+      elementId: queryParams.elementId || "",
+    });
   };
 
   // Show input form

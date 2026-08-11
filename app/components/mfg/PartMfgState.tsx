@@ -1,16 +1,15 @@
-"use client";
-
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { KanbanColumn } from "~/lib/kanbanApi/columnTypes";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { onshapeVersionQuery, partActions, queryKeys } from "~/lib/api";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { KanbanCardRow, ProcessRow } from "~/lib/db/types";
 import { isPartEligibleForRelease } from "~/onshape_connector/utils/partEligibility";
 import { extractVersionId } from "~/onshape_connector/utils/versionUtils";
-import type { PartsPageSearchParams } from "~/onshape_connector/page";
+import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 import { type AddCardFormData, AddCardDialog } from "./AddCardDialog";
 import { ManufacturingStateBadge } from "./ManufacturingStateBadge";
 import { PartDueDate } from "./PartDueDate";
@@ -46,109 +45,46 @@ export function PartMfgState({
   queryParams,
 }: PartMfgStateProps) {
   const queryClient = useQueryClient();
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [result, setResult] = useState<{
-    success?: boolean;
-    error?: string;
-  } | null>(null);
-  const hasRevalidatedRef = useRef(false);
 
   // Get version ID and fetch version info if we have query params
   const versionId = queryParams ? extractVersionId(queryParams) : null;
   const versionQuery = useQuery({
-    queryKey: ["onshape-version", queryParams?.documentId, versionId],
-    queryFn: async () => {
-      if (!queryParams?.documentId || !versionId) {
-        throw new Error("Missing document ID or version ID");
-      }
-      const params = new URLSearchParams({
-        documentId: queryParams.documentId,
-        versionId: versionId,
-      });
-      const response = await fetch(`/api/onshape/version?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch version");
-      }
-      return response.json();
-    },
+    ...onshapeVersionQuery(queryParams?.documentId, versionId),
+    // Only a version instance has a version to name.
     enabled:
       !!queryParams?.documentId &&
       !!versionId &&
       queryParams.instanceType === "v",
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-    retry: 1,
   });
 
-  // Reset revalidation flag when starting a new operation
-  useEffect(() => {
-    if (isSubmitting) {
-      hasRevalidatedRef.current = false;
-    }
-  }, [isSubmitting]);
+  const addCard = useMutation({
+    mutationFn: partActions.addCard,
+    onSuccess: (result) => {
+      if (!result.success) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.columns() });
+    },
+  });
 
-  // Handle successful card operations - invalidate queries to refetch
-  useEffect(() => {
-    if (result?.success && !isSubmitting && !hasRevalidatedRef.current) {
-      hasRevalidatedRef.current = true;
+  const isSubmitting = addCard.isPending;
+  const result =
+    addCard.data ??
+    (addCard.error ? { success: false, error: "Failed to add card" } : null);
 
-      // Invalidate both cards and columns queries to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ["kanban-cards"] });
-      queryClient.invalidateQueries({ queryKey: ["kanban-columns"] });
-    }
-  }, [result?.success, isSubmitting, queryClient]);
-
-  const handleAddCard = async (formData: AddCardFormData) => {
-    setIsSubmitting(true);
-    setResult(null);
+  const handleAddCard = (formData: AddCardFormData) => {
     setDialogOpen(false);
-
-    const submitFormData = new FormData();
-    submitFormData.append("action", "addCard");
-    submitFormData.append("partNumber", partNumber);
-
-    // Add process IDs
-    formData.processIds.forEach((processId) => {
-      submitFormData.append("processIds", processId);
+    addCard.mutate({
+      partNumber,
+      processIds: formData.processIds,
+      quantityPerRobot: formData.quantityPerRobot,
+      quantityToMake: formData.quantityToMake,
+      dueDate: formData.dueDate
+        ? format(formData.dueDate, "yyyy-MM-dd")
+        : undefined,
+      onshapePart: onshapeParams ? { ...onshapeParams, partId } : undefined,
+      rawThumbnailUrl: thumbnailUrl,
     });
-
-    // Add quantities
-    submitFormData.append(
-      "quantityPerRobot",
-      String(formData.quantityPerRobot)
-    );
-    submitFormData.append("quantityToMake", String(formData.quantityToMake));
-
-    // Add due date if provided
-    if (formData.dueDate) {
-      submitFormData.append("dueDate", format(formData.dueDate, "yyyy-MM-dd"));
-    }
-
-    if (onshapeParams) {
-      submitFormData.append("documentId", onshapeParams.documentId);
-      submitFormData.append("instanceType", onshapeParams.instanceType);
-      submitFormData.append("instanceId", onshapeParams.instanceId);
-      submitFormData.append("elementId", onshapeParams.elementId);
-      submitFormData.append("partId", partId);
-    }
-
-    // Add thumbnail URL if available
-    if (thumbnailUrl) {
-      submitFormData.append("rawThumbnailUrl", thumbnailUrl);
-    }
-
-    try {
-      const response = await fetch("/api/mfg/parts/actions", {
-        method: "POST",
-        body: submitFormData,
-      });
-      const data = await response.json();
-      setResult(data);
-    } catch (error) {
-      setResult({ success: false, error: "Failed to add card" });
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   // If card not found, show part properties and "Add to manufacturing tracker" button

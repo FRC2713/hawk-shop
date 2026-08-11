@@ -1,8 +1,6 @@
-"use client";
-
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { kanbanQueryKeys } from "./queries";
+import { queryKeys } from "~/lib/api";
 
 /**
  * Subscribes to `/api/kanban/events` and invalidates the cards query whenever
@@ -18,7 +16,7 @@ export function useKanbanRealtime() {
     const source = new EventSource("/api/kanban/events");
 
     const onChange = () => {
-      queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
     };
 
     source.addEventListener("change", onChange);

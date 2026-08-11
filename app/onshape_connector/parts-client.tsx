@@ -1,5 +1,3 @@
-"use client";
-
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { AlertCircle, Box } from "lucide-react";
@@ -17,7 +15,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
 import { Skeleton } from "~/components/ui/skeleton";
-import { kanbanQueryKeys } from "~/lib/kanbanApi/queries";
+import { partActions, queryKeys } from "~/lib/api";
 import { usePartsData } from "./hooks/usePartsData";
 import { usePartsSearch } from "./hooks/usePartsSearch";
 import {
@@ -26,24 +24,17 @@ import {
   usePartsSort,
 } from "./hooks/usePartsSort";
 import { OnshapeConnectorToolbar } from "./OnshapeConnectorToolbar";
-import type { PartsPageSearchParams } from "./page";
+import type { PartsPageSearchParams } from "./utils/types";
 import { isPartEligibleForRelease } from "./utils/partEligibility";
-import { getPartsQueryKey } from "./utils/partsQuery";
 import { extractVersionId, getPartVersionKey } from "./utils/versionUtils";
 
 interface MfgPartsClientProps {
   queryParams: PartsPageSearchParams;
-  error: string | null;
-  exampleUrl: string | null | undefined;
 }
 
 //example url: http://localhost:3000/onshape_connector?elementType=PARTSTUDIO&documentId=6fcef187b1ff2c7d43932486&instanceType=w&instanceId=0330c62599ec344c4a9b77a5&elementId=21aa6247faa0fb5954a76f5b
 //             http://localhost:3000/onshape_connector?elementType=PARTSTUDIO&documentId=53c38f13ca333ed762a7da35&instanceType=v&instanceId=d1415051313f9c6e9d96da02&elementId=c928e6ec72d8ad05c31d8aa4
-export function MfgPartsClient({
-  queryParams,
-  error: validationError,
-  exampleUrl,
-}: MfgPartsClientProps) {
+export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
   const queryClient = useQueryClient();
   const [sortBy, setSortBy] = useState<SortBy>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -264,12 +255,15 @@ export function MfgPartsClient({
     [lastSelectedIndex]
   );
 
-  const handleRefresh = () => {
-    // Invalidate all relevant queries to trigger refetch
-    queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.cards() });
-    queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.columns() });
-    queryClient.invalidateQueries({ queryKey: getPartsQueryKey(queryParams) });
+  const invalidateAfterRelease = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.kanban.columns() });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.onshape.parts(queryParams, true),
+    });
   };
+
+  const handleRefresh = invalidateAfterRelease;
 
   // Bulk release handler
   const handleBulkRelease = async (formData: BulkReleaseFormData) => {
@@ -301,65 +295,23 @@ export function MfgPartsClient({
         continue;
       }
 
-      const submitFormData = new FormData();
-      submitFormData.append("action", "addCard");
-      submitFormData.append("partNumber", eligiblePart.part.partNumber || "");
-
-      // Add process IDs (common for all parts)
-      formData.processIds.forEach((processId: string) => {
-        submitFormData.append("processIds", processId);
-      });
-
-      // Add quantities (individual per part)
-      submitFormData.append(
-        "quantityPerRobot",
-        String(partQuantities.quantityPerRobot)
-      );
-      submitFormData.append(
-        "quantityToMake",
-        String(partQuantities.quantityToMake)
-      );
-
-      // Add due date if provided (common for all parts)
-      if (formData.dueDate) {
-        submitFormData.append(
-          "dueDate",
-          format(formData.dueDate, "yyyy-MM-dd")
-        );
-      }
-
-      // Add onshape params if available
-      if (eligiblePart.onshapeParams) {
-        submitFormData.append(
-          "documentId",
-          eligiblePart.onshapeParams.documentId
-        );
-        submitFormData.append(
-          "instanceType",
-          eligiblePart.onshapeParams.instanceType
-        );
-        submitFormData.append(
-          "instanceId",
-          eligiblePart.onshapeParams.instanceId
-        );
-        submitFormData.append(
-          "elementId",
-          eligiblePart.onshapeParams.elementId
-        );
-        submitFormData.append("partId", eligiblePart.partId);
-      }
-
-      // Add thumbnail URL if available
-      if (eligiblePart.thumbnailUrl) {
-        submitFormData.append("rawThumbnailUrl", eligiblePart.thumbnailUrl);
-      }
-
       try {
-        const response = await fetch("/api/mfg/parts/actions", {
-          method: "POST",
-          body: submitFormData,
+        const data = await partActions.addCard({
+          partNumber: eligiblePart.part.partNumber || "",
+          processIds: formData.processIds,
+          quantityPerRobot: partQuantities.quantityPerRobot,
+          quantityToMake: partQuantities.quantityToMake,
+          dueDate: formData.dueDate
+            ? format(formData.dueDate, "yyyy-MM-dd")
+            : undefined,
+          onshapePart: eligiblePart.onshapeParams
+            ? {
+                ...eligiblePart.onshapeParams,
+                partId: eligiblePart.partId,
+              }
+            : undefined,
+          rawThumbnailUrl: eligiblePart.thumbnailUrl,
         });
-        const data = await response.json();
         results.push({
           partKey: eligiblePart.partKey,
           success: data.success,
@@ -376,10 +328,7 @@ export function MfgPartsClient({
 
     setIsBulkReleasing(false);
 
-    // Invalidate queries to refresh UI
-    queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.cards() });
-    queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.columns() });
-    queryClient.invalidateQueries({ queryKey: getPartsQueryKey(queryParams) });
+    invalidateAfterRelease();
 
     // Clear selection after successful release
     const allSucceeded = results.every((r) => r.success);
@@ -403,7 +352,6 @@ export function MfgPartsClient({
 
   // Combine all errors
   const displayError =
-    validationError ||
     (partsError ? String(partsError.message) : null) ||
     (cardsError
       ? `Failed to load kanban cards: ${cardsError.message}`
@@ -443,12 +391,7 @@ export function MfgPartsClient({
     <main className="container mx-auto px-4 py-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-2">
         {/* Error Messages */}
-        {displayError && (
-          <ErrorDisplay
-            error={displayError}
-            exampleUrl={exampleUrl || undefined}
-          />
-        )}
+        {displayError && <ErrorDisplay error={displayError} />}
 
         {/* Partial error states - show data even if some queries failed */}
         {(cardsError || columnsError) && !partsError && (

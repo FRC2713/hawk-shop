@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { ImageUploadZone } from "./shared/ImageUploadZone";
 import { ImagePreview } from "./shared/ImagePreview";

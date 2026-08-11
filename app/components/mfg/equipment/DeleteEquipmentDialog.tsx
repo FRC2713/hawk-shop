@@ -1,5 +1,3 @@
-"use client";
-
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -13,14 +11,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
-import type { EquipmentRow, ProcessRow } from "~/lib/db/types";
+import {
+  deleteEquipment as deleteEquipmentRequest,
+  queryKeys,
+  type EquipmentWithProcesses,
+} from "~/lib/api";
 import { EquipmentImage } from "./shared/EquipmentImage";
 import { EquipmentStatusBadge } from "./shared/EquipmentStatusBadge";
 
 interface DeleteEquipmentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  equipment: (EquipmentRow & { processes?: ProcessRow[] }) | null;
+  equipment: EquipmentWithProcesses | null;
 }
 
 export function DeleteEquipmentDialog({
@@ -31,20 +33,9 @@ export function DeleteEquipmentDialog({
   const queryClient = useQueryClient();
 
   const deleteEquipment = useMutation({
-    mutationFn: async (equipmentId: string) => {
-      const response = await fetch(`/api/equipment/${equipmentId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete equipment");
-      }
-
-      return await response.json();
-    },
+    mutationFn: deleteEquipmentRequest,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Equipment deleted successfully");
       onOpenChange(false);
     },
