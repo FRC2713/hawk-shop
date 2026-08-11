@@ -6,6 +6,7 @@ import {
   setOAuthState,
   setOAuthRedirect,
 } from "~/lib/onshapeAuth";
+import { resolveAppOrigin } from "~/lib/appOrigin";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
       redirectTo.startsWith("/auth/") || redirectTo.startsWith("/signin")
         ? "/"
         : redirectTo;
-    const redirectUrl = new URL(safeRedirect, url.origin);
+    const redirectUrl = new URL(safeRedirect, resolveAppOrigin(request));
     // Add auth=success param to bypass middleware check (prevents redirect loops in iframe contexts)
     redirectUrl.searchParams.set("auth", "success");
     console.log(

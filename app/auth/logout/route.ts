@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { clearOAuthState, clearOnshapeTokens } from "~/lib/onshapeAuth";
+import { resolveAppOrigin } from "~/lib/appOrigin";
 
 export async function GET(request: Request) {
   // Clear all Onshape auth cookies
   await clearOnshapeTokens();
   await clearOAuthState();
 
-  const url = new URL(request.url);
-  return NextResponse.redirect(new URL("/", url.origin));
+  return NextResponse.redirect(new URL("/", resolveAppOrigin(request)));
 }

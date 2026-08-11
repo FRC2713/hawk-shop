@@ -10,6 +10,7 @@ import {
   setOnshapeTokens,
 } from "~/lib/onshapeAuth";
 import { upsertUser } from "~/lib/db/users";
+import { resolveAppOrigin } from "~/lib/appOrigin";
 
 /**
  * Send an OAuth failure to /signin, never to "/".
@@ -239,7 +240,7 @@ export async function GET(request: Request) {
       redirectTo.startsWith("/auth/") || redirectTo.startsWith("/signin")
         ? "/"
         : redirectTo;
-    const redirectUrl = new URL(safeRedirect, url.origin);
+    const redirectUrl = new URL(safeRedirect, resolveAppOrigin(request));
     redirectUrl.searchParams.set("auth", "success");
     console.log("[AUTH CALLBACK] Redirecting to:", redirectUrl.toString());
     console.log("[AUTH CALLBACK] ===== Callback Complete =====");
