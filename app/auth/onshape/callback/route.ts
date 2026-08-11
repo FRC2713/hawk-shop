@@ -11,6 +11,18 @@ import {
 } from "~/lib/onshapeAuth";
 import { upsertUser } from "~/lib/db/users";
 
+/**
+ * Send an OAuth failure to /signin, never to "/".
+ *
+ * "/" is gated by the proxy, so redirecting a failure there bounces straight
+ * back into /auth/onshape, which re-requests the same broken authorization and
+ * fails identically — an infinite redirect loop that hides the actual error.
+ * /signin is public, so the message survives long enough to be read.
+ */
+function authFailure(message: string): never {
+  redirect("/signin?error=" + encodeURIComponent(message));
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
@@ -53,14 +65,12 @@ export async function GET(request: Request) {
   // Handle OAuth errors
   if (error) {
     console.error("[AUTH CALLBACK] OAuth error received:", error);
-    return redirect("/?error=" + encodeURIComponent(error));
+    authFailure(error);
   }
 
   if (!code) {
     console.error("[AUTH CALLBACK] No authorization code received");
-    return redirect(
-      "/?error=" + encodeURIComponent("No authorization code received")
-    );
+    authFailure("No authorization code received");
   }
 
   const storedState = await getOAuthState();
@@ -89,13 +99,17 @@ export async function GET(request: Request) {
       await clearOnshapeTokens();
       await clearOAuthState();
       await clearOAuthRedirect();
-      return redirect("/auth/onshape");
+      // One retry only — if the state cookie still does not survive the round
+      // trip, retrying just rebuilds the same loop.
+      if (url.searchParams.get("retry") === "1") {
+        authFailure(
+          "Sign-in state cookie was not preserved. Check that cookies are enabled and that APP_URL matches the address you are using."
+        );
+      }
+      redirect("/auth/onshape?retry=1");
     }
 
-    return redirect(
-      "/?error=" +
-        encodeURIComponent("Invalid state parameter. Please try again.")
-    );
+    authFailure("Invalid state parameter. Please try again.");
   }
 
   console.log("[AUTH CALLBACK] State validation passed");
@@ -236,8 +250,6 @@ export async function GET(request: Request) {
     await clearOnshapeTokens();
     await clearOAuthState();
     await clearOAuthRedirect();
-    return redirect(
-      "/?error=" + encodeURIComponent("Failed to exchange authorization code")
-    );
+    authFailure("Failed to exchange authorization code");
   }
 }

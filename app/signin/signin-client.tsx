@@ -8,15 +8,32 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { Box, CheckCircle2 } from "lucide-react";
+import { Box, CheckCircle2, TriangleAlert } from "lucide-react";
+
+/**
+ * Extra guidance for OAuth failures whose raw code says nothing actionable to
+ * someone setting up a self-hosted install.
+ */
+const ERROR_HINTS: Record<string, string> = {
+  invalid_scope:
+    "Onshape rejected the requested permissions. Make sure the scopes enabled on your Onshape OAuth application match the ONSHAPE_SCOPE setting.",
+  invalid_client:
+    "Onshape did not recognize the client credentials. Check ONSHAPE_CLIENT_ID and ONSHAPE_CLIENT_SECRET.",
+  redirect_uri_mismatch:
+    "The redirect URL does not match the one registered on your Onshape OAuth application. Both must be identical, including scheme and port.",
+  access_denied: "The sign-in request was declined in Onshape.",
+};
 
 export function SignInClient({
   onshapeAuth,
   redirectTo,
+  error,
 }: {
   onshapeAuth: boolean;
   redirectTo: string;
+  error?: string;
 }) {
+  const hint = error ? ERROR_HINTS[error] : undefined;
   const handleOnshapeAuth = () => {
     // Redirect to Onshape auth - will return to /signin after
     window.location.href = `/auth/onshape?redirect=${encodeURIComponent("/signin")}`;
@@ -37,6 +54,23 @@ export function SignInClient({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div
+              role="alert"
+              className="flex gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950/50"
+            >
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-500" />
+              <div className="space-y-1">
+                <p className="font-medium text-red-900 dark:text-red-200">
+                  Sign-in failed: {error}
+                </p>
+                {hint && (
+                  <p className="text-red-800 dark:text-red-300">{hint}</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Onshape Authentication */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
