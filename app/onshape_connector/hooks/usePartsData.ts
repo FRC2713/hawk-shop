@@ -2,10 +2,13 @@ import { useMemo } from "react";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { KanbanCardRow } from "~/lib/db/types";
 import type { KanbanColumn } from "~/lib/kanbanApi/columnTypes";
-import { useKanbanCards, useKanbanColumns } from "~/lib/kanbanApi/queries";
 import { useQuery } from "@tanstack/react-query";
-import { getPartsQueryOptions } from "../utils/partsQuery";
-import type { PartsPageSearchParams } from "../page";
+import {
+  kanbanCardsQuery,
+  kanbanColumnsQuery,
+  onshapePartsQuery,
+} from "~/lib/api";
+import type { PartsPageSearchParams } from "../utils/types";
 import { getPartVersionKey, getCardVersionId } from "../utils/versionUtils";
 
 interface UsePartsDataOptions {
@@ -35,15 +38,15 @@ export function usePartsData({
   queryParams,
 }: UsePartsDataOptions): UsePartsDataResult {
   // Fetch all three data sources
-  const partsQuery = useQuery<BtPartMetadataInfo[]>(
-    getPartsQueryOptions(queryParams)
+  const partsQuery = useQuery(
+    onshapePartsQuery(queryParams, { withThumbnails: true })
   );
-  const kanbanCardsQuery = useKanbanCards();
-  const kanbanColumnsQuery = useKanbanColumns();
+  const cardsQuery = useQuery(kanbanCardsQuery());
+  const columnsQuery = useQuery(kanbanColumnsQuery());
 
   const parts = partsQuery.data;
-  const cards = kanbanCardsQuery.data?.cards || [];
-  const columns = kanbanColumnsQuery.data || [];
+  const cards = cardsQuery.data || [];
+  const columns = columnsQuery.data || [];
 
   // Create lookup maps for O(1) access
   // Use composite key (partNumber::versionId) for matching
@@ -77,13 +80,11 @@ export function usePartsData({
 
   // Unified loading and error states
   const isLoading =
-    partsQuery.isLoading ||
-    kanbanCardsQuery.isLoading ||
-    kanbanColumnsQuery.isLoading;
+    partsQuery.isLoading || cardsQuery.isLoading || columnsQuery.isLoading;
 
   const partsError = partsQuery.error as Error | null;
-  const cardsError = kanbanCardsQuery.error as Error | null;
-  const columnsError = kanbanColumnsQuery.error as Error | null;
+  const cardsError = cardsQuery.error as Error | null;
+  const columnsError = columnsQuery.error as Error | null;
 
   const isError = !!partsError || !!cardsError || !!columnsError;
   const error = partsError || cardsError || columnsError || null;

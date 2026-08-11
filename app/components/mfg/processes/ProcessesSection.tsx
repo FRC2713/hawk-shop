@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Layers, Plus } from "lucide-react";
@@ -7,18 +5,11 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import type { ProcessRow } from "~/lib/db/types";
+import { processesQuery } from "~/lib/api";
 import { AddProcessDialog } from "./AddProcessDialog";
 import { DeleteProcessDialog } from "./DeleteProcessDialog";
 import { EditProcessDialog } from "./EditProcessDialog";
 import { ProcessCard } from "./ProcessCard";
-
-async function fetchProcesses(): Promise<{ processes: ProcessRow[] }> {
-  const response = await fetch("/api/processes");
-  if (!response.ok) {
-    throw new Error("Failed to fetch processes");
-  }
-  return response.json();
-}
 
 export function ProcessesSection() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -28,13 +19,7 @@ export function ProcessesSection() {
     null
   );
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["processes"],
-    queryFn: fetchProcesses,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const processes = data?.processes ?? [];
+  const { data: processes = [], isLoading, error } = useQuery(processesQuery());
 
   const handleEdit = (process: ProcessRow) => {
     setSelectedProcess(process);

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -19,6 +17,11 @@ import {
   type EquipmentFormErrors,
 } from "./shared/EquipmentFormFields";
 import { ImageUploadZone } from "./shared/ImageUploadZone";
+import {
+  createEquipment as createEquipmentRequest,
+  queryKeys,
+  uploadEquipmentImages,
+} from "~/lib/api";
 
 interface AddEquipmentDialogProps {
   open: boolean;
@@ -46,54 +49,12 @@ export function AddEquipmentDialog({
       equipment: EquipmentFormData;
       imageFiles: File[];
     }) => {
-      // First, create the equipment
-      const response = await fetch("/api/equipment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: data.equipment.name,
-          description: data.equipment.description || undefined,
-          processIds: data.equipment.processIds || [],
-          location: data.equipment.location || undefined,
-          status: data.equipment.status || undefined,
-          documentationUrl: data.equipment.documentationUrl || undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create equipment");
-      }
-
-      const result = await response.json();
-      const equipmentId = result.equipment.id;
-
-      // Then upload images if any
-      if (data.imageFiles.length > 0) {
-        const uploadPromises = data.imageFiles.map(async (file) => {
-          const formData = new FormData();
-          formData.append("file", file);
-
-          const uploadResponse = await fetch(
-            `/api/equipment/${equipmentId}/image`,
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
-
-          if (!uploadResponse.ok) {
-            throw new Error("Failed to upload image");
-          }
-        });
-
-        await Promise.all(uploadPromises);
-      }
-
-      return result.equipment;
+      const equipment = await createEquipmentRequest(data.equipment);
+      await uploadEquipmentImages(equipment.id, data.imageFiles);
+      return equipment;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
       toast.success("Equipment added successfully");
       handleClose();
     },

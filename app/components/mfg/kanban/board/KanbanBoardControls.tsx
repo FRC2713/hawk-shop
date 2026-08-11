@@ -20,7 +20,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 } from "~/components/ui/dropdown-menu";
-import type { ProcessRow } from "~/lib/db/types";
+import { processesQuery } from "~/lib/api";
 
 interface KanbanBoardControlsProps {
   isEditMode: boolean;
@@ -72,17 +72,7 @@ export function KanbanBoardControls({
     }
   };
 
-  const { data: processesData } = useQuery<{ processes: ProcessRow[] }>({
-    queryKey: ["processes"],
-    queryFn: async () => {
-      const response = await fetch("/api/processes");
-      if (!response.ok) throw new Error("Failed to fetch processes");
-      return response.json();
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const processes = processesData?.processes || [];
+  const { data: processes = [] } = useQuery(processesQuery());
 
   const toggleProcess = (processId: string) => {
     const newIds = selectedProcessIds.includes(processId)

@@ -4,10 +4,12 @@ node_modules
 # Build outputs
 build
 dist
-.next
+.output
+.nitro
 
 # Generated files
 app/lib/onshapeApi/generated
+app/routeTree.gen.ts
 drizzle
 
 # Cache

@@ -11,7 +11,6 @@ import {
   Hash,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Image from "next/image";
 import { Button } from "~/components/ui/button";
 import {
   AlertDialog,
@@ -38,10 +37,15 @@ import {
   SheetTitle,
 } from "~/components/ui/sheet";
 import type { KanbanCardRow, UserRow, ProcessRow } from "~/lib/db/types";
-import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import { Badge } from "~/components/ui/badge";
 import type { UseMutationResult } from "@tanstack/react-query";
-import { useKanbanColumns } from "~/lib/kanbanApi/queries";
+import {
+  kanbanColumnsQuery,
+  onshapePartsQuery,
+  onshapeVersionQuery,
+  queryKeys,
+  updateKanbanCard,
+} from "~/lib/api";
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
 
@@ -204,26 +208,9 @@ export function KanbanCardDetails({
   ]);
 
   // Fetch version information if we have a version ID
-  const versionQuery = useQuery({
-    queryKey: ["onshape-version", card.onshape_document_id, cardVersionId],
-    queryFn: async () => {
-      if (!card.onshape_document_id || !cardVersionId) {
-        throw new Error("Missing document ID or version ID");
-      }
-      const params = new URLSearchParams({
-        documentId: card.onshape_document_id,
-        versionId: cardVersionId,
-      });
-      const response = await fetch(`/api/onshape/version?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch version");
-      }
-      return response.json();
-    },
-    enabled: !!card.onshape_document_id && !!cardVersionId,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-    retry: 1,
-  });
+  const versionQuery = useQuery(
+    onshapeVersionQuery(card.onshape_document_id, cardVersionId)
+  );
 
   // Memoize hasMeta to avoid recalculating on every render
   const hasMeta = useMemo(
@@ -249,24 +236,14 @@ export function KanbanCardDetails({
   );
 
   // Fetch columns for the status dropdown
-  const { data: columns = [] } = useKanbanColumns();
+  const { data: columns = [] } = useQuery(kanbanColumnsQuery());
   const queryClient = useQueryClient();
   const moveCardMutation = useMutation({
-    mutationFn: async (columnId: string) => {
-      const response = await fetch(`/api/kanban/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ column_id: columnId }),
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to move card");
-      }
-      return response.json();
-    },
+    mutationFn: (columnId: string) =>
+      updateKanbanCard(card.id, { column_id: columnId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["kanban-cards"] });
-      queryClient.invalidateQueries({ queryKey: ["kanban-columns"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.columns() });
     },
   });
 
@@ -275,31 +252,14 @@ export function KanbanCardDetails({
 
   // Fetch parts from Onshape API to get material
   // Cache for 30 seconds to reduce API calls
-  const partsQuery = useQuery<BtPartMetadataInfo[]>({
-    queryKey: [
-      "onshape-parts",
-      card.onshape_document_id,
-      card.onshape_instance_type,
-      card.onshape_instance_id,
-      card.onshape_element_id,
-    ],
-    queryFn: async () => {
-      if (!hasOnshapeProperties) throw new Error("No Onshape properties");
-      const params = new URLSearchParams({
-        documentId: card.onshape_document_id!,
-        instanceType: card.onshape_instance_type!,
-        instanceId: card.onshape_instance_id!,
-        elementId: card.onshape_element_id!,
-      });
-      const response = await fetch(`/api/onshape/parts?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch parts");
-      }
-      return response.json();
-    },
-    enabled: hasOnshapeProperties,
-    staleTime: 30 * 1000, // Cache for 30 seconds
-    retry: 1, // Retry once on failure
+  const partsQuery = useQuery({
+    ...onshapePartsQuery({
+      documentId: card.onshape_document_id ?? undefined,
+      instanceType: card.onshape_instance_type ?? undefined,
+      instanceId: card.onshape_instance_id ?? undefined,
+      elementId: card.onshape_element_id ?? undefined,
+    }),
+    retry: 1,
   });
 
   // Pre-normalize card title to avoid repeated string operations
@@ -370,13 +330,11 @@ export function KanbanCardDetails({
         {imageUrl && !imageError && (
           <div className="overflow-hidden">
             <div className="relative w-full" style={{ height: "300px" }}>
-              <Image
+              <img
                 src={imageUrl}
                 alt={card.title}
-                fill
-                className="object-contain"
+                className="absolute inset-0 size-full object-contain"
                 onError={() => setImageError(true)}
-                unoptimized
               />
             </div>
           </div>

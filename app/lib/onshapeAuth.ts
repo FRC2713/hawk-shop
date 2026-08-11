@@ -2,25 +2,40 @@
  * Onshape Authentication Utilities
  * Simple cookie-based authentication without session abstraction
  *
- * NOTE: This file contains server-only functions that use next/headers.
- * Client components should use API routes to access token functionality.
+ * NOTE: This file contains server-only functions that read and write the
+ * ambient request/response for the in-flight request. Client components should
+ * use API routes to access token functionality.
+ *
+ * The getters/setters stay `async` even though the underlying helpers are
+ * synchronous: they were async under `next/headers`, and every call site awaits
+ * them.
  */
 
-import { cookies } from "next/headers";
-import "server-only";
+import {
+  deleteCookie,
+  getCookie,
+  setCookie,
+} from "@tanstack/react-start/server";
+import "@tanstack/react-start/server-only";
+// Re-exported below so existing `~/lib/onshapeAuth` imports keep working.
+export {
+  getOAuthStateFromRequest,
+  getOnshapeTokensFromRequest,
+  isOnshapeAuthenticatedFromRequest,
+} from "~/lib/onshapeAuthRequest";
+import {
+  ONSHAPE_COOKIE_NAMES,
+  hasUsableSession,
+} from "~/lib/onshapeAuthRequest";
 import {
   cookieSameSite,
   cookieSameSiteHeader,
   cookieSecure,
 } from "~/lib/cookieOptions";
 
-const COOKIE_NAMES = {
-  ACCESS_TOKEN: "onshape_access_token",
-  REFRESH_TOKEN: "onshape_refresh_token",
-  EXPIRES_AT: "onshape_expires_at",
-  OAUTH_STATE: "onshape_oauth_state",
-  OAUTH_REDIRECT: "onshape_oauth_redirect",
-} as const;
+// Names live with the parser in `onshapeAuthRequest.ts`; this half reads the
+// same jar through the ambient request, so it must not keep its own copy.
+const COOKIE_NAMES = ONSHAPE_COOKIE_NAMES;
 
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 const OAUTH_STATE_MAX_AGE = 60 * 10; // 10 minutes for OAuth state
@@ -53,11 +68,9 @@ export async function getOnshapeTokens(): Promise<{
   refreshToken: string | null;
   expiresAt: number | null;
 }> {
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get(COOKIE_NAMES.ACCESS_TOKEN)?.value || null;
-  const refreshToken =
-    cookieStore.get(COOKIE_NAMES.REFRESH_TOKEN)?.value || null;
-  const expiresAtStr = cookieStore.get(COOKIE_NAMES.EXPIRES_AT)?.value;
+  const accessToken = getCookie(COOKIE_NAMES.ACCESS_TOKEN) || null;
+  const refreshToken = getCookie(COOKIE_NAMES.REFRESH_TOKEN) || null;
+  const expiresAtStr = getCookie(COOKIE_NAMES.EXPIRES_AT);
   const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : null;
 
   return { accessToken, refreshToken, expiresAt };
@@ -72,12 +85,11 @@ export async function setOnshapeTokens(
   refreshToken: string,
   expiresAt: number
 ): Promise<void> {
-  const cookieStore = await cookies();
   const options = getCookieOptions();
 
-  cookieStore.set(COOKIE_NAMES.ACCESS_TOKEN, accessToken, options);
-  cookieStore.set(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, options);
-  cookieStore.set(COOKIE_NAMES.EXPIRES_AT, expiresAt.toString(), options);
+  setCookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, options);
+  setCookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, options);
+  setCookie(COOKIE_NAMES.EXPIRES_AT, expiresAt.toString(), options);
 }
 
 /**
@@ -85,18 +97,16 @@ export async function setOnshapeTokens(
  * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
  */
 export async function clearOnshapeTokens(): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.delete(COOKIE_NAMES.ACCESS_TOKEN);
-  cookieStore.delete(COOKIE_NAMES.REFRESH_TOKEN);
-  cookieStore.delete(COOKIE_NAMES.EXPIRES_AT);
+  deleteCookie(COOKIE_NAMES.ACCESS_TOKEN);
+  deleteCookie(COOKIE_NAMES.REFRESH_TOKEN);
+  deleteCookie(COOKIE_NAMES.EXPIRES_AT);
 }
 
 /**
  * Get OAuth state from cookie (for CSRF protection)
  */
 export async function getOAuthState(): Promise<string | null> {
-  const cookieStore = await cookies();
-  return cookieStore.get(COOKIE_NAMES.OAUTH_STATE)?.value || null;
+  return getCookie(COOKIE_NAMES.OAUTH_STATE) || null;
 }
 
 /**
@@ -104,9 +114,7 @@ export async function getOAuthState(): Promise<string | null> {
  * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
  */
 export async function setOAuthState(state: string): Promise<void> {
-  const cookieStore = await cookies();
-  const options = getOAuthStateCookieOptions();
-  cookieStore.set(COOKIE_NAMES.OAUTH_STATE, state, options);
+  setCookie(COOKIE_NAMES.OAUTH_STATE, state, getOAuthStateCookieOptions());
 }
 
 /**
@@ -114,16 +122,14 @@ export async function setOAuthState(state: string): Promise<void> {
  * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
  */
 export async function clearOAuthState(): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.delete(COOKIE_NAMES.OAUTH_STATE);
+  deleteCookie(COOKIE_NAMES.OAUTH_STATE);
 }
 
 /**
  * Get OAuth redirect destination from cookie
  */
 export async function getOAuthRedirect(): Promise<string | null> {
-  const cookieStore = await cookies();
-  return cookieStore.get(COOKIE_NAMES.OAUTH_REDIRECT)?.value || null;
+  return getCookie(COOKIE_NAMES.OAUTH_REDIRECT) || null;
 }
 
 /**
@@ -131,9 +137,12 @@ export async function getOAuthRedirect(): Promise<string | null> {
  * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
  */
 export async function setOAuthRedirect(redirect: string): Promise<void> {
-  const cookieStore = await cookies();
-  const options = getOAuthStateCookieOptions(); // Use same options as OAuth state
-  cookieStore.set(COOKIE_NAMES.OAUTH_REDIRECT, redirect, options);
+  // Same lifetime as the OAuth state cookie.
+  setCookie(
+    COOKIE_NAMES.OAUTH_REDIRECT,
+    redirect,
+    getOAuthStateCookieOptions()
+  );
 }
 
 /**
@@ -141,82 +150,17 @@ export async function setOAuthRedirect(redirect: string): Promise<void> {
  * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
  */
 export async function clearOAuthRedirect(): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.delete(COOKIE_NAMES.OAUTH_REDIRECT);
+  deleteCookie(COOKIE_NAMES.OAUTH_REDIRECT);
 }
 
 /**
- * Check if Onshape is authenticated (has valid access token)
- * Also checks token expiration to match middleware behavior
+ * Check if Onshape is authenticated, reading the ambient request's cookies.
+ *
+ * Shares `hasUsableSession` with the request middleware so the two can never
+ * again reach different answers about the same session.
  */
 export async function isOnshapeAuthenticated(): Promise<boolean> {
-  const { accessToken, expiresAt } = await getOnshapeTokens();
-  if (!accessToken) return false;
-  // Check if token is expired
-  if (expiresAt && Date.now() >= expiresAt) return false;
-  return true;
-}
-
-/**
- * Get Onshape access token (does not refresh - use tokenRefresh for that)
- */
-export async function getOnshapeToken(): Promise<string | null> {
-  const { accessToken } = await getOnshapeTokens();
-  return accessToken;
-}
-
-/**
- * Parse cookies from request headers
- */
-function parseCookiesFromRequest(request: Request): Record<string, string> {
-  const cookieHeader = request.headers.get("Cookie");
-  if (!cookieHeader) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    cookieHeader.split("; ").map((c) => {
-      const [key, ...values] = c.split("=");
-      return [key, decodeURIComponent(values.join("="))];
-    })
-  );
-}
-
-/**
- * Get Onshape tokens from request cookies
- */
-export function getOnshapeTokensFromRequest(request: Request): {
-  accessToken: string | null;
-  refreshToken: string | null;
-  expiresAt: number | null;
-} {
-  const cookies = parseCookiesFromRequest(request);
-  const accessToken = cookies.onshape_access_token || null;
-  const refreshToken = cookies.onshape_refresh_token || null;
-  const expiresAtStr = cookies.onshape_expires_at;
-  const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : null;
-
-  return { accessToken, refreshToken, expiresAt };
-}
-
-/**
- * Get OAuth state from request cookies
- */
-export function getOAuthStateFromRequest(request: Request): string | null {
-  const cookies = parseCookiesFromRequest(request);
-  return cookies.onshape_oauth_state || null;
-}
-
-/**
- * Check if Onshape is authenticated from a request (for route handlers)
- * Reads cookies from request headers and validates token expiration
- */
-export function isOnshapeAuthenticatedFromRequest(request: Request): boolean {
-  const { accessToken, expiresAt } = getOnshapeTokensFromRequest(request);
-  if (!accessToken) return false;
-  // Check if token is expired
-  if (expiresAt && Date.now() >= expiresAt) return false;
-  return true;
+  return hasUsableSession(await getOnshapeTokens());
 }
 
 /**

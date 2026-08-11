@@ -1,5 +1,3 @@
-"use client";
-
 import { Edit, MoreVertical, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";

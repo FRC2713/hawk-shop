@@ -9,6 +9,10 @@ import {
   getOnshapeTokens,
   setOnshapeTokens,
 } from "./onshapeAuth";
+import {
+  getOnshapeTokensFromRequest,
+  hasUsableSession,
+} from "./onshapeAuthRequest";
 
 const REFRESH_BUFFER_MS = 5 * 60 * 1000; // 5 minutes before expiration
 
@@ -28,19 +32,11 @@ export function needsRefresh(expiresAt: number | null): boolean {
  */
 export async function getOnshapeTokenWithoutRefresh(): Promise<string | null> {
   try {
-    const { accessToken, expiresAt } = await getOnshapeTokens();
-
-    // If no token, return null
-    if (!accessToken) {
-      return null;
-    }
-
-    // If token is expired, return null (don't try to refresh here)
-    if (expiresAt && Date.now() >= expiresAt) {
-      return null;
-    }
-
-    return accessToken;
+    const session = await getOnshapeTokens();
+    // Same predicate as the middleware and the auth gate — see
+    // `hasUsableSession`. Notably a token with no recorded expiry does not
+    // count, here or anywhere else.
+    return hasUsableSession(session) ? session.accessToken : null;
   } catch (error) {
     console.error("[TOKEN] Error getting token:", error);
     return null;
@@ -109,23 +105,10 @@ export async function refreshOnshapeTokenIfNeededFromRequest(
   request: Request
 ): Promise<string | null> {
   try {
-    // Parse cookies from request
-    const cookieHeader = request.headers.get("Cookie");
-    if (!cookieHeader) {
-      return null;
-    }
-
-    const cookies = Object.fromEntries(
-      cookieHeader.split("; ").map((c) => {
-        const [key, ...values] = c.split("=");
-        return [key, decodeURIComponent(values.join("="))];
-      })
-    );
-
-    const accessToken = cookies.onshape_access_token || null;
-    const refreshToken = cookies.onshape_refresh_token || null;
-    const expiresAtStr = cookies.onshape_expires_at;
-    const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : null;
+    // Shared parser: it tolerates a cookie value that will not URL-decode,
+    // which a hand-rolled `decodeURIComponent` here used to throw on.
+    const { accessToken, refreshToken, expiresAt } =
+      getOnshapeTokensFromRequest(request);
 
     if (!accessToken || !refreshToken) {
       return null;

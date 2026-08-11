@@ -14,7 +14,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns3, Plus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -26,10 +26,12 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
-  kanbanQueryKeys,
-  useKanbanCards,
-  useUsers,
-} from "~/lib/kanbanApi/queries";
+  kanbanCardsQuery,
+  partActions,
+  queryKeys,
+  usersQuery,
+  type KanbanCardWithProcesses,
+} from "~/lib/api";
 import type { KanbanCardRow, UserRow } from "~/lib/db/types";
 import { KanbanCard as KanbanCardComponent } from "../cards/KanbanCard";
 import { KanbanColumn } from "../columns/KanbanColumn";
@@ -91,10 +93,9 @@ export function KanbanBoard({
   );
 
   // Fetch cards and users
-  const { data: cardsData, isLoading: isLoadingCards } = useKanbanCards();
-  const { data: users = [] } = useUsers();
-
-  const cards = cardsData?.cards || [];
+  const { data: cards = [], isLoading: isLoadingCards } =
+    useQuery(kanbanCardsQuery());
+  const { data: users = [] } = useQuery(usersQuery());
 
   // Filter cards by search query and process filter
   const filteredCards = useMemo(() => {
@@ -141,53 +142,23 @@ export function KanbanBoard({
     }: {
       cardId: string;
       columnId: string;
-    }) => {
-      const formData = new FormData();
-      formData.append("action", "moveCard");
-      formData.append("cardId", cardId);
-      formData.append("columnId", columnId);
-
-      const response = await fetch("/api/mfg/parts/actions", {
-        method: "POST",
-        body: formData,
-      });
-
-      // Check content type before parsing
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        throw new Error(
-          `Expected JSON response but got ${contentType}. Response: ${text.substring(0, 100)}`
-        );
-      }
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        const errorMessage = data.error || "Failed to move card";
-        throw new Error(errorMessage);
-      }
-
-      return data;
-    },
+    }) => partActions.moveCard(cardId, columnId),
     onMutate: async ({ cardId, columnId }) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: kanbanQueryKeys.cards() });
+      await queryClient.cancelQueries({ queryKey: queryKeys.kanban.cards() });
 
       // Snapshot previous value
-      const previousCards = queryClient.getQueryData<{
-        cards: KanbanCardRow[];
-      }>(kanbanQueryKeys.cards());
+      const previousCards = queryClient.getQueryData<KanbanCardWithProcesses[]>(
+        queryKeys.kanban.cards()
+      );
 
       // Optimistically update
       if (previousCards) {
-        queryClient.setQueryData<{ cards: KanbanCardRow[] }>(
-          kanbanQueryKeys.cards(),
-          {
-            cards: previousCards.cards.map((card) =>
-              card.id === cardId ? { ...card, column_id: columnId } : card
-            ),
-          }
+        queryClient.setQueryData<KanbanCardWithProcesses[]>(
+          queryKeys.kanban.cards(),
+          previousCards.map((card) =>
+            card.id === cardId ? { ...card, column_id: columnId } : card
+          )
         );
       }
 
@@ -197,7 +168,7 @@ export function KanbanBoard({
       // Rollback on error
       if (context?.previousCards) {
         queryClient.setQueryData(
-          kanbanQueryKeys.cards(),
+          queryKeys.kanban.cards(),
           context.previousCards
         );
       }
@@ -207,7 +178,7 @@ export function KanbanBoard({
     },
     onSettled: () => {
       // Refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
     },
   });
 

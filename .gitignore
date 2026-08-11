@@ -9,9 +9,9 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
+# build output (vite + nitro)
+/.output/
+/.nitro/
 
 # production
 /build
@@ -31,6 +31,5 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 # hawk-shop local data (sqlite db + uploaded images)
 /data

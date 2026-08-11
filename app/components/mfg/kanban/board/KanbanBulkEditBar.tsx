@@ -1,5 +1,3 @@
-"use client";
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns3, Loader2, User, Wrench, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -18,18 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { kanbanQueryKeys } from "~/lib/kanbanApi/queries";
-import type { EquipmentRow, KanbanCardRow, UserRow } from "~/lib/db/types";
+import {
+  assignKanbanCard,
+  equipmentQuery,
+  queryKeys,
+  updateKanbanCard,
+} from "~/lib/api";
+import type { KanbanCardRow, UserRow } from "~/lib/db/types";
 import { cn } from "~/lib/utils";
-
-async function fetchEquipment() {
-  const response = await fetch("/api/equipment");
-  if (!response.ok) {
-    throw new Error("Failed to fetch equipment");
-  }
-  const data = await response.json();
-  return data.equipment as EquipmentRow[];
-}
 
 interface KanbanBulkEditBarProps {
   selectedCardIds: Set<string>;
@@ -54,10 +48,7 @@ export function KanbanBulkEditBar({
   const [assignPopoverOpen, setAssignPopoverOpen] = useState(false);
   const [machinePopoverOpen, setMachinePopoverOpen] = useState(false);
 
-  const { data: equipment = [] } = useQuery<EquipmentRow[]>({
-    queryKey: ["equipment"],
-    queryFn: fetchEquipment,
-  });
+  const { data: equipment = [] } = useQuery(equipmentQuery());
 
   const sortedEquipment = useMemo(() => {
     return [...equipment].sort((a, b) =>
@@ -78,26 +69,32 @@ export function KanbanBulkEditBar({
     [cards, selectedCardIds]
   );
 
+  /**
+   * Apply `request` to every selected card, letting them all run before
+   * reporting. Throws with a count if any failed.
+   *
+   * The requests have to reject on a failed card for this to mean anything —
+   * they do now that they go through the api layer, which is the point of
+   * routing them through it.
+   */
+  const runForEachCard = async (
+    request: (card: KanbanCardRow) => Promise<unknown>
+  ) => {
+    const results = await Promise.allSettled(selectedCards.map(request));
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length > 0) {
+      throw new Error(
+        `${failed.length} of ${selectedCards.length} cards failed to update`
+      );
+    }
+  };
+
   const assignMutation = useMutation({
     mutationFn: async (assignee: string | null) => {
-      const results = await Promise.allSettled(
-        selectedCards.map((card) =>
-          fetch(`/api/kanban/cards/${card.id}/assign`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ assignee }),
-          })
-        )
-      );
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length > 0) {
-        throw new Error(
-          `${failed.length} of ${selectedCards.length} cards failed to update`
-        );
-      }
+      await runForEachCard((card) => assignKanbanCard(card.id, assignee));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
       setAssignPopoverOpen(false);
       toast.success(
         `Assigned ${selectedCards.length} card${selectedCards.length !== 1 ? "s" : ""}`
@@ -112,24 +109,10 @@ export function KanbanBulkEditBar({
 
   const machineMutation = useMutation({
     mutationFn: async (machine: string | null) => {
-      const results = await Promise.allSettled(
-        selectedCards.map((card) =>
-          fetch(`/api/kanban/cards/${card.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ machine }),
-          })
-        )
-      );
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length > 0) {
-        throw new Error(
-          `${failed.length} of ${selectedCards.length} cards failed to update`
-        );
-      }
+      await runForEachCard((card) => updateKanbanCard(card.id, { machine }));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: kanbanQueryKeys.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
       setMachinePopoverOpen(false);
       toast.success(
         `Set machine on ${selectedCards.length} card${selectedCards.length !== 1 ? "s" : ""}`

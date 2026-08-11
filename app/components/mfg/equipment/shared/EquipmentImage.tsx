@@ -1,5 +1,4 @@
 import { Image as ImageIcon } from "lucide-react";
-import Image from "next/image";
 import { cn } from "~/lib/utils";
 
 interface EquipmentImageProps {
@@ -47,17 +46,14 @@ export function EquipmentImage({
       )}
       onClick={onClick}
     >
-      <Image
+      <img
         src={imageUrl}
         alt={alt}
-        fill
         className={cn(
+          "absolute inset-0 size-full",
           sizeClasses[size],
           "transition-transform hover:scale-105"
         )}
-        sizes={
-          size === "thumbnail" ? "(max-width: 768px) 100vw, 33vw" : "100vw"
-        }
       />
     </div>
   );

@@ -19,7 +19,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { EquipmentStatus } from "./EquipmentStatusBadge";
-import type { ProcessRow } from "~/lib/db/types";
+import { processesQuery } from "~/lib/api";
 
 export interface EquipmentFormData {
   name: string;
@@ -57,18 +57,7 @@ export function EquipmentFormFields({
   onChange,
   errors = {},
 }: EquipmentFormFieldsProps) {
-  // Fetch processes from API
-  const { data: processesData } = useQuery<{ processes: ProcessRow[] }>({
-    queryKey: ["processes"],
-    queryFn: async () => {
-      const response = await fetch("/api/processes");
-      if (!response.ok) throw new Error("Failed to fetch processes");
-      return response.json();
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-
-  const processes = processesData?.processes || [];
+  const { data: processes = [] } = useQuery(processesQuery());
   const [processesOpen, setProcessesOpen] = useState(false);
 
   const handleProcessToggle = (processId: string) => {

@@ -2,20 +2,14 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { User } from "lucide-react";
 import { UserRow } from "~/lib/db/types";
+import { usersQuery } from "~/lib/api";
 
 type UsersListProps = {
   onSelect: (user: UserRow | null) => void;
 };
 
 export function UsersList({ onSelect }: UsersListProps) {
-  const { data: users } = useQuery<UserRow[]>({
-    queryKey: ["users"],
-    queryFn: async () => {
-      const response = await fetch("/api/users");
-      if (!response.ok) throw new Error("Failed to fetch users");
-      return response.json();
-    },
-  });
+  const { data: users } = useQuery(usersQuery());
 
   const sortedUsers = useMemo(() => {
     if (!users) return [];

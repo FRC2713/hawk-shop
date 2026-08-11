@@ -1,4 +1,4 @@
-import "server-only";
+import "@tanstack/react-start/server-only";
 
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -12,15 +12,11 @@ import { DEFAULT_KANBAN_COLUMNS, SEED_PROCESSES } from "./schema";
  * Where the SQLite file and uploaded images live. A self-hosted deployment
  * mounts a single volume at DATA_DIR and everything durable sits under it.
  */
-export const DATA_DIR = path.resolve(
-  /* turbopackIgnore: true */ process.env.DATA_DIR || "./data"
-);
+export const DATA_DIR = path.resolve(process.env.DATA_DIR || "./data");
 export const DATABASE_PATH =
   process.env.DATABASE_PATH || path.join(DATA_DIR, "hawk-shop.db");
 
-const MIGRATIONS_DIR = path.resolve(
-  /* turbopackIgnore: true */ process.env.MIGRATIONS_DIR || "./drizzle"
-);
+const MIGRATIONS_DIR = path.resolve(process.env.MIGRATIONS_DIR || "./drizzle");
 
 function openDatabase() {
   mkdirSync(path.dirname(DATABASE_PATH), { recursive: true });
@@ -38,7 +34,7 @@ function openDatabase() {
 
   const db = drizzle(sqlite, { schema });
 
-  if (existsSync(/* turbopackIgnore: true */ MIGRATIONS_DIR)) {
+  if (existsSync(MIGRATIONS_DIR)) {
     migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   } else {
     console.warn(
@@ -78,7 +74,7 @@ function seed(db: ReturnType<typeof drizzle<typeof schema>>) {
 }
 
 /**
- * Next dev-mode module reloads would otherwise open a new SQLite handle on every
+ * Dev-mode module reloads would otherwise open a new SQLite handle on every
  * edit, so the connection is parked on globalThis.
  */
 const globalForDb = globalThis as unknown as {

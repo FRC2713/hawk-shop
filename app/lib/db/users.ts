@@ -1,4 +1,4 @@
-import "server-only";
+import "@tanstack/react-start/server-only";
 
 /**
  * User records mirrored from Onshape at sign-in.

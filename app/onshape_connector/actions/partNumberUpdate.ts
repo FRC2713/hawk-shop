@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import {
   createOnshapeApiClientFromRequest,
   getWmvepMetadata,
@@ -13,14 +12,12 @@ import type { ActionResponse } from "../utils/types";
  */
 export async function handlePartNumberUpdate(
   formData: FormData,
-  request: NextRequest
+  request: Request
 ): Promise<ActionResponse> {
   console.log("[ACTION] Starting part number update");
 
   // Check Onshape authentication (required)
-  const onshapeAuthenticated = await isOnshapeAuthenticatedFromRequest(
-    request as unknown as Request
-  );
+  const onshapeAuthenticated = isOnshapeAuthenticatedFromRequest(request);
   if (!onshapeAuthenticated) {
     console.error("[ACTION] Not authenticated with Onshape");
     return { success: false, error: "Not authenticated with Onshape" };
@@ -57,9 +54,7 @@ export async function handlePartNumberUpdate(
       };
     }
 
-    const client = await createOnshapeApiClientFromRequest(
-      request as unknown as Request
-    );
+    const client = await createOnshapeApiClientFromRequest(request);
     console.log("[ACTION] Client created successfully");
 
     // First, get the metadata to find the propertyId for "Part number"

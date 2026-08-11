@@ -1,5 +1,4 @@
 import { useState } from "react";
-import Image from "next/image";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 interface PartCardThumbnailProps {
@@ -31,13 +30,11 @@ export function PartCardThumbnail({ part }: PartCardThumbnailProps) {
   return (
     <div className="px-6 pb-4">
       <div className="relative w-full" style={{ height: "300px" }}>
-        <Image
+        <img
           src={thumbnailHref}
           alt={`Thumbnail for ${part.name || part.partId || part.id || "part"}`}
-          fill
-          className="object-contain"
+          className="absolute inset-0 size-full object-contain"
           onError={() => setThumbnailError(true)}
-          unoptimized
         />
       </div>
     </div>

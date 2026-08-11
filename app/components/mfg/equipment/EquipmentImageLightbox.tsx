@@ -1,8 +1,5 @@
-"use client";
-
 import * as React from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import Image from "next/image";
 import { useEffect } from "react";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent } from "~/components/ui/dialog";
@@ -92,13 +89,11 @@ export function EquipmentImageLightbox({
           )}
 
           <div className="relative h-[80vh] w-full">
-            <Image
+            <img
               src={images[currentIndex]}
               alt={`Equipment image ${currentIndex + 1}`}
-              fill
-              className="object-contain"
-              sizes="100vw"
-              priority
+              className="absolute inset-0 size-full object-contain"
+              fetchPriority="high"
             />
           </div>
 

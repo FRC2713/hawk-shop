@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -22,7 +20,7 @@ import {
 } from "~/components/ui/popover";
 import { Calendar } from "~/components/ui/calendar";
 import { cn } from "~/lib/utils";
-import type { ProcessRow } from "~/lib/db/types";
+import { processesQuery } from "~/lib/api";
 
 export interface AddCardFormData {
   processIds: string[];
@@ -59,17 +57,7 @@ export function AddCardDialog({
   }>({});
 
   // Fetch processes
-  const { data: processesData } = useQuery<{ processes: ProcessRow[] }>({
-    queryKey: ["processes"],
-    queryFn: async () => {
-      const response = await fetch("/api/processes");
-      if (!response.ok) throw new Error("Failed to fetch processes");
-      return response.json();
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-
-  const processes = processesData?.processes || [];
+  const { data: processes = [] } = useQuery(processesQuery());
 
   const selectedProcesses = processes.filter((p) =>
     formData.processIds.includes(p.id)

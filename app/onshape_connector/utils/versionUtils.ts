@@ -1,4 +1,4 @@
-import type { PartsPageSearchParams } from "../page";
+import type { PartsPageSearchParams } from "./types";
 
 /**
  * Extract version ID from query parameters

@@ -15,7 +15,7 @@ import type { Client, Config } from "./generated/client/types.gen";
 import type { Auth } from "./generated/core/auth.gen";
 
 /**
- * Create a configured Onshape API client for use in server-side code (Next.js)
+ * Create a configured Onshape API client for use in server-side code
  * This automatically handles token refresh and authentication
  *
  * NOTE: This function will attempt to refresh tokens, so it should only be called
