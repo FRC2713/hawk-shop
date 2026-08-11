@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+
+# Build outputs
+build
+dist
+.next
+
+# Generated files
+app/lib/onshapeApi/generated
+drizzle
+
+# Cache
+.cache
+
+# Local data (sqlite + uploads)
+data
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Misc
+.DS_Store
+coverage
+

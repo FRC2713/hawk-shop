@@ -1,0 +1,42 @@
+services:
+  hawk-shop:
+    build: .
+    # Or pull a prebuilt image instead of building:
+    # image: ghcr.io/frc2713/hawk-shop:latest
+    container_name: hawk-shop
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # --- Onshape OAuth (required) ---------------------------------------
+      ONSHAPE_CLIENT_ID: ${ONSHAPE_CLIENT_ID}
+      ONSHAPE_CLIENT_SECRET: ${ONSHAPE_CLIENT_SECRET}
+      ONSHAPE_REDIRECT_URI: ${ONSHAPE_REDIRECT_URI}
+      ONSHAPE_SCOPE: ${ONSHAPE_SCOPE:-OAuth2Read OAuth2ReadPII OAuth2Write}
+
+      # --- Deployment ------------------------------------------------------
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      # Set to true only when serving over HTTPS and embedding in Onshape's
+      # iframe; it switches the auth cookies to SameSite=None.
+      ONSHAPE_IFRAME_EMBED: ${ONSHAPE_IFRAME_EMBED:-false}
+
+      # --- Storage ---------------------------------------------------------
+      # The SQLite file and uploaded images both live under here.
+      DATA_DIR: /data
+    volumes:
+      - hawk-shop-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  hawk-shop-data:
