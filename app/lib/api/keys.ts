@@ -18,6 +18,7 @@ type OnshapePartsScope = {
  */
 export const queryKeys = {
   slack: {
+    status: () => ["slack-status"] as const,
     settings: () => ["slack-settings"] as const,
     channels: () => ["slack-channels"] as const,
   },
