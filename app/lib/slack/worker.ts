@@ -9,6 +9,7 @@ import {
   slackCooldown,
 } from "./client";
 import { postSlackMessage } from "./messages";
+import { slackAppBaseUrl } from "./appUrl";
 import {
   cleanupSlackPending,
   getPendingSlackNotifications,
@@ -31,18 +32,8 @@ const escape = (value: string, limit = 400) => {
   return text.length > limit ? text.slice(0, limit) + "…" : text;
 };
 function cardLink(id: string) {
-  try {
-    const base = new URL(process.env.APP_URL || "");
-    if (
-      !["http:", "https:"].includes(base.protocol) ||
-      base.username ||
-      base.password
-    )
-      throw Error();
-    return new URL(`/kanban?cardId=${encodeURIComponent(id)}`, base).href;
-  } catch {
-    throw new SlackError("app_url_invalid");
-  }
+  return new URL(`/kanban?cardId=${encodeURIComponent(id)}`, slackAppBaseUrl())
+    .href;
 }
 async function mention(row: PendingSlackNotification, workspace: string) {
   if (!row.submitter_id || !row.submitter_email)
@@ -74,12 +65,6 @@ async function mention(row: PendingSlackNotification, workspace: string) {
       throw error;
   }
   return escape(row.submitter_name);
-}
-export async function formatSlackNotification(
-  row: PendingSlackNotification,
-  workspace: string
-) {
-  return `${await mention(row, workspace)}: ${escape(row.old_status)} → ${escape(row.new_status)}\n${partEntry(row)}`;
 }
 function partEntry(row: PendingSlackNotification) {
   return `${escape(row.title, 1500)} · Quantity to make: ${row.quantity_to_make ?? "Not specified"}\n<${cardLink(row.card_id)}|Open card in Hawk Shop>`;
