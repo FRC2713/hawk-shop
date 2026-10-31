@@ -7,13 +7,15 @@
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc",
+    "test": "node --import tsx --test tests/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "generate:onshape-client": "npx @hey-api/openapi-ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:runtime": "HAWK_SHOP_VERIFY_BUILT_SERVER=1 node --import tsx --test tests/slack-runtime.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

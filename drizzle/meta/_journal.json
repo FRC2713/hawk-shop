@@ -8,6 +8,34 @@
       "when": 1786410802801,
       "tag": "0000_nosy_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793470455798,
+      "tag": "0001_military_earthquake",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793470702717,
+      "tag": "0002_minor_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793488947842,
+      "tag": "0003_nebulous_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793489596934,
+      "tag": "0004_fearless_violations",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,10 @@ services:
       # iframe; it switches the auth cookies to SameSite=None.
       ONSHAPE_IFRAME_EMBED: ${ONSHAPE_IFRAME_EMBED:-false}
 
+      # --- Slack outbound integration (optional) --------------------------
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_WORKSPACE_ID: ${SLACK_WORKSPACE_ID:-}
+
       # --- Storage ---------------------------------------------------------
       # The SQLite file and uploaded images both live under here.
       DATA_DIR: /data

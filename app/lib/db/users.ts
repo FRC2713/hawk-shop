@@ -23,7 +23,8 @@ import type { UserRow } from "./types";
 export async function upsertUser(
   onshapeUserId: string,
   firstName: string | null,
-  lastName?: string | null
+  lastName?: string | null,
+  email: string | null = null
 ): Promise<UserRow | null> {
   try {
     // Construct name as "FirstName L" where L is the first initial of last name
@@ -44,12 +45,13 @@ export async function upsertUser(
       .values({
         onshape_user_id: onshapeUserId,
         name,
+        email,
         created_at: now,
         updated_at: now,
       })
       .onConflictDoUpdate({
         target: users.onshape_user_id,
-        set: { name, updated_at: now },
+        set: { name, email, updated_at: now },
       })
       .returning();
 

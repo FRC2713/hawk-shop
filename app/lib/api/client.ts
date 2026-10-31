@@ -91,7 +91,7 @@ export async function apiFetch<T>(
  */
 let signInRedirectStarted = false;
 
-function redirectToSignIn(): void {
+export function redirectToSignIn(): void {
   if (typeof window === "undefined" || signInRedirectStarted) return;
   signInRedirectStarted = true;
 

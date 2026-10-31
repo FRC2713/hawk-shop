@@ -1,5 +1,7 @@
 import "@tanstack/react-start/server-only";
 
+import { captureSlackTransition } from "~/lib/slack/queue";
+import type { SessionActor } from "~/lib/sessionActor";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "~/lib/db/client";
 import {
@@ -115,7 +117,6 @@ export interface CreateCardInput {
   quantityPerRobot?: number;
   quantityToMake?: number;
   id?: string;
-  createdBy?: string;
   onshapeDocumentId?: string;
   onshapeInstanceType?: string;
   onshapeInstanceId?: string;
@@ -128,7 +129,8 @@ export interface CreateCardInput {
  * Create a new Kanban card
  */
 export async function createCard(
-  cardData: CreateCardInput
+  cardData: CreateCardInput,
+  actor: SessionActor
 ): Promise<KanbanCardRow> {
   // Get column ID for position 0
   const columnId = await getColumnIdByPosition(0);
@@ -155,7 +157,7 @@ export async function createCard(
         machine: cardData.machine ?? null,
         due_date: cardData.dueDate ?? null,
         content: cardData.content ?? null,
-        created_by: cardData.createdBy ?? null,
+        created_by: actor.onshape_user_id,
         quantity_per_robot: cardData.quantityPerRobot ?? null,
         quantity_to_make: cardData.quantityToMake ?? null,
         onshape_document_id: cardData.onshapeDocumentId ?? null,
@@ -188,39 +190,47 @@ export async function createCard(
  */
 export async function updateCard(
   cardId: string,
-  updates: Partial<Omit<KanbanCardRow, "id" | "date_created">>
+  updates: Partial<Omit<KanbanCardRow, "id" | "date_created" | "created_by">>,
+  actor: SessionActor
 ): Promise<KanbanCardRow> {
   // If column_id is being updated, also update date_updated to track when the
   // card entered the column — but only when the column actually changes.
-  const finalUpdates = { ...updates };
-  if (updates.column_id !== undefined) {
-    const [currentCard] = await db
-      .select({ column_id: kanbanCards.column_id })
+  if (!actor.onshape_user_id) throw new Error("Verified actor required");
+  const mutableFields = new Set([
+    "column_id",
+    "title",
+    "image_url",
+    "assignee",
+    "machine",
+    "due_date",
+    "content",
+    "quantity_per_robot",
+    "quantity_to_make",
+  ]);
+  const finalUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([key]) => mutableFields.has(key))
+  ) as typeof updates;
+  const card = db.transaction((tx) => {
+    const previous = tx
+      .select()
       .from(kanbanCards)
       .where(eq(kanbanCards.id, cardId))
-      .limit(1);
-
-    if (currentCard && currentCard.column_id !== updates.column_id) {
-      finalUpdates.date_updated = new Date().toISOString();
-    }
-  }
-
-  let card: KanbanCardRow | undefined;
-  try {
-    [card] = await db
+      .get();
+    if (!previous) throw new Error("Card not found");
+    if (Object.keys(finalUpdates).length === 0) return previous;
+    const changed =
+      finalUpdates.column_id !== undefined &&
+      finalUpdates.column_id !== previous.column_id;
+    if (changed) finalUpdates.date_updated = new Date().toISOString();
+    const updated = tx
       .update(kanbanCards)
       .set(finalUpdates)
       .where(eq(kanbanCards.id, cardId))
-      .returning();
-  } catch (error) {
-    console.error("[KANBAN CARDS] Error updating card:", error);
-    const message = error instanceof Error ? error.message : "unknown error";
-    throw new Error(`Failed to update card: ${message}`);
-  }
-
-  if (!card) {
-    throw new Error("Card not found");
-  }
+      .returning()
+      .get();
+    if (changed) captureSlackTransition(tx, previous, updated, actor);
+    return updated;
+  });
 
   publishKanbanEvent({ table: "kanban_cards", action: "update", id: cardId });
 
