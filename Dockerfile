@@ -29,6 +29,9 @@ RUN npm run build
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
+ARG APP_REVISION=development
+ENV APP_REVISION=${APP_REVISION}
+LABEL org.opencontainers.image.revision=${APP_REVISION}
 ENV NODE_ENV=production
 # Nitro's node-server preset reads these; HOST is the bind address.
 ENV PORT=3000
@@ -49,6 +52,9 @@ COPY --from=builder --chown=hawkshop:nodejs /app/.output ./.output
 COPY --from=builder --chown=hawkshop:nodejs /app/drizzle ./drizzle
 
 RUN mkdir -p /data/uploads && chown -R hawkshop:nodejs /data
+
+COPY .hawk/app.json ./.hawk/app.json
+COPY scripts/deploy-check.mjs ./scripts/deploy-check.mjs
 
 USER hawkshop
 VOLUME ["/data"]
