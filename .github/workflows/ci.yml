@@ -19,6 +19,7 @@ jobs:
       # the committed lockfile out of sync. The lockfile is npm 11's.
       - run: npm install -g npm@11
       - run: npm ci
+      - run: npm test
       - run: npm run typecheck
       - run: npm run format:check
       - run: npm run build
