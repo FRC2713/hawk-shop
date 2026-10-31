@@ -8,6 +8,7 @@ import {
   getOAuthState,
   setOnshapeTokens,
 } from "~/lib/onshapeAuth";
+import { establishSessionActor } from "~/lib/sessionActor";
 import { upsertUser } from "~/lib/db/users";
 import { resolveAppOrigin } from "~/lib/appOrigin";
 import { redirectResponse } from "~/lib/httpRedirect";
@@ -165,6 +166,7 @@ export const Route = createFileRoute("/auth/onshape/callback")({
             tokenResponse.expires_in
           );
 
+          await clearOnshapeTokens();
           // Store tokens in cookies
           const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
           await setOnshapeTokens(
@@ -219,9 +221,23 @@ export const Route = createFileRoute("/auth/onshape/callback")({
               const savedUser = await upsertUser(
                 userData.id,
                 userData.firstName || null,
-                userData.lastName || null
+                userData.lastName || null,
+                userData.email?.trim() || null
               );
 
+              if (!userData.id || !savedUser)
+                throw new Error("Could not save verified identity");
+              await establishSessionActor(
+                {
+                  accessToken: tokenResponse.access_token,
+                  refreshToken: tokenResponse.refresh_token,
+                  expiresAt,
+                },
+                {
+                  onshape_user_id: savedUser.onshape_user_id,
+                  email: savedUser.email,
+                }
+              );
               if (savedUser) {
                 console.log(
                   "[AUTH CALLBACK] User saved to database successfully"

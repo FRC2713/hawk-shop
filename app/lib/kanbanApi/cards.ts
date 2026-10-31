@@ -1,5 +1,6 @@
 import "@tanstack/react-start/server-only";
 
+import type { SessionActor } from "~/lib/sessionActor";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "~/lib/db/client";
 import {
@@ -115,7 +116,6 @@ export interface CreateCardInput {
   quantityPerRobot?: number;
   quantityToMake?: number;
   id?: string;
-  createdBy?: string;
   onshapeDocumentId?: string;
   onshapeInstanceType?: string;
   onshapeInstanceId?: string;
@@ -128,7 +128,8 @@ export interface CreateCardInput {
  * Create a new Kanban card
  */
 export async function createCard(
-  cardData: CreateCardInput
+  cardData: CreateCardInput,
+  actor: SessionActor
 ): Promise<KanbanCardRow> {
   // Get column ID for position 0
   const columnId = await getColumnIdByPosition(0);
@@ -155,7 +156,7 @@ export async function createCard(
         machine: cardData.machine ?? null,
         due_date: cardData.dueDate ?? null,
         content: cardData.content ?? null,
-        created_by: cardData.createdBy ?? null,
+        created_by: actor.onshape_user_id,
         quantity_per_robot: cardData.quantityPerRobot ?? null,
         quantity_to_make: cardData.quantityToMake ?? null,
         onshape_document_id: cardData.onshapeDocumentId ?? null,
@@ -188,11 +189,35 @@ export async function createCard(
  */
 export async function updateCard(
   cardId: string,
-  updates: Partial<Omit<KanbanCardRow, "id" | "date_created">>
+  updates: Partial<Omit<KanbanCardRow, "id" | "date_created" | "created_by">>,
+  actor: SessionActor
 ): Promise<KanbanCardRow> {
   // If column_id is being updated, also update date_updated to track when the
   // card entered the column — but only when the column actually changes.
-  const finalUpdates = { ...updates };
+  if (!actor.onshape_user_id) throw new Error("Verified actor required");
+  const mutableFields = new Set([
+    "column_id",
+    "title",
+    "image_url",
+    "assignee",
+    "machine",
+    "due_date",
+    "content",
+    "quantity_per_robot",
+    "quantity_to_make",
+  ]);
+  const finalUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([key]) => mutableFields.has(key))
+  ) as typeof updates;
+  if (Object.keys(finalUpdates).length === 0) {
+    const current = db
+      .select()
+      .from(kanbanCards)
+      .where(eq(kanbanCards.id, cardId))
+      .get();
+    if (!current) throw new Error("Card not found");
+    return current;
+  }
   if (updates.column_id !== undefined) {
     const [currentCard] = await db
       .select({ column_id: kanbanCards.column_id })
