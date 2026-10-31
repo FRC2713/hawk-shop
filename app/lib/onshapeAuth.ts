@@ -85,6 +85,12 @@ export async function setOnshapeTokens(
   refreshToken: string,
   expiresAt: number
 ): Promise<void> {
+  const { renewSessionActor } = await import("~/lib/sessionActor");
+  await renewSessionActor(await getOnshapeTokens(), {
+    accessToken,
+    refreshToken,
+    expiresAt,
+  });
   const options = getCookieOptions();
 
   setCookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, options);
@@ -97,6 +103,8 @@ export async function setOnshapeTokens(
  * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
  */
 export async function clearOnshapeTokens(): Promise<void> {
+  const { revokeSessionActor } = await import("~/lib/sessionActor");
+  await revokeSessionActor(await getOnshapeTokens());
   deleteCookie(COOKIE_NAMES.ACCESS_TOKEN);
   deleteCookie(COOKIE_NAMES.REFRESH_TOKEN);
   deleteCookie(COOKIE_NAMES.EXPIRES_AT);

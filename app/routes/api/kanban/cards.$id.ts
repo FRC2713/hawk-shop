@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
 import {
   deleteCard,
@@ -41,15 +42,15 @@ export const Route = createFileRoute("/api/kanban/cards/$id")({
       },
 
       PATCH: async ({ request, params }) => {
-        const unauthorized = await requireAuth();
-        if (unauthorized) return unauthorized;
+        const actor = await requireSessionActor();
+        if (actor instanceof Response) return actor;
 
         const { id } = params;
         try {
           const body = await request.json();
           const { processIds, ...updates } = body;
 
-          const updatedCard = await updateCard(id, updates);
+          const updatedCard = await updateCard(id, updates, actor);
 
           // Update processes if provided
           if (processIds !== undefined) {

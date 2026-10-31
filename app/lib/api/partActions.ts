@@ -1,3 +1,4 @@
+import { redirectToSignIn } from "./client";
 import type { ActionResponse } from "~/onshape_connector/utils/types";
 
 /**
@@ -19,6 +20,7 @@ async function postAction(body: FormData): Promise<ActionResponse> {
     body,
   });
 
+  if (response.status === 401) redirectToSignIn();
   const contentType = response.headers.get("content-type");
   if (!contentType?.includes("application/json")) {
     throw new Error(

@@ -1,5 +1,5 @@
 import {
-  createOnshapeApiClientFromRequest,
+  createOnshapeApiClientReadOnly,
   getWmvepMetadata,
   updateWvepMetadata,
 } from "~/lib/onshapeApi/generated-wrapper";
@@ -54,7 +54,7 @@ export async function handlePartNumberUpdate(
       };
     }
 
-    const client = await createOnshapeApiClientFromRequest(request);
+    const client = await createOnshapeApiClientReadOnly();
     console.log("[ACTION] Client created successfully");
 
     // First, get the metadata to find the propertyId for "Part number"

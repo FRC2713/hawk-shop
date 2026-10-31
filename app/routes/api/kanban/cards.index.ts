@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
 import { createCard, getCards } from "~/lib/kanbanApi/cards";
 
@@ -37,8 +38,8 @@ export const Route = createFileRoute("/api/kanban/cards/")({
       },
 
       POST: async ({ request }) => {
-        const unauthorized = await requireAuth();
-        if (unauthorized) return unauthorized;
+        const actor = await requireSessionActor();
+        if (actor instanceof Response) return actor;
 
         try {
           const body = await request.json();
@@ -52,17 +53,19 @@ export const Route = createFileRoute("/api/kanban/cards/")({
           }
 
           // Create the card
-          const newCard = await createCard({
-            id: body.id,
-            title: body.title,
-            imageUrl: body.imageUrl,
-            assignee: body.assignee,
-            machine: body.machine,
-            dueDate: body.dueDate,
-            content: body.content,
-            processIds: body.processIds || [],
-            createdBy: body.createdBy,
-          });
+          const newCard = await createCard(
+            {
+              id: body.id,
+              title: body.title,
+              imageUrl: body.imageUrl,
+              assignee: body.assignee,
+              machine: body.machine,
+              dueDate: body.dueDate,
+              content: body.content,
+              processIds: body.processIds || [],
+            },
+            actor
+          );
 
           return Response.json({ card: newCard }, { status: 201 });
         } catch (error) {

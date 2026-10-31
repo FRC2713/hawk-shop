@@ -25,8 +25,19 @@ const now = () => new Date().toISOString();
 export const users = sqliteTable("users", {
   onshape_user_id: text("onshape_user_id").primaryKey(),
   name: text("name"),
+  email: text("email"),
   created_at: text("created_at").notNull().$defaultFn(now),
   updated_at: text("updated_at").notNull().$defaultFn(now).$onUpdateFn(now),
+});
+
+// Token hashes bind verified OAuth identity to the actual session, never a user cookie.
+export const oauthSessions = sqliteTable("oauth_sessions", {
+  access_hash: text("access_hash").primaryKey(),
+  refresh_hash: text("refresh_hash").notNull(),
+  onshape_user_id: text("onshape_user_id").notNull(),
+  email: text("email"),
+  expires_at: text("expires_at").notNull(),
+  refresh_expires_at: text("refresh_expires_at").notNull(),
 });
 
 export const processes = sqliteTable("processes", {
