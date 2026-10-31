@@ -14,6 +14,7 @@ import { Route as Onshape_connectorRouteImport } from './routes/onshape_connecto
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as MainIndexRouteImport } from './routes/_main.index'
 import { Route as MainEquipmentRouteImport } from './routes/_main.equipment'
+import { Route as MainSlackRouteImport } from './routes/_main.slack'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as AuthLogoutRouteImport } from './routes/auth/logout'
 import { Route as AuthStatusRouteImport } from './routes/auth/status'
@@ -29,6 +30,9 @@ import { Route as ApiOnshapeTokenRouteImport } from './routes/api/onshape/token'
 import { Route as ApiOnshapeVersionRouteImport } from './routes/api/onshape/version'
 import { Route as ApiProcessesIndexRouteImport } from './routes/api/processes.index'
 import { Route as ApiProcessesIdRouteImport } from './routes/api/processes.$id'
+import { Route as ApiSlackChannelsRouteImport } from './routes/api/slack/channels'
+import { Route as ApiSlackConfigRouteImport } from './routes/api/slack/config'
+import { Route as ApiSlackTestRouteImport } from './routes/api/slack/test'
 import { Route as ApiUsersIndexRouteImport } from './routes/api/users.index'
 import { Route as ApiUsersIdRouteImport } from './routes/api/users.$id'
 import { Route as AuthOnshapeIndexRouteImport } from './routes/auth/onshape.index'
@@ -63,6 +67,11 @@ const MainIndexRoute = MainIndexRouteImport.update({
 const MainEquipmentRoute = MainEquipmentRouteImport.update({
   id: '/equipment',
   path: '/equipment',
+  getParentRoute: () => MainRoute,
+} as any)
+const MainSlackRoute = MainSlackRouteImport.update({
+  id: '/slack',
+  path: '/slack',
   getParentRoute: () => MainRoute,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -140,6 +149,21 @@ const ApiProcessesIdRoute = ApiProcessesIdRouteImport.update({
   path: '/api/processes/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSlackChannelsRoute = ApiSlackChannelsRouteImport.update({
+  id: '/api/slack/channels',
+  path: '/api/slack/channels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSlackConfigRoute = ApiSlackConfigRouteImport.update({
+  id: '/api/slack/config',
+  path: '/api/slack/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSlackTestRoute = ApiSlackTestRouteImport.update({
+  id: '/api/slack/test',
+  path: '/api/slack/test',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUsersIndexRoute = ApiUsersIndexRouteImport.update({
   id: '/api/users/',
   path: '/api/users/',
@@ -201,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/onshape_connector': typeof Onshape_connectorRoute
   '/signin': typeof SigninRoute
   '/equipment': typeof MainEquipmentRoute
+  '/slack': typeof MainSlackRoute
   '/api/health': typeof ApiHealthRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/status': typeof AuthStatusRoute
@@ -213,6 +238,9 @@ export interface FileRoutesByFullPath {
   '/api/onshape/token': typeof ApiOnshapeTokenRoute
   '/api/onshape/version': typeof ApiOnshapeVersionRoute
   '/api/processes/$id': typeof ApiProcessesIdRoute
+  '/api/slack/channels': typeof ApiSlackChannelsRoute
+  '/api/slack/config': typeof ApiSlackConfigRoute
+  '/api/slack/test': typeof ApiSlackTestRoute
   '/api/users/$id': typeof ApiUsersIdRoute
   '/auth/onshape/callback': typeof AuthOnshapeCallbackRoute
   '/kanban/': typeof MainKanbanIndexRoute
@@ -232,6 +260,7 @@ export interface FileRoutesByTo {
   '/onshape_connector': typeof Onshape_connectorRoute
   '/signin': typeof SigninRoute
   '/equipment': typeof MainEquipmentRoute
+  '/slack': typeof MainSlackRoute
   '/api/health': typeof ApiHealthRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/status': typeof AuthStatusRoute
@@ -245,6 +274,9 @@ export interface FileRoutesByTo {
   '/api/onshape/token': typeof ApiOnshapeTokenRoute
   '/api/onshape/version': typeof ApiOnshapeVersionRoute
   '/api/processes/$id': typeof ApiProcessesIdRoute
+  '/api/slack/channels': typeof ApiSlackChannelsRoute
+  '/api/slack/config': typeof ApiSlackConfigRoute
+  '/api/slack/test': typeof ApiSlackTestRoute
   '/api/users/$id': typeof ApiUsersIdRoute
   '/auth/onshape/callback': typeof AuthOnshapeCallbackRoute
   '/kanban': typeof MainKanbanIndexRoute
@@ -266,6 +298,7 @@ export interface FileRoutesById {
   '/onshape_connector': typeof Onshape_connectorRoute
   '/signin': typeof SigninRoute
   '/_main/equipment': typeof MainEquipmentRoute
+  '/_main/slack': typeof MainSlackRoute
   '/api/health': typeof ApiHealthRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/status': typeof AuthStatusRoute
@@ -279,6 +312,9 @@ export interface FileRoutesById {
   '/api/onshape/token': typeof ApiOnshapeTokenRoute
   '/api/onshape/version': typeof ApiOnshapeVersionRoute
   '/api/processes/$id': typeof ApiProcessesIdRoute
+  '/api/slack/channels': typeof ApiSlackChannelsRoute
+  '/api/slack/config': typeof ApiSlackConfigRoute
+  '/api/slack/test': typeof ApiSlackTestRoute
   '/api/users/$id': typeof ApiUsersIdRoute
   '/auth/onshape/callback': typeof AuthOnshapeCallbackRoute
   '/_main/kanban/': typeof MainKanbanIndexRoute
@@ -301,6 +337,7 @@ export interface FileRouteTypes {
     | '/onshape_connector'
     | '/signin'
     | '/equipment'
+    | '/slack'
     | '/api/health'
     | '/auth/logout'
     | '/auth/status'
@@ -313,6 +350,9 @@ export interface FileRouteTypes {
     | '/api/onshape/token'
     | '/api/onshape/version'
     | '/api/processes/$id'
+    | '/api/slack/channels'
+    | '/api/slack/config'
+    | '/api/slack/test'
     | '/api/users/$id'
     | '/auth/onshape/callback'
     | '/kanban/'
@@ -332,6 +372,7 @@ export interface FileRouteTypes {
     | '/onshape_connector'
     | '/signin'
     | '/equipment'
+    | '/slack'
     | '/api/health'
     | '/auth/logout'
     | '/auth/status'
@@ -345,6 +386,9 @@ export interface FileRouteTypes {
     | '/api/onshape/token'
     | '/api/onshape/version'
     | '/api/processes/$id'
+    | '/api/slack/channels'
+    | '/api/slack/config'
+    | '/api/slack/test'
     | '/api/users/$id'
     | '/auth/onshape/callback'
     | '/kanban'
@@ -365,6 +409,7 @@ export interface FileRouteTypes {
     | '/onshape_connector'
     | '/signin'
     | '/_main/equipment'
+    | '/_main/slack'
     | '/api/health'
     | '/auth/logout'
     | '/auth/status'
@@ -378,6 +423,9 @@ export interface FileRouteTypes {
     | '/api/onshape/token'
     | '/api/onshape/version'
     | '/api/processes/$id'
+    | '/api/slack/channels'
+    | '/api/slack/config'
+    | '/api/slack/test'
     | '/api/users/$id'
     | '/auth/onshape/callback'
     | '/_main/kanban/'
@@ -409,6 +457,9 @@ export interface RootRouteChildren {
   ApiOnshapeTokenRoute: typeof ApiOnshapeTokenRoute
   ApiOnshapeVersionRoute: typeof ApiOnshapeVersionRoute
   ApiProcessesIdRoute: typeof ApiProcessesIdRoute
+  ApiSlackChannelsRoute: typeof ApiSlackChannelsRoute
+  ApiSlackConfigRoute: typeof ApiSlackConfigRoute
+  ApiSlackTestRoute: typeof ApiSlackTestRoute
   ApiUsersIdRoute: typeof ApiUsersIdRoute
   AuthOnshapeCallbackRoute: typeof AuthOnshapeCallbackRoute
   ApiEquipmentIndexRoute: typeof ApiEquipmentIndexRoute
@@ -457,6 +508,13 @@ declare module '@tanstack/react-router' {
       path: '/equipment'
       fullPath: '/equipment'
       preLoaderRoute: typeof MainEquipmentRouteImport
+      parentRoute: typeof MainRoute
+    }
+    '/_main/slack': {
+      id: '/_main/slack'
+      path: '/slack'
+      fullPath: '/slack'
+      preLoaderRoute: typeof MainSlackRouteImport
       parentRoute: typeof MainRoute
     }
     '/api/health': {
@@ -564,6 +622,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiProcessesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/slack/channels': {
+      id: '/api/slack/channels'
+      path: '/api/slack/channels'
+      fullPath: '/api/slack/channels'
+      preLoaderRoute: typeof ApiSlackChannelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/slack/config': {
+      id: '/api/slack/config'
+      path: '/api/slack/config'
+      fullPath: '/api/slack/config'
+      preLoaderRoute: typeof ApiSlackConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/slack/test': {
+      id: '/api/slack/test'
+      path: '/api/slack/test'
+      fullPath: '/api/slack/test'
+      preLoaderRoute: typeof ApiSlackTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/users/': {
       id: '/api/users/'
       path: '/api/users'
@@ -646,6 +725,7 @@ declare module '@tanstack/react-router' {
 
 interface MainRouteChildren {
   MainEquipmentRoute: typeof MainEquipmentRoute
+  MainSlackRoute: typeof MainSlackRoute
   MainIndexRoute: typeof MainIndexRoute
   MainKanbanDoneRoute: typeof MainKanbanDoneRoute
   MainKanbanIndexRoute: typeof MainKanbanIndexRoute
@@ -653,6 +733,7 @@ interface MainRouteChildren {
 
 const MainRouteChildren: MainRouteChildren = {
   MainEquipmentRoute: MainEquipmentRoute,
+  MainSlackRoute: MainSlackRoute,
   MainIndexRoute: MainIndexRoute,
   MainKanbanDoneRoute: MainKanbanDoneRoute,
   MainKanbanIndexRoute: MainKanbanIndexRoute,
@@ -698,6 +779,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOnshapeTokenRoute: ApiOnshapeTokenRoute,
   ApiOnshapeVersionRoute: ApiOnshapeVersionRoute,
   ApiProcessesIdRoute: ApiProcessesIdRoute,
+  ApiSlackChannelsRoute: ApiSlackChannelsRoute,
+  ApiSlackConfigRoute: ApiSlackConfigRoute,
+  ApiSlackTestRoute: ApiSlackTestRoute,
   ApiUsersIdRoute: ApiUsersIdRoute,
   AuthOnshapeCallbackRoute: AuthOnshapeCallbackRoute,
   ApiEquipmentIndexRoute: ApiEquipmentIndexRoute,

@@ -63,3 +63,7 @@ The current Onshape user-ID cookie is unsigned and explicitly is not a security 
 3. #30: Deliver reliable Slack status notifications. Blocked by #29.
 4. #31: Group bursts of Slack status notifications. Blocked by #30.
 5. #32: Show current Slack delivery problems to workspace administrators. Blocked by #30.
+
+## Deployment setup
+
+See [Slack setup](slack-setup.md) and the [outbound app manifest](slack-app-manifest.yaml). The `/slack` page manages durable channel selection and enabled state. The server requires a verified OAuth session actor and checks current Slack workspace authority for every settings, channel, save, and test request. `SLACK_BOT_TOKEN` and the trusted Red Hawk Robotics `SLACK_WORKSPACE_ID` stay in deployment configuration.

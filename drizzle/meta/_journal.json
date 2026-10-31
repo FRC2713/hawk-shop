@@ -15,6 +15,13 @@
       "when": 1793470455798,
       "tag": "0001_military_earthquake",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793470702717,
+      "tag": "0002_minor_the_captain",
+      "breakpoints": true
     }
   ]
 }
