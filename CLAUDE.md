@@ -10,6 +10,7 @@ npm run build          # production build -> .output/ (client + Nitro server bun
 npm run start          # run the built server: node .output/server/index.mjs
 npm run typecheck      # tsc --noEmit
 npm test               # HTTP/API and controlled transport behavior tests
+npm run test:runtime   # built production startup + HTTP smoke, after npm run build
 npm run format         # prettier --write . (prettier-plugin-tailwindcss sorts classes)
 npm run format:check
 npm run db:generate    # drizzle-kit generate — new migration from schema.ts
@@ -18,7 +19,7 @@ npm run db:studio      # drizzle studio
 npm run generate:onshape-client   # regenerate app/lib/onshapeApi/generated/ from Onshape's live OpenAPI spec
 ```
 
-Run `npm test`, `npm run typecheck`, and `npm run format:check` for verification. Tests use the built-in Node test runner with tsx, isolated SQLite databases, and controlled external transports. Do not send real Slack messages from tests. Run `npm run build` when changing routes, server imports, or runtime startup.
+Run `npm test`, `npm run typecheck`, and `npm run format:check` for verification. Tests use the built-in Node test runner with tsx, isolated SQLite databases, and controlled external transports. Do not send real Slack messages from tests. Run `npm run build` and then `npm run test:runtime` when changing routes, server imports, or runtime startup; the runtime check verifies pending delivery before incoming traffic and then serves a real health request.
 
 ## Architecture
 
