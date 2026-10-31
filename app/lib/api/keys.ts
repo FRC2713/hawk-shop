@@ -17,6 +17,10 @@ type OnshapePartsScope = {
  * the `useKanbanRealtime` subscriber keep matching.
  */
 export const queryKeys = {
+  slack: {
+    settings: () => ["slack-settings"] as const,
+    channels: () => ["slack-channels"] as const,
+  },
   equipment: {
     all: () => ["equipment"] as const,
   },

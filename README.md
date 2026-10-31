@@ -117,3 +117,7 @@ npm run db:generate      # writes drizzle/NNNN_*.sql
 
 Commit the generated SQL. Migrations are applied automatically the next time the
 app boots, so a `docker compose up` after an upgrade is all a deployment needs.
+
+## Slack integration
+
+Optional outbound channel notifications use one workspace bot. See [Slack setup](docs/slack-setup.md) for the app manifest, server environment variables, and administrator access. The user menu links to Slack integration settings.

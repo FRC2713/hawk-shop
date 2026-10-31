@@ -214,3 +214,12 @@ export const SEED_PROCESSES = [
 ];
 
 export { DEFAULT_KANBAN_COLUMNS } from "~/lib/kanbanApi/columnTypes";
+
+export const slackConfig = sqliteTable("slack_config", {
+  id: text("id").primaryKey(),
+  channel_id: text("channel_id"),
+  channel_name: text("channel_name"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+  generation: integer("generation").notNull().default(0),
+  updated_at: text("updated_at").notNull().$defaultFn(now),
+});
