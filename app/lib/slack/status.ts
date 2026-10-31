@@ -1,5 +1,6 @@
 import "@tanstack/react-start/server-only";
 import { SlackError } from "./client";
+import { slackAppBaseUrl } from "./appUrl";
 import { validateSlackChannel } from "./channels";
 import { cleanupSlackPending, getPendingSlackNotifications } from "./queue";
 import { getSlackSettings } from "./settings";
@@ -61,13 +62,7 @@ export async function getSlackStatus(): Promise<SlackStatus> {
   }
   if (!currentIssue && settings.enabled) {
     try {
-      const url = new URL(process.env.APP_URL || "");
-      if (
-        !["http:", "https:"].includes(url.protocol) ||
-        url.username ||
-        url.password
-      )
-        throw Error();
+      slackAppBaseUrl();
     } catch {
       currentIssue = issue("app_url_invalid");
     }
