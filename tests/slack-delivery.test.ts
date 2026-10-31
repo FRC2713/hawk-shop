@@ -91,7 +91,7 @@ test("a trusted other person moving a card delivers the transition snapshot with
     actor: "alice",
   });
   assert.equal(posts.length, 0);
-  now = Date.now() + 100;
+  now = Date.now() + 10100;
   const { runSlackDelivery } = await import("../app/lib/slack/worker");
   await runSlackDelivery({ now: () => now });
   assert.equal(posts.length, 1);
@@ -164,7 +164,7 @@ test("startup drains existing pending work without an incoming request", async (
         "--input-type=module",
         "-e",
         `
-      Date.now=()=>${now + 100};
+      Date.now=()=>${now + 10100};
       globalThis.fetch=async(input,init)=>{
         const method=new URL(String(input)).pathname.split('/').at(-1);
         const body=JSON.parse(init.body);
@@ -199,6 +199,7 @@ test("untrusted long part and status text cannot truncate the card link or creat
     await release("long", owner, "<@UEVERYONE>" + "x".repeat(8000));
     await move("long", { column_id: "review" });
     const { runSlackDelivery } = await import("../app/lib/slack/worker");
+    now += 10000;
     await runSlackDelivery();
     const text = String(posts.at(-1)?.text);
     assert.ok(text.length < 4000, `message was ${text.length} characters`);
@@ -219,7 +220,7 @@ async function atHour(hour: number, action: () => Promise<void>) {
     Date.now = originalNow;
   }
 }
-async function tick(seconds = 2) {
+async function tick(seconds = 10) {
   now += seconds * 1000;
   const { runSlackDelivery } = await import("../app/lib/slack/worker");
   await runSlackDelivery({ now: () => now });
@@ -514,6 +515,7 @@ test("a single pending record is never sent by concurrent worker calls", async (
     await move("concurrent", { column_id: "done" });
     const start = posts.length;
     const { runSlackDelivery } = await import("../app/lib/slack/worker");
+    now += 10000;
     await Promise.all([
       runSlackDelivery(),
       runSlackDelivery(),
@@ -582,4 +584,251 @@ test("Retry-After beyond the delivery window expires the notification instead of
     assert.equal(posts.length, start);
     await tick(2 * 3600);
     assert.equal(posts.length, start);
+  }));
+
+test("bulk moves from separate sessions share a bounded window and mention the submitter once", async () =>
+  atHour(50, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    const otherBrowser = await signIn("carol@example.com", "carol");
+    transport();
+    await save();
+    await release("bulk-a", owner, "Left plate");
+    await release("bulk-b", owner, "Right plate");
+    await move("bulk-a", { column_id: "review", quantity_to_make: 3 });
+    const start = posts.length;
+    await tick(9);
+    assert.equal(posts.length, start, "collect updates for ten seconds");
+    await move(
+      "bulk-b",
+      { column_id: "review", quantity_to_make: 3 },
+      otherBrowser
+    );
+    await tick(1);
+    assert.equal(
+      posts.length,
+      start + 1,
+      "later arrivals must not reset the window"
+    );
+    const text = String(posts.at(-1)?.text);
+    assert.equal(text.match(/<@UALICE>/g)?.length, 1);
+    assert.match(text, /Left plate · Quantity to make: 3/);
+    assert.match(text, /Right plate · Quantity to make: 3/);
+    assert.match(text, /cardId=bulk-a/);
+    assert.match(text, /cardId=bulk-b/);
+  }));
+
+test("renaming columns inside a collection window preserves both label snapshots", async () =>
+  atHour(51, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const { Route: columns } =
+      await import("../app/routes/api/kanban/config.index");
+    const setLabels = async (label: string) => {
+      const response = await endpoint(columns, "PUT")(
+        jsonRequest("/api/kanban/config", "PUT", cookie, {
+          columns: [
+            { id: "backlog", title: "Queued", position: 0 },
+            { id: "review", title: label, position: 1 },
+          ],
+        }),
+        {}
+      );
+      assert.equal(response.status, 200);
+    };
+    await setLabels("Inspection");
+    await release("label-a", owner, "Before rename");
+    await release("label-b", owner, "After rename");
+    await move("label-a", { column_id: "review" });
+    await setLabels("Quality review");
+    await move("label-b", { column_id: "review" });
+    const start = posts.length;
+    await tick();
+    await tick();
+    const sent = posts.slice(start).map((post) => String(post.text));
+    assert.equal(sent.length, 2);
+    assert.match(sent[0], /Queued → Inspection\nBefore rename/);
+    assert.match(sent[1], /Queued → Quality review\nAfter rename/);
+  }));
+
+async function restartedDelivery(at: number) {
+  const { spawnSync } = await import("node:child_process");
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "-e",
+      `
+    Date.now=()=>${at};
+    const posts=[];
+    globalThis.fetch=async(input,init)=>{
+      const method=new URL(String(input)).pathname.split('/').at(-1);
+      const body=JSON.parse(init.body);
+      if(method==='auth.test') return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
+      if(method==='users.lookupByEmail') return Response.json({ok:true,user:{id:'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
+      if(method==='chat.postMessage') { posts.push(body); return Response.json({ok:true,channel:body.channel,ts:'123'}); }
+      throw Error('unexpected');
+    };
+    const {runSlackDelivery}=await import('./app/lib/slack/worker.ts');
+    await runSlackDelivery();
+    console.log(JSON.stringify(posts));
+  `,
+    ],
+    { cwd: process.cwd(), env: process.env, encoding: "utf8" }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout.trim()) as Array<Record<string, unknown>>;
+}
+
+test("restart during collection retains the original deadline and separates known submitters", async () =>
+  atHour(52, async () => {
+    const owner = await signIn(null, "one");
+    const secondOwner = await signIn(null, "two");
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    await release("restart-a", owner, "One's part");
+    await release("restart-b", secondOwner, "Two's part");
+    await move("restart-a", { column_id: "review" });
+    await move("restart-b", { column_id: "review" });
+    assert.deepEqual(await restartedDelivery(now + 9000), []);
+    const first = await restartedDelivery(now + 10000);
+    const second = await restartedDelivery(now + 12000);
+    assert.equal(first.length, 1);
+    assert.equal(second.length, 1);
+    assert.match(String(first[0].text), /^one:.*\nOne's part/);
+    assert.match(String(second[0].text), /^two:.*\nTwo's part/);
+  }));
+
+test("repeated and backward transitions preserve per-card order across conflicting bulk groups", async () =>
+  atHour(53, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    await release("cycle-a", owner, "Cycle A");
+    await release("cycle-b", owner, "Cycle B");
+    await move("cycle-b", { column_id: "review" }, owner); // own move is silent
+    await move("cycle-a", { column_id: "review" });
+    await move("cycle-b", { column_id: "backlog" });
+    await move("cycle-a", { column_id: "backlog" });
+    await move("cycle-b", { column_id: "review" });
+    await move("cycle-a", { column_id: "review" });
+    const start = posts.length;
+    for (let i = 0; i < 6; i++) await tick();
+    const sent = posts.slice(start).map((post) => String(post.text));
+    const a = sent
+      .filter((text) => text.includes("cardId=cycle-a"))
+      .map((text) => text.split("\n")[0]);
+    const b = sent
+      .filter((text) => text.includes("cardId=cycle-b"))
+      .map((text) => text.split("\n")[0]);
+    assert.deepEqual(a, [
+      "<@UALICE>: Queued → Quality review",
+      "<@UALICE>: Quality review → Queued",
+      "<@UALICE>: Queued → Quality review",
+    ]);
+    assert.deepEqual(b, [
+      "<@UALICE>: Quality review → Queued",
+      "<@UALICE>: Queued → Quality review",
+    ]);
+  }));
+
+test("split groups retain every entry after restart and retry without resending acknowledged chunks", async () =>
+  atHour(54, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    for (let i = 0; i < 5; i++) {
+      await release(`split-${i}`, owner, `Plate ${i} ` + "x".repeat(1600));
+      await move(`split-${i}`, {
+        column_id: "review",
+        quantity_to_make: i + 1,
+      });
+    }
+    const start = posts.length;
+    await tick();
+    assert.equal(posts.length, start + 1);
+    const first = String(posts.at(-1)?.text);
+    assert.match(first, /cardId=split-0/);
+    assert.match(first, /cardId=split-1/);
+    assert.ok(!first.includes("cardId=split-2"));
+    const original = globalThis.fetch;
+    globalThis.fetch = async (input, init) =>
+      String(input).endsWith("chat.postMessage")
+        ? new Response("", { status: 429, headers: { "Retry-After": "30" } })
+        : original(input, init);
+    await tick(2);
+    assert.deepEqual(await restartedDelivery(now + 29000), []);
+    const rest = [
+      ...(await restartedDelivery(now + 30000)),
+      ...(await restartedDelivery(now + 32000)),
+      ...(await restartedDelivery(now + 34000)),
+    ];
+    const all = [first, ...rest.map((post) => String(post.text))];
+    assert.ok(all.every((text) => text.length < 4000));
+    for (let i = 0; i < 5; i++) {
+      assert.equal(
+        all.filter((text) => text.includes(`cardId=split-${i}|`)).length,
+        1,
+        `part ${i} delivered once`
+      );
+      assert.ok(
+        all.some((text) => text.includes(`Quantity to make: ${i + 1}`))
+      );
+    }
+    assert.deepEqual(await restartedDelivery(now + 36000), []);
+    transport();
+  }));
+
+test("changing channel during collection cancels that window and new changes follow the new channel", async () =>
+  atHour(55, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    await release("window-cancel", owner, "Canceled window");
+    await move("window-cancel", { column_id: "review" });
+    await tick(5);
+    await save(true, "C456");
+    const start = posts.length;
+    await tick(5);
+    assert.equal(posts.length, start);
+    await move("window-cancel", { column_id: "backlog" });
+    await tick();
+    assert.equal(posts.length, start + 1);
+    assert.equal(posts.at(-1)?.channel, "C456");
+    assert.match(String(posts.at(-1)?.text), /Quality review → Queued/);
+  }));
+
+test("formatting configuration errors back off the pending group", async () =>
+  atHour(56, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    await release("bad-url", owner);
+    await move("bad-url", { column_id: "review" });
+    const original = globalThis.fetch;
+    let checks = 0;
+    globalThis.fetch = async (input, init) => {
+      if (String(input).endsWith("auth.test")) checks++;
+      return original(input, init);
+    };
+    process.env.APP_URL = "invalid";
+    try {
+      await tick();
+      assert.equal(checks, 1);
+      await tick(1);
+      assert.equal(checks, 1, "configuration errors wait fifteen minutes");
+    } finally {
+      process.env.APP_URL = "http://localhost";
+      transport();
+      await save(false);
+    }
   }));

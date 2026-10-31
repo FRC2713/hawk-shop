@@ -227,6 +227,7 @@ export const slackConfig = sqliteTable("slack_config", {
 // Pending snapshots intentionally have no card foreign key: deletion must not
 // erase a status change that was already committed.
 export const slackPending = sqliteTable("slack_pending", {
+  delivery_group: integer("delivery_group"),
   id: integer("id").primaryKey({ autoIncrement: true }),
   card_id: text("card_id").notNull(),
   submitter_id: text("submitter_id"),

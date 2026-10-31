@@ -29,6 +29,13 @@
       "when": 1793488947842,
       "tag": "0003_nebulous_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793489596934,
+      "tag": "0004_fearless_violations",
+      "breakpoints": true
     }
   ]
 }
