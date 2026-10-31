@@ -1,3 +1,4 @@
+import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,7 +15,13 @@ import { KanbanBoardControls } from "~/components/mfg/kanban/board/KanbanBoardCo
 import { useQuery } from "@tanstack/react-query";
 import { kanbanConfigQuery, queryKeys, saveKanbanConfig } from "~/lib/api";
 
-export function MfgKanbanClient() {
+export function MfgKanbanClient({
+  cardId,
+  onCloseCard,
+}: {
+  cardId?: string;
+  onCloseCard: () => void;
+}) {
   const queryClient = useQueryClient();
   const [isEditMode, setIsEditMode] = useState(false);
   const [hideImages, setHideImages] = useState(false);
@@ -176,6 +183,7 @@ export function MfgKanbanClient() {
 
   return (
     <main className="bg-background flex h-full flex-1 flex-col overflow-hidden">
+      <CardDeepLink cardId={cardId} onClose={onCloseCard} />
       {/* Page Header */}
       <header className="bg-muted/30 relative border-b bg-linear-to-r">
         <div className="relative px-4 py-2">

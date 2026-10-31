@@ -1,5 +1,6 @@
 import "@tanstack/react-start/server-only";
 
+import { captureSlackTransition } from "~/lib/slack/queue";
 import type { SessionActor } from "~/lib/sessionActor";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "~/lib/db/client";
@@ -209,43 +210,27 @@ export async function updateCard(
   const finalUpdates = Object.fromEntries(
     Object.entries(updates).filter(([key]) => mutableFields.has(key))
   ) as typeof updates;
-  if (Object.keys(finalUpdates).length === 0) {
-    const current = db
+  const card = db.transaction((tx) => {
+    const previous = tx
       .select()
       .from(kanbanCards)
       .where(eq(kanbanCards.id, cardId))
       .get();
-    if (!current) throw new Error("Card not found");
-    return current;
-  }
-  if (updates.column_id !== undefined) {
-    const [currentCard] = await db
-      .select({ column_id: kanbanCards.column_id })
-      .from(kanbanCards)
-      .where(eq(kanbanCards.id, cardId))
-      .limit(1);
-
-    if (currentCard && currentCard.column_id !== updates.column_id) {
-      finalUpdates.date_updated = new Date().toISOString();
-    }
-  }
-
-  let card: KanbanCardRow | undefined;
-  try {
-    [card] = await db
+    if (!previous) throw new Error("Card not found");
+    if (Object.keys(finalUpdates).length === 0) return previous;
+    const changed =
+      finalUpdates.column_id !== undefined &&
+      finalUpdates.column_id !== previous.column_id;
+    if (changed) finalUpdates.date_updated = new Date().toISOString();
+    const updated = tx
       .update(kanbanCards)
       .set(finalUpdates)
       .where(eq(kanbanCards.id, cardId))
-      .returning();
-  } catch (error) {
-    console.error("[KANBAN CARDS] Error updating card:", error);
-    const message = error instanceof Error ? error.message : "unknown error";
-    throw new Error(`Failed to update card: ${message}`);
-  }
-
-  if (!card) {
-    throw new Error("Card not found");
-  }
+      .returning()
+      .get();
+    if (changed) captureSlackTransition(tx, previous, updated, actor);
+    return updated;
+  });
 
   publishKanbanEvent({ table: "kanban_cards", action: "update", id: cardId });
 

@@ -1,4 +1,25 @@
 import "@tanstack/react-start/server-only";
+import { eq } from "drizzle-orm";
+import { db } from "~/lib/db/client";
+import { slackPostGate } from "~/lib/db/schema";
+
+export function slackCooldown(id: string) {
+  return (
+    Date.parse(
+      db.select().from(slackPostGate).where(eq(slackPostGate.id, id)).get()
+        ?.next_post_at ?? ""
+    ) || 0
+  );
+}
+export function deferSlackCall(id: string, until: number) {
+  const next_post_at = new Date(
+    Math.max(slackCooldown(id), until)
+  ).toISOString();
+  db.insert(slackPostGate)
+    .values({ id, next_post_at })
+    .onConflictDoUpdate({ target: slackPostGate.id, set: { next_post_at } })
+    .run();
+}
 
 // Only stable codes leave this module. Never expose upstream bodies or exception messages.
 export class SlackError extends Error {
@@ -34,6 +55,9 @@ export async function slackCall<T>(
   timeoutMs = 10000
 ): Promise<T> {
   const { token } = slackEnvironment();
+  const remaining = slackCooldown(`method:${method}`) - Date.now();
+  if (remaining > 0)
+    throw new SlackError("ratelimited", Math.ceil(remaining / 1000));
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
   try {
@@ -49,10 +73,10 @@ export async function slackCall<T>(
     });
     if (response.status === 429) {
       const delay = Number(response.headers.get("Retry-After"));
-      throw new SlackError(
-        "ratelimited",
-        Number.isFinite(delay) && delay > 0 ? delay : 60
-      );
+      const retryAfter = Number.isFinite(delay) && delay > 0 ? delay : 60;
+      // Store the complete Retry-After, including values beyond this event's life.
+      deferSlackCall(`method:${method}`, Date.now() + retryAfter * 1000);
+      throw new SlackError("ratelimited", retryAfter);
     }
     if (!response.ok) throw new SlackError("unavailable");
     const data = await response.json();

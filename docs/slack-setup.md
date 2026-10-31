@@ -25,9 +25,21 @@ Every configuration read, channel lookup, save, and test performs a fresh server
 - **Missing scope:** update the manifest and reinstall the app to grant its listed bot permissions.
 - **Channel absent or inaccessible:** invite the bot, refresh channels, and choose an active channel. Archived channels, DMs, and group DMs are unsupported. Channel access is checked again before saving and testing. Slack posting restrictions may still prevent delivery.
 - **Verification unavailable:** check outbound HTTPS, Slack service status, workspace pin, and deployment token. The client has a 10-second deadline per request, no hidden transport retries, and channel discovery stops after 100 pages or 30 seconds. Repeated cursors fail safely.
-- **Rate limited:** wait before testing again. Test and production posts share an in-process pacing gate. Slack's full `Retry-After` delay is respected, and automatic delivery retries belong to the durable worker.
+- **Rate limited:** wait before testing again. Test and production posts share serialized posting and a SQLite-backed pacing deadline. Slack's full `Retry-After` delay survives restart, and automatic delivery retries belong to the durable worker.
 - **Save rejected by origin check:** verify `APP_URL` matches the origin used in the browser. Requests must originate from Hawk Shop, including when embedded in Onshape. Slack writes require JSON, a custom same-origin header, and the matching browser Origin. Iframe-compatible cookies do not exempt these checks.
 
 Only stable error codes and safe guidance are returned. Slack response bodies, bearer tokens, and raw network exceptions are never included in Slack API responses or logs. The setup is outbound-only; there is no manual retry action or delivery history.
 
 See Slack's [Web API](https://docs.slack.dev/apis/web-api/), [email lookup](https://docs.slack.dev/reference/methods/users.lookupByEmail/), [channel discovery](https://docs.slack.dev/reference/methods/conversations.list/), and [posting](https://docs.slack.dev/reference/methods/chat.postMessage/) documentation for permission and response details.
+
+## Automatic delivery
+
+Every real column move by someone other than the original submitter captures a durable transition snapshot in the same transaction as the card update. Initial releases, same-column moves, ordinary edits, deletions and self-moves are silent. Capture begins when enabled; enabling never replays earlier changes. A submitter's saved Onshape email is matched to an active human Slack member in the pinned workspace. Missing email or an unmatched member uses the recorded name; legacy cards without a submitter use "Unknown submitter".
+
+The single-process Nitro server starts its worker when the container starts, without waiting for board traffic. Board mutations never call Slack. Keep one server replica. The worker posts in each card's transition order and uses the captured names, statuses and quantities, including after later edits or deletion. Links open that specific card's details at `APP_URL/kanban?cardId=…` and retain the target through sign-in. Deleted cards show an unavailable message.
+
+Temporary delivery failures use exponential backoff from one second to one hour. Configuration failures wait 15 minutes between attempts. Slack method cooldowns and posting deadlines are shared with test messages and persist in SQLite. The full Slack `Retry-After` takes precedence; a deadline beyond a notification's lifetime causes expiry rather than an early send. Every pending notification expires 24 hours after its original transition. Expired work is removed on startup even when Slack credentials are absent.
+
+Delivered, expired and canceled pending records are deleted. There is no retained delivery history or manual retry action. An ambiguous network response can mean Slack accepted a post even though Hawk Shop could not confirm it, so automatic retry can occasionally produce a duplicate. External delivery is not exactly once.
+
+Verification uses controlled transports only. Run `npm test`, `npm run typecheck`, and `npm run format:check`. After `npm run build`, run `npm run test:runtime` to also verify the production server drains pending work before any incoming HTTP requests and still serves authenticated API routes. The runtime test never contacts a real Slack workspace.
