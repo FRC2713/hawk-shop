@@ -223,3 +223,32 @@ export const slackConfig = sqliteTable("slack_config", {
   generation: integer("generation").notNull().default(0),
   updated_at: text("updated_at").notNull().$defaultFn(now),
 });
+
+// Pending snapshots intentionally have no card foreign key: deletion must not
+// erase a status change that was already committed.
+export const slackPending = sqliteTable("slack_pending", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  card_id: text("card_id").notNull(),
+  submitter_id: text("submitter_id"),
+  submitter_name: text("submitter_name").notNull(),
+  submitter_email: text("submitter_email"),
+  old_column_id: text("old_column_id").notNull(),
+  new_column_id: text("new_column_id").notNull(),
+  old_status: text("old_status").notNull(),
+  new_status: text("new_status").notNull(),
+  title: text("title").notNull(),
+  quantity_to_make: integer("quantity_to_make"),
+  channel_id: text("channel_id").notNull(),
+  generation: integer("generation").notNull(),
+  created_at: text("created_at").notNull(),
+  expires_at: text("expires_at").notNull(),
+  next_attempt_at: text("next_attempt_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  error_code: text("error_code"),
+});
+
+// Shared by administrator test posts and automatic delivery; survives restart.
+export const slackPostGate = sqliteTable("slack_post_gate", {
+  id: text("id").primaryKey(),
+  next_post_at: text("next_post_at").notNull(),
+});

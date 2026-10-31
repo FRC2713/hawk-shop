@@ -1,11 +1,11 @@
 import "@tanstack/react-start/server-only";
 import { eq } from "drizzle-orm";
 import { db } from "~/lib/db/client";
-import { slackConfig } from "~/lib/db/schema";
+import { slackConfig, slackPending } from "~/lib/db/schema";
 
-export function getSlackSettings() {
+export function getSlackSettings(connection: Pick<typeof db, "select"> = db) {
   return (
-    db
+    connection
       .select()
       .from(slackConfig)
       .where(eq(slackConfig.id, "default"))
@@ -25,7 +25,7 @@ export function saveSlackSettings(
   enabled: boolean
 ) {
   return db.transaction((tx) => {
-    const previous = getSlackSettings();
+    const previous = getSlackSettings(tx);
     const generation =
       previous.generation +
       (previous.channel_id !== channel_id || previous.enabled !== enabled
@@ -43,6 +43,7 @@ export function saveSlackSettings(
       .values(value)
       .onConflictDoUpdate({ target: slackConfig.id, set: value })
       .run();
+    if (generation !== previous.generation) tx.delete(slackPending).run();
     return value;
   });
 }

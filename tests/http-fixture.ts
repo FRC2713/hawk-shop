@@ -19,7 +19,11 @@ export function endpoint(
 process.env.ONSHAPE_CLIENT_ID = "test-client";
 process.env.ONSHAPE_CLIENT_SECRET = "test-secret";
 let signInCount = 0;
-export async function signIn(email: string | null = "alice@example.com") {
+export async function signIn(
+  email: string | null = "alice@example.com",
+  id = "alice",
+  redirect?: string
+) {
   const token = `access-${++signInCount}`;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -32,8 +36,8 @@ export async function signIn(email: string | null = "alice@example.com") {
       });
     if (url.endsWith("/users/current"))
       return Response.json({
-        id: "alice",
-        firstName: "Alice",
+        id,
+        firstName: id === "alice" ? "Alice" : id,
         email: email ?? undefined,
       });
     throw new Error(`Unexpected upstream request: ${url}`);
@@ -42,11 +46,20 @@ export async function signIn(email: string | null = "alice@example.com") {
     const response = await endpoint(callback, "GET")(
       new Request(
         "http://localhost/auth/onshape/callback?code=test&state=test",
-        { headers: { Cookie: "onshape_oauth_state=test" } }
+        {
+          headers: {
+            Cookie: `onshape_oauth_state=test${redirect ? `; onshape_oauth_redirect=${encodeURIComponent(redirect)}` : ""}`,
+          },
+        }
       ),
       {}
     );
     assert.equal(response.status, 302);
+    if (redirect)
+      assert.equal(
+        response.headers.get("Location"),
+        `http://localhost${redirect}`
+      );
     return response.headers
       .getSetCookie()
       .map((cookie) => cookie.split(";")[0])
