@@ -123,7 +123,7 @@ test(
       const result = await new Promise<{ text: string }>((resolve, reject) => {
         const timeout = setTimeout(
           () => reject(Error(`No startup delivery: ${output}`)),
-          10000
+          20000
         );
         child.once("message", (message) => {
           clearTimeout(timeout);

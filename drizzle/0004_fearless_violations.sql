@@ -1,0 +1,1 @@
+ALTER TABLE `slack_pending` ADD `delivery_group` integer;
