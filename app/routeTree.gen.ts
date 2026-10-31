@@ -32,6 +32,7 @@ import { Route as ApiProcessesIndexRouteImport } from './routes/api/processes.in
 import { Route as ApiProcessesIdRouteImport } from './routes/api/processes.$id'
 import { Route as ApiSlackChannelsRouteImport } from './routes/api/slack/channels'
 import { Route as ApiSlackConfigRouteImport } from './routes/api/slack/config'
+import { Route as ApiSlackStatusRouteImport } from './routes/api/slack/status'
 import { Route as ApiSlackTestRouteImport } from './routes/api/slack/test'
 import { Route as ApiUsersIndexRouteImport } from './routes/api/users.index'
 import { Route as ApiUsersIdRouteImport } from './routes/api/users.$id'
@@ -159,6 +160,11 @@ const ApiSlackConfigRoute = ApiSlackConfigRouteImport.update({
   path: '/api/slack/config',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSlackStatusRoute = ApiSlackStatusRouteImport.update({
+  id: '/api/slack/status',
+  path: '/api/slack/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSlackTestRoute = ApiSlackTestRouteImport.update({
   id: '/api/slack/test',
   path: '/api/slack/test',
@@ -240,6 +246,7 @@ export interface FileRoutesByFullPath {
   '/api/processes/$id': typeof ApiProcessesIdRoute
   '/api/slack/channels': typeof ApiSlackChannelsRoute
   '/api/slack/config': typeof ApiSlackConfigRoute
+  '/api/slack/status': typeof ApiSlackStatusRoute
   '/api/slack/test': typeof ApiSlackTestRoute
   '/api/users/$id': typeof ApiUsersIdRoute
   '/auth/onshape/callback': typeof AuthOnshapeCallbackRoute
@@ -276,6 +283,7 @@ export interface FileRoutesByTo {
   '/api/processes/$id': typeof ApiProcessesIdRoute
   '/api/slack/channels': typeof ApiSlackChannelsRoute
   '/api/slack/config': typeof ApiSlackConfigRoute
+  '/api/slack/status': typeof ApiSlackStatusRoute
   '/api/slack/test': typeof ApiSlackTestRoute
   '/api/users/$id': typeof ApiUsersIdRoute
   '/auth/onshape/callback': typeof AuthOnshapeCallbackRoute
@@ -314,6 +322,7 @@ export interface FileRoutesById {
   '/api/processes/$id': typeof ApiProcessesIdRoute
   '/api/slack/channels': typeof ApiSlackChannelsRoute
   '/api/slack/config': typeof ApiSlackConfigRoute
+  '/api/slack/status': typeof ApiSlackStatusRoute
   '/api/slack/test': typeof ApiSlackTestRoute
   '/api/users/$id': typeof ApiUsersIdRoute
   '/auth/onshape/callback': typeof AuthOnshapeCallbackRoute
@@ -352,6 +361,7 @@ export interface FileRouteTypes {
     | '/api/processes/$id'
     | '/api/slack/channels'
     | '/api/slack/config'
+    | '/api/slack/status'
     | '/api/slack/test'
     | '/api/users/$id'
     | '/auth/onshape/callback'
@@ -388,6 +398,7 @@ export interface FileRouteTypes {
     | '/api/processes/$id'
     | '/api/slack/channels'
     | '/api/slack/config'
+    | '/api/slack/status'
     | '/api/slack/test'
     | '/api/users/$id'
     | '/auth/onshape/callback'
@@ -425,6 +436,7 @@ export interface FileRouteTypes {
     | '/api/processes/$id'
     | '/api/slack/channels'
     | '/api/slack/config'
+    | '/api/slack/status'
     | '/api/slack/test'
     | '/api/users/$id'
     | '/auth/onshape/callback'
@@ -459,6 +471,7 @@ export interface RootRouteChildren {
   ApiProcessesIdRoute: typeof ApiProcessesIdRoute
   ApiSlackChannelsRoute: typeof ApiSlackChannelsRoute
   ApiSlackConfigRoute: typeof ApiSlackConfigRoute
+  ApiSlackStatusRoute: typeof ApiSlackStatusRoute
   ApiSlackTestRoute: typeof ApiSlackTestRoute
   ApiUsersIdRoute: typeof ApiUsersIdRoute
   AuthOnshapeCallbackRoute: typeof AuthOnshapeCallbackRoute
@@ -636,6 +649,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSlackConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/slack/status': {
+      id: '/api/slack/status'
+      path: '/api/slack/status'
+      fullPath: '/api/slack/status'
+      preLoaderRoute: typeof ApiSlackStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/slack/test': {
       id: '/api/slack/test'
       path: '/api/slack/test'
@@ -781,6 +801,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProcessesIdRoute: ApiProcessesIdRoute,
   ApiSlackChannelsRoute: ApiSlackChannelsRoute,
   ApiSlackConfigRoute: ApiSlackConfigRoute,
+  ApiSlackStatusRoute: ApiSlackStatusRoute,
   ApiSlackTestRoute: ApiSlackTestRoute,
   ApiUsersIdRoute: ApiUsersIdRoute,
   AuthOnshapeCallbackRoute: AuthOnshapeCallbackRoute,

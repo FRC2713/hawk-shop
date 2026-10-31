@@ -1,7 +1,11 @@
 import { queryOptions } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import { queryKeys } from "./keys";
-import type { SlackSettings, SlackDestination } from "~/lib/slack/types";
+import type {
+  SlackSettings,
+  SlackDestination,
+  SlackStatus,
+} from "~/lib/slack/types";
 const privilegedHeaders = { "X-Hawk-Shop-Slack": "1" };
 export const slackSettingsQuery = () =>
   queryOptions({
@@ -35,4 +39,15 @@ export const sendSlackTest = () =>
     method: "POST",
     headers: privilegedHeaders,
     json: {},
+  });
+
+export const slackStatusQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.slack.status(),
+    queryFn: () => apiFetch<SlackStatus>("/api/slack/status"),
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnMount: "always",
+    refetchInterval: 15000,
   });

@@ -17,7 +17,7 @@ Hawk Shop links use the existing deployment address. Opening them may require th
 
 ## Access and troubleshooting
 
-Every configuration read, channel lookup, save, and test performs a fresh server-side Slack role check. Ordinary members, channel managers, inactive accounts, unmatched email addresses, and members of other workspaces cannot manage the integration. If Slack cannot confirm the current role, access is denied while the manufacturing board remains available.
+Every health read, configuration read, channel lookup, save, and test performs a fresh server-side Slack role check. Ordinary members, channel managers, inactive accounts, unmatched email addresses, and members of other workspaces cannot manage the integration. If Slack cannot confirm the current role, access is denied while the manufacturing board remains available.
 
 - **Slack is not configured:** the deployment operator must set both environment values and recreate the container. They are optional for manufacturing.
 - **Administrator access denied:** check the Onshape email captured at the latest sign-in, the member's current workspace role, active status, and the pinned workspace ID. Workspace administrator or owner permissions are required; channel manager permissions are insufficient.
@@ -43,3 +43,11 @@ Temporary delivery failures use exponential backoff from one second to one hour.
 Delivered, expired and canceled pending records are deleted. There is no retained delivery history or manual retry action. An ambiguous network response can mean Slack accepted a post even though Hawk Shop could not confirm it, so automatic retry can occasionally produce a duplicate. External delivery is not exactly once.
 
 Verification uses controlled transports only. Run `npm test`, `npm run typecheck`, and `npm run format:check`. After `npm run build`, run `npm run test:runtime` to also verify the production server drains pending work before any incoming HTTP requests and still serves authenticated API routes. The runtime test never contacts a real Slack workspace.
+
+## Diagnose current delivery
+
+The Slack integration page shows the saved enabled state and channel, checks current channel access, and lists unsent status changes. It refreshes every 15 seconds while open and verifies your current Slack administrator role each time. Use **Refresh delivery health** after correcting a problem. If role verification fails, the page hides delivery data and configuration until access can be verified again. The board remains available.
+
+Each pending entry includes its captured part title, submitter name, status transition, earliest automatic attempt time, and 24-hour expiry. A later transition on the same card waits for the earlier transition. Slack posting cooldowns can also delay an attempt. A delivery error includes a stable code and the action to take. Connectivity and rate-limit errors retry automatically. Missing scopes, posting restrictions, and inaccessible channels require correcting the app installation or channel configuration before a retry can succeed. Tests use the saved channel and still require current administrator verification.
+
+Disabled means new status changes are not captured. A current channel problem can still appear alongside that disabled state. Pending errors disappear with their pending work after success, cancellation, or expiry. An empty list does not confirm that Slack delivered an earlier notification. There is no sent/failed archive or manual retry control. Disabling or switching channels cancels unsent work immediately, including work waiting on a configuration fix. Re-enabling never restores it, and a message already in flight may still arrive.
