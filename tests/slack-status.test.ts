@@ -230,3 +230,36 @@ test("pending health shows retry guidance and expiry, then removes delivered, ca
     Date.now = originalNow;
   }
 });
+test("a configuration change during the health probe discards obsolete settings and channel failures", async () => {
+  const cookie = await signIn();
+  transport();
+  await save(cookie, true);
+  const normal = fetch;
+  let unblock!: () => void;
+  let probing!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    probing = resolve;
+  });
+  const waiting = new Promise<void>((resolve) => {
+    unblock = resolve;
+  });
+  let hold = true;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith("conversations.info") && hold) {
+      hold = false;
+      probing();
+      await waiting;
+      return Response.json({ ok: false, error: "channel_not_found" });
+    }
+    return normal(input, init);
+  };
+  const reading = read(cookie);
+  await entered;
+  await save(cookie, false);
+  unblock();
+  const view = await (await reading).json();
+  assert.equal(view.settings.enabled, false);
+  assert.equal(view.health.state, "disabled");
+  assert.equal(view.health.issue, null);
+  assert.equal(view.pending_count, 0);
+});

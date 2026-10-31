@@ -42,7 +42,7 @@ function issue(code: string): SlackDeliveryIssue {
 // Call only after fresh server-side Slack administrator authorization.
 export async function getSlackStatus(): Promise<SlackStatus> {
   cleanupSlackPending();
-  const settings = getSlackSettings();
+  let settings = getSlackSettings();
   let currentIssue: SlackDeliveryIssue | null = null;
   if (settings.channel_id) {
     try {
@@ -53,6 +53,12 @@ export async function getSlackStatus(): Promise<SlackStatus> {
       );
     }
   } else if (settings.enabled) currentIssue = issue("channel_not_found");
+  const latestSettings = getSlackSettings();
+  if (latestSettings.generation !== settings.generation) {
+    // The awaited channel result belongs to a canceled destination/configuration.
+    currentIssue = null;
+    settings = latestSettings;
+  }
   if (!currentIssue && settings.enabled) {
     try {
       const url = new URL(process.env.APP_URL || "");
