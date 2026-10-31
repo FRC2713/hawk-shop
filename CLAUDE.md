@@ -138,3 +138,13 @@ Kanban columns are not a table: they're a JSON blob in `kanban_config` row `id =
 - Inter is self-hosted via `@fontsource-variable/inter`, imported at the top of `app/app.css`. A shop-LAN install has no route to a font CDN, so don't replace it with a remote stylesheet.
 - Server-side data modules start with `import "@tanstack/react-start/server-only"`. That marker is enforced by Start's import protection: importing such a module from client code fails the build.
 - `app/lib/logger.ts` exists (debug suppressed in prod) but most code still uses `console.*` with a `[SCOPE]` prefix; match whichever the surrounding file uses.
+
+## Release contract
+
+Read `docs/release-pipeline.md` when changing image publication or deployment
+configuration. Publishing calls reusable CI, smoke-tests fresh and prior-release
+databases, then publishes the tested image by digest and proposes a suite PR.
+Keep `.hawk/app.json` synchronized with environment, health and storage changes.
+`node scripts/deploy-check.mjs` validates the built image configuration without
+opening SQLite or starting external clients. Production promotion belongs in
+hawk_suite and retains a separate approval.

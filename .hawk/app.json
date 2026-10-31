@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "name": "hawk-shop",
+  "image": "ghcr.io/frc2713/hawk-shop",
+  "port": 3000,
+  "health": "/api/health",
+  "database": "hawk-shop.db",
+  "data_dir": "/data",
+  "required_env": [
+    "ONSHAPE_CLIENT_ID",
+    "ONSHAPE_CLIENT_SECRET",
+    "APP_URL",
+    "ONSHAPE_REDIRECT_URI"
+  ],
+  "optional_env": [
+    "DATA_DIR",
+    "PORT",
+    "HOST",
+    "ONSHAPE_SCOPE",
+    "ONSHAPE_IFRAME_EMBED"
+  ],
+  "migrations": "on-start",
+  "rollback": "requires-schema-review"
+}
