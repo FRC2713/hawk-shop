@@ -4,7 +4,7 @@ import { logger } from "~/lib/logger";
 import { onshapeApiRequest } from "~/lib/onshapeApi/auth";
 import { getOnshapeUserIdFromRequest } from "~/lib/onshapeAuthRequest";
 import { recordOnshapeUsage } from "~/lib/onshapeApi/cache";
-import { getValidOnshapeTokenFromRequest } from "~/lib/tokenRefresh";
+import { getOnshapeTokenWithoutRefresh } from "~/lib/tokenRefresh";
 import type { ActionResponse } from "../utils/types";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
@@ -110,7 +110,7 @@ async function fetchOnshapeUserId(
   if (cachedUserId) return cachedUserId;
 
   try {
-    const accessToken = await getValidOnshapeTokenFromRequest(request);
+    const accessToken = await getOnshapeTokenWithoutRefresh(request);
 
     if (!accessToken) {
       logger.debug("[Kanban] No access token available");
