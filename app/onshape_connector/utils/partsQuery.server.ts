@@ -5,12 +5,19 @@ import {
   createOnshapeApiClientReadOnly,
   getPartsWmve,
 } from "~/lib/onshapeApi/generated-wrapper";
+import { cacheKey, partsTtlMs, withOnshapeCache } from "~/lib/onshapeApi/cache";
 import type { PartsPageSearchParams } from "./types";
 
 /**
  * Core function to fetch parts from Onshape API
  * This is used by both the API route and server-side prefetching
  * SERVER-ONLY: Uses server-side authentication
+ *
+ * Reads go through the shared server cache (`~/lib/onshapeApi/cache`). The Part
+ * Studio contents are the same for every user who can see the document, so a
+ * whole shop opening the connector at once costs one Onshape call rather than
+ * one per student — and at `wvm=v` the answer is immutable, so it costs one
+ * call ever.
  *
  * @param queryParams - Query parameters for fetching parts
  * @param allowTokenRefresh - If true, will attempt to refresh tokens (for Route Handlers).
@@ -19,6 +26,24 @@ import type { PartsPageSearchParams } from "./types";
 export async function fetchPartsFromOnshape(
   queryParams: PartsPageSearchParams,
   allowTokenRefresh: boolean = true
+): Promise<BtPartMetadataInfo[]> {
+  return withOnshapeCache<BtPartMetadataInfo[]>({
+    label: "parts",
+    key: cacheKey(
+      "parts",
+      queryParams.documentId,
+      queryParams.instanceType,
+      queryParams.instanceId,
+      queryParams.elementId
+    ),
+    ttlMs: partsTtlMs(queryParams.instanceType),
+    fetcher: () => fetchPartsUncached(queryParams, allowTokenRefresh),
+  });
+}
+
+async function fetchPartsUncached(
+  queryParams: PartsPageSearchParams,
+  allowTokenRefresh: boolean
 ): Promise<BtPartMetadataInfo[]> {
   // Use read-only client for server components, full client for route handlers
   const client = allowTokenRefresh

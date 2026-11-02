@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/requireAuth";
 import { eq } from "drizzle-orm";
 import { db } from "~/lib/db/client";
 import { kanbanCards, partThumbnails } from "~/lib/db/schema";
+import { recordOnshapeUsage } from "~/lib/onshapeApi/cache";
 import {
   publicUrlForStoragePath,
   saveFile,
@@ -36,10 +37,39 @@ function resolveImageUrl(imageUrl: string): string {
 }
 
 /**
- * Thumbnail endpoint for kanban cards only.
- * GET ?cardId=<id> — looks up the card's image_url, checks part_thumbnails by
- * source_url, and on a miss fetches from Onshape, stores it locally and
- * redirects to the stored copy.
+ * Whether a caller-supplied URL is safe to fetch with the user's Onshape token.
+ *
+ * This matters because the `?url=` form takes its target straight from the
+ * query string and then attaches `Authorization: Bearer <token>` to it. Without
+ * this check, anyone who could reach the app could point it at a host they
+ * control and be handed a live Onshape access token. Onshape enterprises get
+ * their own subdomain, so the allowlist is the apex domain and anything under
+ * it — over HTTPS only.
+ */
+function isOnshapeUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    return (
+      url.hostname === "onshape.com" || url.hostname.endsWith(".onshape.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Thumbnail endpoint for kanban cards and connector part lists.
+ *
+ * GET ?cardId=<id> — resolves the card's stored `image_url`.
+ * GET ?url=<onshape url> — used by the connector, which has the part's
+ *   thumbnail href from the parts query but no card yet.
+ *
+ * Both forms converge on the same `part_thumbnails` cache, keyed by
+ * `source_url`, so an image is fetched from Onshape exactly once no matter how
+ * many cards or part rows display it. That sharing is the whole point: a
+ * 150-part studio would otherwise cost 150 calls against an annual allocation
+ * every time someone opened the connector.
  */
 export const Route = createFileRoute("/api/onshape/thumbnail")({
   server: {
@@ -53,26 +83,40 @@ export const Route = createFileRoute("/api/onshape/thumbnail")({
 
         const requestUrl = new URL(request.url);
         const cardId = requestUrl.searchParams.get("cardId");
-        if (!cardId) {
-          return Response.json({ error: "Missing cardId" }, { status: 400 });
-        }
+        const directUrl = requestUrl.searchParams.get("url");
 
-        const [card] = await db
-          .select({ image_url: kanbanCards.image_url })
-          .from(kanbanCards)
-          .where(eq(kanbanCards.id, cardId))
-          .limit(1);
-
-        if (!card) {
-          return Response.json({ error: "Card not found" }, { status: 404 });
-        }
-
-        const rawImageUrl = card.image_url?.trim() || null;
-        if (!rawImageUrl) {
+        if (!cardId && !directUrl) {
           return Response.json(
-            { error: "Card has no image_url" },
-            { status: 404 }
+            { error: "Missing cardId or url" },
+            { status: 400 }
           );
+        }
+
+        let rawImageUrl: string | null = null;
+
+        if (cardId) {
+          const [card] = await db
+            .select({ image_url: kanbanCards.image_url })
+            .from(kanbanCards)
+            .where(eq(kanbanCards.id, cardId))
+            .limit(1);
+
+          if (!card) {
+            return Response.json({ error: "Card not found" }, { status: 404 });
+          }
+
+          rawImageUrl = card.image_url?.trim() || null;
+          if (!rawImageUrl) {
+            return Response.json(
+              { error: "Card has no image_url" },
+              { status: 404 }
+            );
+          }
+        } else {
+          rawImageUrl = directUrl!.trim() || null;
+          if (!rawImageUrl) {
+            return Response.json({ error: "Empty url" }, { status: 400 });
+          }
         }
 
         // Normalize: if the stored value is our proxy URL, use the real Onshape
@@ -95,6 +139,7 @@ export const Route = createFileRoute("/api/onshape/thumbnail")({
           .limit(1);
 
         if (cached?.storage_path) {
+          recordOnshapeUsage("thumbnail", "hit");
           return Response.redirect(
             new URL(
               publicUrlForStoragePath(cached.storage_path),
@@ -104,15 +149,14 @@ export const Route = createFileRoute("/api/onshape/thumbnail")({
           );
         }
 
-        // Cache miss — fetch from Onshape (requires absolute URL)
-        if (
-          !imageUrl.startsWith("http://") &&
-          !imageUrl.startsWith("https://")
-        ) {
+        // Cache miss — fetch from Onshape. Only ever from Onshape: this request
+        // carries a bearer token, and the target may have come from the query
+        // string.
+        if (!isOnshapeUrl(imageUrl)) {
           return Response.json(
             {
               error:
-                "Card image_url is not a fetchable URL (use an absolute Onshape URL)",
+                "Card image_url is not a fetchable Onshape URL (use an absolute https://*.onshape.com URL)",
             },
             { status: 400 }
           );
@@ -133,6 +177,8 @@ export const Route = createFileRoute("/api/onshape/thumbnail")({
             { status: response.status }
           );
         }
+
+        recordOnshapeUsage("thumbnail", "call");
 
         const buffer = Buffer.from(await response.arrayBuffer());
         const contentType = response.headers.get("Content-Type") || "image/png";

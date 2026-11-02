@@ -21,6 +21,7 @@ import "@tanstack/react-start/server-only";
 export {
   getOAuthStateFromRequest,
   getOnshapeTokensFromRequest,
+  getOnshapeUserIdFromRequest,
   isOnshapeAuthenticatedFromRequest,
 } from "~/lib/onshapeAuthRequest";
 import {
@@ -100,6 +101,20 @@ export async function clearOnshapeTokens(): Promise<void> {
   deleteCookie(COOKIE_NAMES.ACCESS_TOKEN);
   deleteCookie(COOKIE_NAMES.REFRESH_TOKEN);
   deleteCookie(COOKIE_NAMES.EXPIRES_AT);
+  deleteCookie(COOKIE_NAMES.USER_ID);
+}
+
+/**
+ * Remember the signed-in user's Onshape id for the life of the session.
+ *
+ * Not a security boundary — it only stamps `created_by` on released cards, and
+ * the request is already gated on real tokens. It exists to stop the app buying
+ * the same `/users/current` answer once per released part.
+ *
+ * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
+ */
+export async function setOnshapeUserId(userId: string): Promise<void> {
+  setCookie(COOKIE_NAMES.USER_ID, userId, getCookieOptions());
 }
 
 /**
