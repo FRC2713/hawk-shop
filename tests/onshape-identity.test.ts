@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test, after } from "node:test";
-import { handlePartNumberUpdate } from "../app/onshape_connector/actions/partNumberUpdate";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+const dataDir = await mkdtemp(join(tmpdir(), "hawk-identity-"));
+process.env.DATA_DIR = dataDir;
+after(() => rm(dataDir, { recursive: true, force: true }));
+const { handlePartNumberUpdate } =
+  await import("../app/onshape_connector/actions/partNumberUpdate");
 import { inRequest, sessionRequest, getHandler } from "./request-context";
 
 test("interleaved part-number operations retain their initiating identity through metadata read and write", async (t) => {
@@ -76,12 +83,6 @@ test("interleaved part-number operations retain their initiating identity throug
 });
 
 test("parallel parts, version and thumbnail reads near expiry do not renew or write cookies", async (t) => {
-  const { mkdtemp, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const dataDir = await mkdtemp(join(tmpdir(), "hawk-identity-"));
-  process.env.DATA_DIR = dataDir;
-  after(() => rm(dataDir, { recursive: true, force: true }));
   const { Route: parts } = await import("../app/routes/api/onshape/parts");
   const { Route: version } = await import("../app/routes/api/onshape/version");
   const { Route: thumbnail } =

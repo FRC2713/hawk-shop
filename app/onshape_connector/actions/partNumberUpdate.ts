@@ -4,6 +4,11 @@ import {
   getWmvepMetadata,
   updateWvepMetadata,
 } from "~/lib/onshapeApi/generated-wrapper";
+import {
+  cacheKey,
+  invalidateOnshapeCache,
+  recordOnshapeUsage,
+} from "~/lib/onshapeApi/cache";
 import { isOnshapeAuthenticatedFromRequest } from "~/lib/onshapeAuth";
 import { createErrorResponse } from "../utils/errorHandling";
 import type { ActionResponse } from "../utils/types";
@@ -34,6 +39,7 @@ function upstreamFailure(
   result: { error?: unknown; response: Response },
   message: string
 ): ActionResponse | null {
+  if (result.response.ok) recordOnshapeUsage("metadata", "call");
   if (result.error === undefined && result.response.ok) return null;
   return createErrorResponse(
     {
@@ -138,6 +144,17 @@ export async function handlePartNumberUpdate(
       "Onshape rejected the part number update"
     );
     if (writeFailure) return writeFailure;
+    try {
+      invalidateOnshapeCache(
+        cacheKey("parts", documentId, instanceType, instanceId, elementId)
+      );
+    } catch (error: unknown) {
+      console.error(
+        "[ACTION] Error invalidating parts after accepted write:",
+        error
+      );
+      return unconfirmed("The parts cache could not be refreshed.");
+    }
 
     try {
       const verification = await getWmvepMetadata({
