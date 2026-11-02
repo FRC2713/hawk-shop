@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireAuth } from "~/lib/requireAuth";
 import {
   handleAddKanbanCard,
   handleMoveKanbanCard,
@@ -15,6 +16,14 @@ export const Route = createFileRoute("/api/mfg/parts/actions")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const unauthorized = await requireAuth();
+        if (unauthorized) {
+          return Response.json(
+            { success: false, ...(await unauthorized.json()) },
+            { status: unauthorized.status }
+          );
+        }
+
         const formData = await request.formData();
         const actionType = formData.get("action")?.toString();
 

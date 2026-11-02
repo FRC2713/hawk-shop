@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { useRouter } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -18,16 +17,14 @@ interface PartNumberInputProps {
  */
 export function PartNumberInput({ part, queryParams }: PartNumberInputProps) {
   const [partNumberInput, setPartNumberInput] = useState("");
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const updatePartNumber = useMutation({
-    mutationFn: partActions.updatePartNumber,
+    mutationFn: (input: partActions.UpdatePartNumberInput) =>
+      partActions.updatePartNumber(input, queryClient),
     onSuccess: (result) => {
       if (!result.success) return;
       setPartNumberInput("");
-      // Give the write a moment to propagate, then re-run the route loaders —
-      // the equivalent of Next's router.refresh().
-      setTimeout(() => router.invalidate(), 100);
     },
   });
 

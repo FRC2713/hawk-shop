@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireAuth } from "~/lib/requireAuth";
 import { fetchPartsFromOnshape } from "~/onshape_connector/utils/partsQuery.server";
 
 /**
@@ -9,6 +10,13 @@ export const Route = createFileRoute("/api/onshape/parts")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        // Needing an Onshape token used to be this route's only gate. It is no
+        // longer sufficient: a cache hit answers without ever reaching Onshape,
+        // so an unauthenticated caller on the LAN would get the part list for
+        // free. Gate it explicitly, like the other cache-backed routes.
+        const unauthorized = await requireAuth();
+        if (unauthorized) return unauthorized;
+
         const url = new URL(request.url);
 
         // Extract query parameters
@@ -26,18 +34,13 @@ export const Route = createFileRoute("/api/onshape/parts")({
 
         try {
           // Use shared utility function to fetch parts
-          // allowTokenRefresh=true because this is a server route handler where
-          // cookies can be modified
-          const parts = await fetchPartsFromOnshape(
-            {
-              documentId,
-              instanceType: instanceType as "w" | "v" | "m",
-              instanceId,
-              elementId,
-              elementType: "", // Not used in fetching
-            },
-            true // Allow token refresh in route handlers
-          );
+          const parts = await fetchPartsFromOnshape({
+            documentId,
+            instanceType: instanceType as "w" | "v" | "m",
+            instanceId,
+            elementId,
+            elementType: "", // Not used in fetching
+          });
 
           // Return parts data as JSON
           return Response.json(parts);

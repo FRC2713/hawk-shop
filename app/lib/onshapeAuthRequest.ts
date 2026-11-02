@@ -22,6 +22,13 @@ export const ONSHAPE_COOKIE_NAMES = {
   EXPIRES_AT: "onshape_expires_at",
   OAUTH_STATE: "onshape_oauth_state",
   OAUTH_REDIRECT: "onshape_oauth_redirect",
+  /**
+   * The signed-in user's Onshape id, captured from the `/users/current` call
+   * the OAuth callback already makes. Releasing a card stamps `created_by` with
+   * it; re-asking Onshape on every release spent one call per part against an
+   * annual allocation to learn something that cannot change mid-session.
+   */
+  USER_ID: "onshape_user_id",
 } as const;
 
 export type OnshapeSession = {
@@ -102,6 +109,12 @@ export function hasUsableSession(session: OnshapeSession): boolean {
 
 export function getOnshapeTokensFromRequest(request: Request): OnshapeSession {
   return sessionFromCookies(parseCookieHeader(request.headers.get("Cookie")));
+}
+
+/** The cached Onshape user id for this request, if sign-in recorded one. */
+export function getOnshapeUserIdFromRequest(request: Request): string | null {
+  const cookies = parseCookieHeader(request.headers.get("Cookie"));
+  return cookies[ONSHAPE_COOKIE_NAMES.USER_ID] || null;
 }
 
 export function getOAuthStateFromRequest(request: Request): string | null {

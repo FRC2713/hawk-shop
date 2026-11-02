@@ -2,7 +2,9 @@ import { z } from "zod";
 import { createCard, updateCard } from "~/lib/kanbanApi/cards";
 import { logger } from "~/lib/logger";
 import { onshapeApiRequest } from "~/lib/onshapeApi/auth";
-import { getValidOnshapeTokenFromRequest } from "~/lib/tokenRefresh";
+import { getOnshapeUserIdFromRequest } from "~/lib/onshapeAuthRequest";
+import { recordOnshapeUsage } from "~/lib/onshapeApi/cache";
+import { getOnshapeTokenWithoutRefresh } from "~/lib/tokenRefresh";
 import type { ActionResponse } from "../utils/types";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
@@ -94,14 +96,21 @@ function formDataToObject(
 }
 
 /**
- * Fetch current user ID from Onshape API
- * Returns the Onshape user ID to be stored in created_by field
+ * Resolve the current user's Onshape ID for the `created_by` field.
+ *
+ * Sign-in already asked Onshape who this is and parked the answer in a cookie,
+ * so the common path costs nothing. The API call below is only the fallback for
+ * sessions established before that cookie existed — without it, releasing a
+ * batch of 40 parts spent 40 calls out of an allocation of 10,000 for the year.
  */
 async function fetchOnshapeUserId(
   request: Request
 ): Promise<string | undefined> {
+  const cachedUserId = getOnshapeUserIdFromRequest(request);
+  if (cachedUserId) return cachedUserId;
+
   try {
-    const accessToken = await getValidOnshapeTokenFromRequest(request);
+    const accessToken = await getOnshapeTokenWithoutRefresh(request);
 
     if (!accessToken) {
       logger.debug("[Kanban] No access token available");
@@ -109,6 +118,8 @@ async function fetchOnshapeUserId(
     }
 
     const response = await onshapeApiRequest(accessToken, "/users/current");
+
+    if (response.ok) recordOnshapeUsage("users", "call");
 
     if (!response.ok) {
       const errorText = await response
