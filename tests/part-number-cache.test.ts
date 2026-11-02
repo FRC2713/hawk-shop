@@ -295,3 +295,39 @@ test("invalid initial metadata JSON counts its successful HTTP response without 
   assert.equal(calls, 1);
   assert.equal((await usageCalls()) - before, 1);
 });
+
+test("accepted write with a failed body stream still evicts old parts and confirms through independent metadata", async (t) => {
+  let saved = false;
+  let writes = 0;
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request =
+        input instanceof Request ? input : new Request(input, init);
+      if (request.url.includes("/parts/"))
+        return Response.json([{ partNumber: saved ? "new" : "old" }]);
+      if (request.method === "POST") {
+        writes++;
+        saved = true;
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error("Write response body disconnected"));
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return Response.json(metadata(saved ? "new" : "old"));
+    }
+  );
+  await read("failed-write-body");
+  const before = await usageCalls();
+  const result = await edit("failed-write-body");
+  assert.equal((await read("failed-write-body"))[0].partNumber, "new");
+  assert.deepEqual(result, { success: true });
+  assert.equal(writes, 1);
+  // Three metadata calls plus the ordinary parts read after eviction.
+  assert.equal((await usageCalls()) - before, 4);
+});

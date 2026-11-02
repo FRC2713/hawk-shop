@@ -143,19 +143,21 @@ export async function handlePartNumberUpdate(
       partId,
       properties: [{ value: partNumber, propertyId: property.propertyId }],
     } as unknown as string;
-    // The write body is unused. A malformed JSON body must not hide an
-    // accepted HTTP status or prevent eviction and independent verification.
+    // The write body is unused. Do not consume it: decoding or stream errors
+    // must not hide acceptance or prevent eviction and independent verification.
     const updateResponse = await updateWvepMetadata({
       client,
       path,
       body,
-      parseAs: "text",
+      parseAs: "stream",
     });
     const writeFailure = upstreamFailure(
       updateResponse,
       "Onshape rejected the part number update"
     );
     if (writeFailure) return writeFailure;
+    // Release the unused body without making confirmation depend on its stream.
+    void updateResponse.response.body?.cancel().catch(() => {});
     try {
       invalidateOnshapeCache(
         cacheKey("parts", documentId, instanceType, instanceId, elementId)
