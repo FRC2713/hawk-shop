@@ -195,3 +195,103 @@ test("usage counts successful metadata HTTP traffic including malformed data and
   assert.equal((await edit("usage-rejected")).success, false);
   assert.equal((await calls()) - before, 4);
 });
+
+test("accepted write with invalid JSON is confirmed by metadata and evicts stale immutable parts", async (t) => {
+  let saved = false;
+  let writes = 0;
+  let partsReads = 0;
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request =
+        input instanceof Request ? input : new Request(input, init);
+      if (request.url.includes("/parts/")) {
+        partsReads++;
+        return Response.json([{ partNumber: saved ? "new" : "old" }]);
+      }
+      if (request.method === "POST") {
+        writes++;
+        saved = true;
+        return new Response("{", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return Response.json(metadata(saved ? "new" : "old"));
+    }
+  );
+  assert.equal((await read("invalid-write-json"))[0].partNumber, "old");
+  const before = await usageCalls();
+  const result = await edit("invalid-write-json");
+  assert.equal((await usageCalls()) - before, 3);
+  assert.equal((await read("invalid-write-json"))[0].partNumber, "new");
+  assert.deepEqual(result, { success: true });
+  assert.equal(partsReads, 2);
+  assert.equal(writes, 1);
+});
+
+async function usageCalls() {
+  const { Route } = await import("../app/routes/api/onshape/usage");
+  const request = sessionRequest("editor");
+  const response = await inRequest(request, () =>
+    getHandler(Route)({ request })
+  );
+  return (await response.json()).totals.calls;
+}
+
+test("invalid verification JSON leaves an accepted write unconfirmed, evicts stale parts, and counts all successful metadata traffic", async (t) => {
+  let saved = false;
+  let writes = 0;
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request =
+        input instanceof Request ? input : new Request(input, init);
+      if (request.url.includes("/parts/"))
+        return Response.json([{ partNumber: saved ? "new" : "old" }]);
+      if (request.method === "POST") {
+        writes++;
+        saved = true;
+      }
+      return saved
+        ? new Response("{", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        : Response.json(metadata("old"));
+    }
+  );
+  await read("invalid-verification-json");
+  const before = await usageCalls();
+  const result = await edit("invalid-verification-json");
+  assert.equal(result.success, false);
+  assert.match(result.error, /may have succeeded.*could not be confirmed/i);
+  assert.equal(writes, 1);
+  assert.equal((await usageCalls()) - before, 3);
+  assert.equal((await read("invalid-verification-json"))[0].partNumber, "new");
+});
+
+test("invalid initial metadata JSON counts its successful HTTP response without writing", async (t) => {
+  let calls = 0;
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request =
+        input instanceof Request ? input : new Request(input, init);
+      assert.equal(request.method, "GET");
+      calls++;
+      return new Response("{", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+  );
+  const before = await usageCalls();
+  const result = await edit("invalid-initial-json");
+  assert.equal(result.success, false);
+  assert.equal(calls, 1);
+  assert.equal((await usageCalls()) - before, 1);
+});

@@ -123,9 +123,11 @@ export async function updatePartNumber(
   if (result.success) {
     // Both thumbnail variants share this Part Studio prefix. Query refresh
     // failures do not reject the accepted edit or trigger another write.
-    await queryClient.invalidateQueries({
-      queryKey: queryKeys.onshape.partsScope(input),
-    });
+    const affectedParts = { queryKey: queryKeys.onshape.partsScope(input) };
+    // Invalidation alone reuses initial reads without data. Cancel those old
+    // flights so their pre-edit responses cannot become fresh query data.
+    await queryClient.cancelQueries(affectedParts);
+    await queryClient.invalidateQueries(affectedParts);
   }
   return result;
 }

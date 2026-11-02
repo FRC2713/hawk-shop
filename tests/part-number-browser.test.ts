@@ -85,3 +85,37 @@ test("browser rejection returns its inline error and leaves cached parts reusabl
   assert.equal(reads, 1);
   client.clear();
 });
+
+test("confirmed edit replaces an initially loading thumbnail variant before its old response can become fresh", async (t) => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  let resolveOld!: (response: Response) => void;
+  const oldResponse = new Promise<Response>((resolve) => {
+    resolveOld = resolve;
+  });
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL) => {
+    if (String(input).includes("/actions"))
+      return Response.json({ success: true });
+    reads++;
+    return reads === 1 ? oldResponse : Response.json([{ partNumber: "new" }]);
+  });
+  const query = onshapePartsQuery(scope, { withThumbnails: true });
+  const unsubscribe = new QueryObserver(client, query).subscribe(() => {});
+  t.after(() => {
+    unsubscribe();
+    client.clear();
+  });
+  assert.equal(reads, 1);
+  assert.equal(client.getQueryData(query.queryKey), undefined);
+  const edit = updatePartNumber(
+    { ...scope, partId: "part", partNumber: "new" },
+    client
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  resolveOld(Response.json([{ partNumber: "old" }]));
+  assert.deepEqual(await edit, { success: true });
+  assert.equal(client.getQueryData(query.queryKey)?.[0]?.partNumber, "new");
+  assert.equal(reads, 2);
+});
