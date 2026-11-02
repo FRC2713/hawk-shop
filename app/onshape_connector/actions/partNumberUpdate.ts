@@ -39,7 +39,6 @@ function upstreamFailure(
   result: { error?: unknown; response: Response },
   message: string
 ): ActionResponse | null {
-  if (result.response.ok) recordOnshapeUsage("metadata", "call");
   if (result.error === undefined && result.response.ok) return null;
   return createErrorResponse(
     {
@@ -93,6 +92,12 @@ export async function handlePartNumberUpdate(
     }
 
     const client = await createOnshapeApiClientFromRequest(request);
+    // Count successful HTTP traffic before the generated decoder runs, even
+    // when a metadata response contains invalid JSON.
+    client.interceptors.response.use((response) => {
+      if (response.ok) recordOnshapeUsage("metadata", "call");
+      return response;
+    });
     const path = {
       did: documentId,
       wvm: instanceType as "w" | "v" | "m",
@@ -138,12 +143,21 @@ export async function handlePartNumberUpdate(
       partId,
       properties: [{ value: partNumber, propertyId: property.propertyId }],
     } as unknown as string;
-    const updateResponse = await updateWvepMetadata({ client, path, body });
+    // The write body is unused. Do not consume it: decoding or stream errors
+    // must not hide acceptance or prevent eviction and independent verification.
+    const updateResponse = await updateWvepMetadata({
+      client,
+      path,
+      body,
+      parseAs: "stream",
+    });
     const writeFailure = upstreamFailure(
       updateResponse,
       "Onshape rejected the part number update"
     );
     if (writeFailure) return writeFailure;
+    // Release the unused body without making confirmation depend on its stream.
+    void updateResponse.response.body?.cancel().catch(() => {});
     try {
       invalidateOnshapeCache(
         cacheKey("parts", documentId, instanceType, instanceId, elementId)
