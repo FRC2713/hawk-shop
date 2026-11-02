@@ -34,18 +34,13 @@ export const Route = createFileRoute("/api/onshape/parts")({
 
         try {
           // Use shared utility function to fetch parts
-          // allowTokenRefresh=true because this is a server route handler where
-          // cookies can be modified
-          const parts = await fetchPartsFromOnshape(
-            {
-              documentId,
-              instanceType: instanceType as "w" | "v" | "m",
-              instanceId,
-              elementId,
-              elementType: "", // Not used in fetching
-            },
-            true // Allow token refresh in route handlers
-          );
+          const parts = await fetchPartsFromOnshape({
+            documentId,
+            instanceType: instanceType as "w" | "v" | "m",
+            instanceId,
+            elementId,
+            elementType: "", // Not used in fetching
+          });
 
           // Return parts data as JSON
           return Response.json(parts);

@@ -10,7 +10,7 @@ import {
   saveFile,
   storagePathFromUrl,
 } from "~/lib/storage/files";
-import { refreshOnshapeTokenIfNeeded } from "~/lib/tokenRefresh";
+import { getOnshapeTokenWithoutRefresh } from "~/lib/tokenRefresh";
 
 /**
  * If image_url was stored as our proxy URL (/api/onshape/thumbnail?url=...), extract the real
@@ -162,7 +162,7 @@ export const Route = createFileRoute("/api/onshape/thumbnail")({
           );
         }
 
-        const accessToken = await refreshOnshapeTokenIfNeeded();
+        const accessToken = await getOnshapeTokenWithoutRefresh();
         if (!accessToken) {
           return Response.json({ error: "Not authenticated" }, { status: 401 });
         }

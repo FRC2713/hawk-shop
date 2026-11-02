@@ -28,11 +28,7 @@ import {
   ONSHAPE_COOKIE_NAMES,
   hasUsableSession,
 } from "~/lib/onshapeAuthRequest";
-import {
-  cookieSameSite,
-  cookieSameSiteHeader,
-  cookieSecure,
-} from "~/lib/cookieOptions";
+import { cookieSameSite, cookieSecure } from "~/lib/cookieOptions";
 
 // Names live with the parser in `onshapeAuthRequest.ts`; this half reads the
 // same jar through the ambient request, so it must not keep its own copy.
@@ -176,46 +172,4 @@ export async function clearOAuthRedirect(): Promise<void> {
  */
 export async function isOnshapeAuthenticated(): Promise<boolean> {
   return hasUsableSession(await getOnshapeTokens());
-}
-
-/**
- * Create cookie string for setting tokens (for React Router responses)
- */
-export function createTokenCookieString(
-  accessToken: string,
-  refreshToken: string,
-  expiresAt: number
-): string {
-  const sameSite = cookieSameSiteHeader();
-  const secure = cookieSecure() ? "Secure" : "";
-  const maxAge = MAX_AGE;
-
-  const accessTokenCookie = `${COOKIE_NAMES.ACCESS_TOKEN}=${accessToken}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
-  const refreshTokenCookie = `${COOKIE_NAMES.REFRESH_TOKEN}=${refreshToken}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
-  const expiresAtCookie = `${COOKIE_NAMES.EXPIRES_AT}=${expiresAt}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
-
-  return [accessTokenCookie, refreshTokenCookie, expiresAtCookie].join(", ");
-}
-
-/**
- * Create cookie string for clearing tokens (for React Router responses)
- */
-export function createClearTokenCookieString(): string {
-  const clearAccess = `${COOKIE_NAMES.ACCESS_TOKEN}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const clearRefresh = `${COOKIE_NAMES.REFRESH_TOKEN}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const clearExpires = `${COOKIE_NAMES.EXPIRES_AT}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const clearState = `${COOKIE_NAMES.OAUTH_STATE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-
-  return [clearAccess, clearRefresh, clearExpires, clearState].join(", ");
-}
-
-/**
- * Create cookie string for OAuth state (for React Router responses)
- */
-export function createOAuthStateCookieString(state: string): string {
-  const sameSite = cookieSameSiteHeader();
-  const secure = cookieSecure() ? "Secure" : "";
-  const maxAge = OAUTH_STATE_MAX_AGE;
-
-  return `${COOKIE_NAMES.OAUTH_STATE}=${state}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
 }
