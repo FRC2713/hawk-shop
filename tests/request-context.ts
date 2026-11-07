@@ -30,3 +30,17 @@ export function getHandler(
     }
   ).options.server.handlers.GET;
 }
+
+// Records a verified identity for a test access token, as the OAuth callback
+// does at sign-in. Manufacturing actions and renewal require one; a session
+// with cookies alone is treated as a legacy session that must sign in again.
+export async function verifySession(
+  token: string,
+  expiresAt = Date.now() + 60_000
+) {
+  const { establishSessionActor } = await import("../app/lib/sessionActor");
+  await establishSessionActor(
+    { accessToken: token, refreshToken: `refresh-${token}`, expiresAt },
+    { onshape_user_id: `user-${token}`, email: null }
+  );
+}

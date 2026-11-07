@@ -17,7 +17,9 @@
     "PORT",
     "HOST",
     "ONSHAPE_SCOPE",
-    "ONSHAPE_IFRAME_EMBED"
+    "ONSHAPE_IFRAME_EMBED",
+    "SLACK_BOT_TOKEN",
+    "SLACK_WORKSPACE_ID"
   ],
   "migrations": "on-start",
   "rollback": "requires-schema-review"

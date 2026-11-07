@@ -26,6 +26,6 @@ export default defineConfig({
       srcDirectory: "app",
     }),
     viteReact(),
-    nitro(),
+    nitro({ plugins: ["./server/plugins/slack.ts"] }),
   ],
 });

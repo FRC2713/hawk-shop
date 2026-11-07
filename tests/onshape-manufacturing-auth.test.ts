@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { requestHandler } from "@tanstack/start-server-core/request-response";
+import { verifySession } from "./request-context";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "hawk-onshape-mfg-auth-"));
 process.env.DATA_DIR = dataDir;
@@ -39,7 +40,9 @@ test("signed-out manufacturing requests fail before parsing their body", async (
 
 const { Route: cards } = await import("../app/routes/api/kanban/cards.index");
 const getCards = endpoint(cards, "GET");
-const validCookie = `onshape_access_token=test-access; onshape_expires_at=${Date.now() + 3600000}`;
+const validExpiry = Date.now() + 3600000;
+const validCookie = `onshape_access_token=test-access; onshape_expires_at=${validExpiry}`;
+await verifySession("test-access", validExpiry);
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => {
   throw new Error("Manufacturing auth tests must not contact Onshape");
@@ -123,7 +126,7 @@ test("authenticated actions preserve successful mutations and structured validat
   assert.equal(released.data.title, "RHR-AUTHENTICATED-37");
   const cardId = released.data.id;
 
-  // Moving and editing require only a usable session, without attribution.
+  // Moving and editing need only the verified session, not a user-id cookie.
   const mutations: Record<string, string>[] = [
     { action: "moveCard", cardId, columnId: "done" },
     { action: "updateDueDate", cardId, dueDate: "2026-12-15" },

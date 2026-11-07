@@ -8,7 +8,7 @@ process.env.DATA_DIR = dataDir;
 after(() => rm(dataDir, { recursive: true, force: true }));
 const { handlePartNumberUpdate } =
   await import("../app/onshape_connector/actions/partNumberUpdate");
-import { inRequest, sessionRequest } from "./request-context";
+import { inRequest, sessionRequest, verifySession } from "./request-context";
 
 function form(partNumber = "2713") {
   const data = new FormData();
@@ -291,6 +291,7 @@ test("the manufacturing action exposes unconfirmed and rejected edits as structu
       };
     }
   ).options.server.handlers.POST;
+  await verifySession("editor");
   for (const rejected of [true, false]) {
     const fetchMock = t.mock.method(
       globalThis,

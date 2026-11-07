@@ -1,7 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { getRenewableSessionActor } from "~/lib/sessionActor";
 import { randomBytes } from "node:crypto";
 import { getAuthorizationUrl } from "~/lib/onshapeApi/auth";
-import { setOAuthState, setOAuthRedirect } from "~/lib/onshapeAuth";
+import {
+  getOnshapeTokens,
+  setOAuthState,
+  setOAuthRedirect,
+} from "~/lib/onshapeAuth";
 import { refreshOnshapeTokenIfNeeded } from "~/lib/tokenRefresh";
 import { resolveAppOrigin } from "~/lib/appOrigin";
 import { redirectResponse } from "~/lib/httpRedirect";
@@ -56,9 +61,10 @@ export const Route = createFileRoute("/auth/onshape/")({
         // re-login: a token that is merely stale gets renewed. When the refresh
         // token is gone or rejected this returns null (having cleared the dead
         // cookies), and we fall through to a full OAuth round trip.
+        const actor = await getRenewableSessionActor(await getOnshapeTokens());
         const accessToken = await refreshOnshapeTokenIfNeeded();
         console.log("[AUTH ONSHAPE] Already authenticated:", !!accessToken);
-        if (accessToken) {
+        if (accessToken && actor) {
           // `redirectTo` is already reduced to a rooted same-origin path, and
           // the cookies we just confirmed (or renewed) are what the gate reads
           // on the way back in — no `?auth=success` tag needed, and none is

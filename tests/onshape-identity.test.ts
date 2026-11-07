@@ -8,7 +8,12 @@ process.env.DATA_DIR = dataDir;
 after(() => rm(dataDir, { recursive: true, force: true }));
 const { handlePartNumberUpdate } =
   await import("../app/onshape_connector/actions/partNumberUpdate");
-import { inRequest, sessionRequest, getHandler } from "./request-context";
+import {
+  inRequest,
+  sessionRequest,
+  getHandler,
+  verifySession,
+} from "./request-context";
 
 test("interleaved part-number operations retain their initiating identity through metadata read and write", async (t) => {
   const sent: { method: string; token: string | null; url: string }[] = [];
@@ -245,6 +250,7 @@ test("explicit OAuth renewal rotates session cookies and keeps the same-origin r
       });
     }
   );
+  await verifySession("oauth");
   const request = new Request(
     "http://localhost/auth/onshape?redirect=%2Fkanban",
     sessionRequest("oauth")

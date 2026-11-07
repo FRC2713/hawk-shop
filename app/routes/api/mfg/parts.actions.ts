@@ -1,5 +1,5 @@
+import { requireSessionActor } from "~/lib/sessionActor";
 import { createFileRoute } from "@tanstack/react-router";
-import { requireAuth } from "~/lib/requireAuth";
 import {
   handleAddKanbanCard,
   handleMoveKanbanCard,
@@ -16,11 +16,11 @@ export const Route = createFileRoute("/api/mfg/parts/actions")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const unauthorized = await requireAuth();
-        if (unauthorized) {
+        const actor = await requireSessionActor();
+        if (actor instanceof Response) {
           return Response.json(
-            { success: false, ...(await unauthorized.json()) },
-            { status: unauthorized.status }
+            { success: false, ...(await actor.json()) },
+            { status: actor.status }
           );
         }
 
@@ -36,11 +36,11 @@ export const Route = createFileRoute("/api/mfg/parts/actions")({
           try {
             let result: ActionResponse;
             if (actionType === "addCard") {
-              result = await handleAddKanbanCard(formData, request);
+              result = await handleAddKanbanCard(formData, actor);
             } else if (actionType === "moveCard") {
-              result = await handleMoveKanbanCard(formData);
+              result = await handleMoveKanbanCard(formData, actor);
             } else if (actionType === "updateDueDate") {
-              result = await handleUpdateKanbanDueDate(formData);
+              result = await handleUpdateKanbanDueDate(formData, actor);
             } else {
               result = { success: false, error: "Unknown action type" };
             }

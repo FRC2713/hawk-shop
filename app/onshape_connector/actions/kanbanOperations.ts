@@ -1,24 +1,10 @@
 import { z } from "zod";
 import { createCard, updateCard } from "~/lib/kanbanApi/cards";
 import { logger } from "~/lib/logger";
-import { onshapeApiRequest } from "~/lib/onshapeApi/auth";
-import { getOnshapeUserIdFromRequest } from "~/lib/onshapeAuthRequest";
-import { recordOnshapeUsage } from "~/lib/onshapeApi/cache";
-import { getOnshapeTokenWithoutRefresh } from "~/lib/tokenRefresh";
+import type { SessionActor } from "~/lib/sessionActor";
 import type { ActionResponse } from "../utils/types";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
-
-/**
- * Onshape user response from /users/current endpoint
- */
-interface OnshapeUser {
-  id: string;
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  name?: string;
-}
 
 /**
  * Zod schema for adding a card to the Kanban board
@@ -96,58 +82,11 @@ function formDataToObject(
 }
 
 /**
- * Resolve the current user's Onshape ID for the `created_by` field.
- *
- * Sign-in already asked Onshape who this is and parked the answer in a cookie,
- * so the common path costs nothing. The API call below is only the fallback for
- * sessions established before that cookie existed — without it, releasing a
- * batch of 40 parts spent 40 calls out of an allocation of 10,000 for the year.
- */
-async function fetchOnshapeUserId(
-  request: Request
-): Promise<string | undefined> {
-  const cachedUserId = getOnshapeUserIdFromRequest(request);
-  if (cachedUserId) return cachedUserId;
-
-  try {
-    const accessToken = await getOnshapeTokenWithoutRefresh(request);
-
-    if (!accessToken) {
-      logger.debug("[Kanban] No access token available");
-      return undefined;
-    }
-
-    const response = await onshapeApiRequest(accessToken, "/users/current");
-
-    if (response.ok) recordOnshapeUsage("users", "call");
-
-    if (!response.ok) {
-      const errorText = await response
-        .text()
-        .catch(() => "Unable to read error");
-      logger.error(
-        `[Kanban] API response not OK. Status: ${response.status}, Error: ${errorText}`
-      );
-      return undefined;
-    }
-
-    const user = (await response.json()) as OnshapeUser;
-    logger.debug("[Kanban] User data received");
-
-    // Return the Onshape user ID
-    return user.id;
-  } catch (error) {
-    logger.error("[Kanban] Error fetching user info:", error);
-    return undefined;
-  }
-}
-
-/**
  * Handle adding a card to the Kanban board
  */
 export async function handleAddKanbanCard(
   formData: FormData,
-  request: Request
+  actor: SessionActor
 ): Promise<ActionResponse> {
   // Parse and validate form data
   const rawData = formDataToObject(
@@ -227,28 +166,27 @@ export async function handleAddKanbanCard(
       imageUrl = `/api/onshape/thumbnail?url=${encodeURIComponent(thumbnailUrl)}`;
     }
 
-    // Get Onshape user ID to store in created_by field
-    const createdBy = await fetchOnshapeUserId(request);
-
     // Create card with version ID
     // Keep title as just partNumber - matching will use composite key (partNumber::versionId)
-    const card = await createCard({
-      title: data.partNumber,
-      imageUrl,
-      assignee: "Unassigned",
-      machine: "TBD",
-      createdBy,
-      processIds: data.processIds,
-      quantityPerRobot: data.quantityPerRobot,
-      quantityToMake: data.quantityToMake,
-      dueDate: data.dueDate,
-      onshapeDocumentId: data.documentId,
-      onshapeInstanceType: data.instanceType,
-      onshapeInstanceId: data.instanceId,
-      onshapeElementId: data.elementId,
-      onshapePartId: data.partId,
-      onshapeVersionId: versionId,
-    });
+    const card = await createCard(
+      {
+        title: data.partNumber,
+        imageUrl,
+        assignee: "Unassigned",
+        machine: "TBD",
+        processIds: data.processIds,
+        quantityPerRobot: data.quantityPerRobot,
+        quantityToMake: data.quantityToMake,
+        dueDate: data.dueDate,
+        onshapeDocumentId: data.documentId,
+        onshapeInstanceType: data.instanceType,
+        onshapeInstanceId: data.instanceId,
+        onshapeElementId: data.elementId,
+        onshapePartId: data.partId,
+        onshapeVersionId: versionId,
+      },
+      actor
+    );
 
     return { success: true, data: card };
   } catch (error) {
@@ -267,7 +205,8 @@ export async function handleAddKanbanCard(
  * Handle moving a card between columns
  */
 export async function handleMoveKanbanCard(
-  formData: FormData
+  formData: FormData,
+  actor: SessionActor
 ): Promise<ActionResponse> {
   // Parse and validate form data
   const rawData = formDataToObject(formData, ["cardId", "columnId"]);
@@ -283,7 +222,7 @@ export async function handleMoveKanbanCard(
   const { cardId, columnId } = parseResult.data;
 
   try {
-    const card = await updateCard(cardId, { column_id: columnId });
+    const card = await updateCard(cardId, { column_id: columnId }, actor);
     return { success: true, data: card };
   } catch (error) {
     logger.error("[Kanban] Error moving card:", error);
@@ -298,7 +237,8 @@ export async function handleMoveKanbanCard(
  * Handle updating a card's due date
  */
 export async function handleUpdateKanbanDueDate(
-  formData: FormData
+  formData: FormData,
+  actor: SessionActor
 ): Promise<ActionResponse> {
   // Parse and validate form data
   const rawData = formDataToObject(formData, ["cardId", "dueDate"]);
@@ -314,9 +254,13 @@ export async function handleUpdateKanbanDueDate(
   const { cardId, dueDate } = parseResult.data;
 
   try {
-    const card = await updateCard(cardId, {
-      due_date: dueDate || undefined,
-    });
+    const card = await updateCard(
+      cardId,
+      {
+        due_date: dueDate || undefined,
+      },
+      actor
+    );
     return { success: true, data: card };
   } catch (error) {
     logger.error("[Kanban] Error updating due date:", error);

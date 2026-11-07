@@ -8,7 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev            # Vite dev server (http://localhost:3000)
 npm run build          # production build -> .output/ (client + Nitro server bundle)
 npm run start          # run the built server: node .output/server/index.mjs
-npm run typecheck      # tsc --noEmit — the only static check besides prettier
+npm run typecheck      # tsc --noEmit
+npm test               # HTTP/API and controlled transport behavior tests
+npm run test:runtime   # built production startup + HTTP smoke, after npm run build
 npm run format         # prettier --write . (prettier-plugin-tailwindcss sorts classes)
 npm run format:check
 npm test               # node:test + tsx, isolated SQLite and scripted HTTP
@@ -18,7 +20,7 @@ npm run db:studio      # drizzle studio
 npm run generate:onshape-client   # regenerate app/lib/onshapeApi/generated/ from Onshape's live OpenAPI spec
 ```
 
-Run `npm test`, `npm run typecheck`, `npm run format:check`, and `npm run build` for Onshape changes. Tests substitute external HTTP and request cookies; never call live Onshape. Set a temporary `DATA_DIR` before dynamically importing any DB-backed module. There is no linter.
+Run `npm test`, `npm run typecheck`, and `npm run format:check` for verification; add `npm run build` for Onshape changes. Tests use the built-in Node test runner with tsx, isolated SQLite databases, and controlled external transports. Never call live Onshape or send real Slack messages from tests. Set a temporary `DATA_DIR` before dynamically importing any DB-backed module. Run `npm run build` and then `npm run test:runtime` when changing routes, server imports, or runtime startup; the runtime check verifies pending delivery before incoming traffic and then serves a real health request. There is no linter.
 
 ## Architecture
 
@@ -31,7 +33,7 @@ This is a port of [rhr-mfg](https://github.com/FRC2713/rhr-mfg) off Supabase. If
 1. **Onshape (external, OAuth)** — CAD parts, metadata, thumbnails. Read-only except part-number writes.
 2. **Local SQLite via Drizzle** — everything else, plus uploaded images on the filesystem next to it.
 
-There is no per-user DB authorization. Access control is entirely "does the request have valid Onshape tokens."
+Manufacturing reads use Onshape session checks. Releases and status mutations additionally require a server-verified actor bound to the OAuth session. Slack configuration requires a fresh workspace administrator or owner role check on every privileged request.
 
 ### Everything durable lives under DATA_DIR
 
@@ -81,6 +83,14 @@ Handlers that set cookies may return a fresh `Response`: the runtime merges the 
 Cookie policy is in `app/lib/cookieOptions.ts` and is **not** keyed off `NODE_ENV`. `SameSite=None` requires `Secure`, which browsers only honor over HTTPS, so a plain-HTTP LAN install must use `Lax` or sign-in fails outright. `ONSHAPE_IFRAME_EMBED=true` (plus HTTPS) opts into the iframe-compatible `None`.
 
 `app/lib/tokenRefresh.ts` exposes read-only `getOnshapeTokenWithoutRefresh(request?)` for ordinary operations and `refreshOnshapeTokenIfNeeded()` for the OAuth route only. Expired or missing-expiry sessions cannot perform ordinary operations; they never rotate cookies implicitly.
+
+### Verified manufacturing identity and Slack administration
+
+`app/lib/sessionActor.ts` binds the user ID and optional email from the existing OAuth user-info response to hashed access and refresh tokens in SQLite. Use `requireSessionActor()` for release and status mutations; use the returned actor, never a user ID or email supplied by the browser. Keep the original submitter immutable and separate from manufacturing assignment. Renewal carries the verified identity forward, logout revokes it, and legacy sessions must sign in again. This does not add per-move or per-release Onshape identity requests.
+
+`app/lib/slack/` contains the optional outbound Slack integration. `requireSlackAdmin()` verifies the trusted actor's email against current active Red Hawk Robotics workspace admin/owner roles; it is a server check for reads as well as writes. Slack uncertainty denies configuration access while the manufacturing board remains usable. Bot credentials stay in deployment environment variables. Privileged writes must enforce the Slack settings request-origin/custom-header policy even when iframe-compatible cookies are enabled.
+
+For notification triggers, pending-work lifecycle, grouping, and the no-history rule, read `docs/slack-integration.md` before modifying Slack code. Deployment setup and required bot permissions are in `docs/slack-setup.md`.
 
 ### Onshape API clients
 

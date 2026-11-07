@@ -172,6 +172,9 @@ export function MainLayoutClient({
                   </>
                 )}
                 <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/slack">Slack integration</Link>
+                </DropdownMenuItem>
                 <DropdownMenuLabel>Authentication</DropdownMenuLabel>
                 <DropdownMenuSeparator />
 
