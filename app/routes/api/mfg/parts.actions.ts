@@ -17,7 +17,13 @@ export const Route = createFileRoute("/api/mfg/parts/actions")({
     handlers: {
       POST: async ({ request }) => {
         const actor = await requireSessionActor();
-        if (actor instanceof Response) return actor;
+        if (actor instanceof Response) {
+          return Response.json(
+            { success: false, ...(await actor.json()) },
+            { status: actor.status }
+          );
+        }
+
         const formData = await request.formData();
         const actionType = formData.get("action")?.toString();
 

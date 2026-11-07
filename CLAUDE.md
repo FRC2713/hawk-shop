@@ -13,13 +13,14 @@ npm test               # HTTP/API and controlled transport behavior tests
 npm run test:runtime   # built production startup + HTTP smoke, after npm run build
 npm run format         # prettier --write . (prettier-plugin-tailwindcss sorts classes)
 npm run format:check
+npm test               # node:test + tsx, isolated SQLite and scripted HTTP
 npm run db:generate    # drizzle-kit generate — new migration from schema.ts
 npm run db:migrate     # apply migrations without booting the app
 npm run db:studio      # drizzle studio
 npm run generate:onshape-client   # regenerate app/lib/onshapeApi/generated/ from Onshape's live OpenAPI spec
 ```
 
-Run `npm test`, `npm run typecheck`, and `npm run format:check` for verification. Tests use the built-in Node test runner with tsx, isolated SQLite databases, and controlled external transports. Do not send real Slack messages from tests. Run `npm run build` and then `npm run test:runtime` when changing routes, server imports, or runtime startup; the runtime check verifies pending delivery before incoming traffic and then serves a real health request.
+Run `npm test`, `npm run typecheck`, and `npm run format:check` for verification; add `npm run build` for Onshape changes. Tests use the built-in Node test runner with tsx, isolated SQLite databases, and controlled external transports. Never call live Onshape or send real Slack messages from tests. Set a temporary `DATA_DIR` before dynamically importing any DB-backed module. Run `npm run build` and then `npm run test:runtime` when changing routes, server imports, or runtime startup; the runtime check verifies pending delivery before incoming traffic and then serves a real health request. There is no linter.
 
 ## Architecture
 
@@ -59,7 +60,7 @@ better-sqlite3 is a native addon, so it is marked external in `vite.config.ts` (
 
 `app/start.ts` registers a global **request middleware** via `createStart({ requestMiddleware })`. It gates every non-`/signin`, non-`/auth/*` route on valid Onshape cookies and redirects page routes to `/auth/onshape`. It deliberately lets **all** `/api/*` and `/_serverFn/*` through, because those handlers verify themselves. `/_serverFn/*` in particular must not be redirected: `fetchOnshapeAuthState` is invoked over it precisely when the user may be signed out, and an HTML redirect there reads as a successful response to the caller.
 
-**`requireAuth()` (`app/lib/requireAuth.ts`) is that verification, and every DB-backed handler starts with it** — `api/kanban/*`, `api/equipment*`, `api/processes*`, `api/users*`, `api/files/*`, and `api/onshape/thumbnail` (which answers cache hits without ever needing a token). It returns a 401 `Response` to hand straight back, or null to proceed. `api/health` is deliberately ungated: the container healthcheck calls it with no cookies. The Onshape-proxying routes are gated by needing a token to function. Skipping `requireAuth` on a new DB-backed route reopens the hole — until this was added, those routes answered any caller on the network, reads and writes alike.
+**`requireAuth()` (`app/lib/requireAuth.ts`) is that verification, and every DB-backed handler starts with it** — `api/kanban/*`, `api/equipment*`, `api/processes*`, `api/users*`, `api/files/*`, and `api/onshape/thumbnail` (which answers cache hits without ever needing a token). It returns a 401 `Response` to hand straight back, or null to proceed. `api/health` is deliberately ungated: the container healthcheck calls it with no cookies. Cached Onshape routes also require explicit authentication because hits do not contact Onshape. Skipping `requireAuth` on a new DB-backed route reopens the hole — until this was added, those routes answered any caller on the network, reads and writes alike.
 
 `requireAuth` does **not** refresh. `refreshOnshapeTokenIfNeeded` rotates the refresh token, and a board view fires several API calls at once; parallel refreshes would race to invalidate each other's rotated token. Renewal happens only where one request drives it — the `/auth/onshape` route the loader bounces through.
 
@@ -81,10 +82,7 @@ Handlers that set cookies may return a fresh `Response`: the runtime merges the 
 
 Cookie policy is in `app/lib/cookieOptions.ts` and is **not** keyed off `NODE_ENV`. `SameSite=None` requires `Secure`, which browsers only honor over HTTPS, so a plain-HTTP LAN install must use `Lax` or sign-in fails outright. `ONSHAPE_IFRAME_EMBED=true` (plus HTTPS) opts into the iframe-compatible `None`.
 
-`app/lib/tokenRefresh.ts` still exposes two paths. The Next constraint that forced the split (Server Components cannot write cookies) is gone — server functions and route handlers can both write — but the read-only path is still what you want anywhere a token refresh would be a surprising side effect:
-
-- `getOnshapeTokenWithoutRefresh()` / `createOnshapeClientFromTokens()` / `createOnshapeApiClientReadOnly()` — no refresh; return `null` on expiry.
-- `getValidOnshapeToken*()` / `refreshOnshapeTokenIfNeeded()` / `createOnshapeClient()` — these mutate cookies.
+`app/lib/tokenRefresh.ts` exposes read-only `getOnshapeTokenWithoutRefresh(request?)` for ordinary operations and `refreshOnshapeTokenIfNeeded()` for the OAuth route only. Expired or missing-expiry sessions cannot perform ordinary operations; they never rotate cookies implicitly.
 
 ### Verified manufacturing identity and Slack administration
 
@@ -94,10 +92,19 @@ Cookie policy is in `app/lib/cookieOptions.ts` and is **not** keyed off `NODE_EN
 
 For notification triggers, pending-work lifecycle, grouping, and the no-history rule, read `docs/slack-integration.md` before modifying Slack code. Deployment setup and required bot permissions are in `docs/slack-setup.md`.
 
-### Onshape API — two clients coexist
+### Onshape API clients
 
-- `app/lib/onshapeApi/client.ts` — hand-written `OnshapeClient` class (documents, parts, session info, thumbnails).
-- `app/lib/onshapeApi/generated/` — `@hey-api/openapi-ts` output, **generated, never edit by hand**. Reach it through `generated-wrapper.ts` (server) or `generated-wrapper-client.ts` (browser), which inject the auth callback. Types like `BtPartMetadataInfo` come from here.
+- `app/lib/onshapeApi/client.ts` provides the hand-written `OnshapeClient`. `createOnshapeClient()` captures usable request credentials without refresh.
+- `app/lib/onshapeApi/generated/` is generated output; never edit it. `generated-wrapper.ts` creates a separate authenticated client per operation with `createOnshapeApiClient()` or `createOnshapeApiClientFromRequest(request)`. Pass that client to every SDK request in the operation. Never configure the generated singleton with request credentials.
+- The old refreshing token compatibility functions and browser generated wrapper have been removed. Browser code uses `/api/*` and type-only imports for SDK types.
+
+### Onshape cache and part-number writes
+
+`app/lib/onshapeApi/cache.ts` combines durable SQLite responses with single-flight upstream reads. Workspace parts expire after `ONSHAPE_CACHE_TTL_SECONDS`, default 300; version and microversion parts normally never expire. Every new cached API route must call `requireAuth()` even on hits.
+
+`partNumberUpdate.ts` owns metadata discovery, write acceptance, normalized-value verification, and affected Part Studio cache invalidation. An accepted write invalidates the matching parts entry before verification, including unconfirmed outcomes. Invalidation detaches earlier pending reads; those reads cannot repopulate the cache or remove a newer pending read. Preserve unrelated scopes and normal indefinite retention. Count HTTP 2xx metadata reads, writes and verification via `recordOnshapeUsage`, including malformed semantic payloads; exclude HTTP failures.
+
+The browser `partActions.updatePartNumber(input, queryClient)` invalidates both thumbnail variants through `queryKeys.onshape.partsScope` after confirmed success. The input component owns clearing input and rendering errors. Query-owned parts data cannot be refreshed by rerunning route loaders. Unconfirmed writes report uncertainty without automatic replay.
 
 ### Data fetching pattern
 

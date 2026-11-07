@@ -1,4 +1,23 @@
+CREATE TABLE `oauth_sessions` (
+	`access_hash` text PRIMARY KEY NOT NULL,
+	`refresh_hash` text NOT NULL,
+	`onshape_user_id` text NOT NULL,
+	`email` text,
+	`expires_at` text NOT NULL,
+	`refresh_expires_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `slack_config` (
+	`id` text PRIMARY KEY NOT NULL,
+	`channel_id` text,
+	`channel_name` text,
+	`enabled` integer DEFAULT false NOT NULL,
+	`generation` integer DEFAULT 0 NOT NULL,
+	`updated_at` text NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `slack_pending` (
+	`delivery_group` integer,
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`card_id` text NOT NULL,
 	`submitter_id` text,
@@ -23,3 +42,5 @@ CREATE TABLE `slack_post_gate` (
 	`id` text PRIMARY KEY NOT NULL,
 	`next_post_at` text NOT NULL
 );
+--> statement-breakpoint
+ALTER TABLE `users` ADD `email` text;

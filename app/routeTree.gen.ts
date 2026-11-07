@@ -26,7 +26,7 @@ import { Route as ApiFilesSplatRouteImport } from './routes/api/files.$'
 import { Route as ApiKanbanEventsRouteImport } from './routes/api/kanban/events'
 import { Route as ApiOnshapePartsRouteImport } from './routes/api/onshape/parts'
 import { Route as ApiOnshapeThumbnailRouteImport } from './routes/api/onshape/thumbnail'
-import { Route as ApiOnshapeTokenRouteImport } from './routes/api/onshape/token'
+import { Route as ApiOnshapeUsageRouteImport } from './routes/api/onshape/usage'
 import { Route as ApiOnshapeVersionRouteImport } from './routes/api/onshape/version'
 import { Route as ApiProcessesIndexRouteImport } from './routes/api/processes.index'
 import { Route as ApiProcessesIdRouteImport } from './routes/api/processes.$id'
@@ -130,9 +130,9 @@ const ApiOnshapeThumbnailRoute = ApiOnshapeThumbnailRouteImport.update({
   path: '/api/onshape/thumbnail',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiOnshapeTokenRoute = ApiOnshapeTokenRouteImport.update({
-  id: '/api/onshape/token',
-  path: '/api/onshape/token',
+const ApiOnshapeUsageRoute = ApiOnshapeUsageRouteImport.update({
+  id: '/api/onshape/usage',
+  path: '/api/onshape/usage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOnshapeVersionRoute = ApiOnshapeVersionRouteImport.update({
@@ -241,7 +241,7 @@ export interface FileRoutesByFullPath {
   '/api/kanban/events': typeof ApiKanbanEventsRoute
   '/api/onshape/parts': typeof ApiOnshapePartsRoute
   '/api/onshape/thumbnail': typeof ApiOnshapeThumbnailRoute
-  '/api/onshape/token': typeof ApiOnshapeTokenRoute
+  '/api/onshape/usage': typeof ApiOnshapeUsageRoute
   '/api/onshape/version': typeof ApiOnshapeVersionRoute
   '/api/processes/$id': typeof ApiProcessesIdRoute
   '/api/slack/channels': typeof ApiSlackChannelsRoute
@@ -278,7 +278,7 @@ export interface FileRoutesByTo {
   '/api/kanban/events': typeof ApiKanbanEventsRoute
   '/api/onshape/parts': typeof ApiOnshapePartsRoute
   '/api/onshape/thumbnail': typeof ApiOnshapeThumbnailRoute
-  '/api/onshape/token': typeof ApiOnshapeTokenRoute
+  '/api/onshape/usage': typeof ApiOnshapeUsageRoute
   '/api/onshape/version': typeof ApiOnshapeVersionRoute
   '/api/processes/$id': typeof ApiProcessesIdRoute
   '/api/slack/channels': typeof ApiSlackChannelsRoute
@@ -317,7 +317,7 @@ export interface FileRoutesById {
   '/api/kanban/events': typeof ApiKanbanEventsRoute
   '/api/onshape/parts': typeof ApiOnshapePartsRoute
   '/api/onshape/thumbnail': typeof ApiOnshapeThumbnailRoute
-  '/api/onshape/token': typeof ApiOnshapeTokenRoute
+  '/api/onshape/usage': typeof ApiOnshapeUsageRoute
   '/api/onshape/version': typeof ApiOnshapeVersionRoute
   '/api/processes/$id': typeof ApiProcessesIdRoute
   '/api/slack/channels': typeof ApiSlackChannelsRoute
@@ -356,7 +356,7 @@ export interface FileRouteTypes {
     | '/api/kanban/events'
     | '/api/onshape/parts'
     | '/api/onshape/thumbnail'
-    | '/api/onshape/token'
+    | '/api/onshape/usage'
     | '/api/onshape/version'
     | '/api/processes/$id'
     | '/api/slack/channels'
@@ -393,7 +393,7 @@ export interface FileRouteTypes {
     | '/api/kanban/events'
     | '/api/onshape/parts'
     | '/api/onshape/thumbnail'
-    | '/api/onshape/token'
+    | '/api/onshape/usage'
     | '/api/onshape/version'
     | '/api/processes/$id'
     | '/api/slack/channels'
@@ -431,7 +431,7 @@ export interface FileRouteTypes {
     | '/api/kanban/events'
     | '/api/onshape/parts'
     | '/api/onshape/thumbnail'
-    | '/api/onshape/token'
+    | '/api/onshape/usage'
     | '/api/onshape/version'
     | '/api/processes/$id'
     | '/api/slack/channels'
@@ -466,7 +466,7 @@ export interface RootRouteChildren {
   ApiKanbanEventsRoute: typeof ApiKanbanEventsRoute
   ApiOnshapePartsRoute: typeof ApiOnshapePartsRoute
   ApiOnshapeThumbnailRoute: typeof ApiOnshapeThumbnailRoute
-  ApiOnshapeTokenRoute: typeof ApiOnshapeTokenRoute
+  ApiOnshapeUsageRoute: typeof ApiOnshapeUsageRoute
   ApiOnshapeVersionRoute: typeof ApiOnshapeVersionRoute
   ApiProcessesIdRoute: typeof ApiProcessesIdRoute
   ApiSlackChannelsRoute: typeof ApiSlackChannelsRoute
@@ -607,11 +607,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOnshapeThumbnailRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/onshape/token': {
-      id: '/api/onshape/token'
-      path: '/api/onshape/token'
-      fullPath: '/api/onshape/token'
-      preLoaderRoute: typeof ApiOnshapeTokenRouteImport
+    '/api/onshape/usage': {
+      id: '/api/onshape/usage'
+      path: '/api/onshape/usage'
+      fullPath: '/api/onshape/usage'
+      preLoaderRoute: typeof ApiOnshapeUsageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/onshape/version': {
@@ -796,7 +796,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiKanbanEventsRoute: ApiKanbanEventsRoute,
   ApiOnshapePartsRoute: ApiOnshapePartsRoute,
   ApiOnshapeThumbnailRoute: ApiOnshapeThumbnailRoute,
-  ApiOnshapeTokenRoute: ApiOnshapeTokenRoute,
+  ApiOnshapeUsageRoute: ApiOnshapeUsageRoute,
   ApiOnshapeVersionRoute: ApiOnshapeVersionRoute,
   ApiProcessesIdRoute: ApiProcessesIdRoute,
   ApiSlackChannelsRoute: ApiSlackChannelsRoute,

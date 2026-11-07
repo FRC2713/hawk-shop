@@ -1,279 +1,198 @@
+import "@tanstack/react-start/server-only";
 import {
-  createOnshapeApiClientReadOnly,
+  createOnshapeApiClientFromRequest,
   getWmvepMetadata,
   updateWvepMetadata,
 } from "~/lib/onshapeApi/generated-wrapper";
+import {
+  cacheKey,
+  invalidateOnshapeCache,
+  recordOnshapeUsage,
+} from "~/lib/onshapeApi/cache";
 import { isOnshapeAuthenticatedFromRequest } from "~/lib/onshapeAuth";
 import { createErrorResponse } from "../utils/errorHandling";
 import type { ActionResponse } from "../utils/types";
 
-/**
- * Handle updating a part's part number in Onshape metadata
- */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function propertiesFrom(metadata: unknown) {
+  if (!isRecord(metadata) || !Array.isArray(metadata.properties)) return null;
+  return metadata.properties.filter(isRecord);
+}
+
+function isPartNumberProperty(property: Record<string, unknown>) {
+  const name =
+    typeof property.name === "string" ? property.name.toLowerCase() : "";
+  const id = typeof property.propertyId === "string" ? property.propertyId : "";
+  return (
+    name === "part number" ||
+    name === "partnumber" ||
+    name === "part_number" ||
+    id.includes("partnumber") ||
+    id.includes("part_number")
+  );
+}
+
+function upstreamFailure(
+  result: { error?: unknown; response: Response },
+  message: string
+): ActionResponse | null {
+  if (result.error === undefined && result.response.ok) return null;
+  return createErrorResponse(
+    {
+      error:
+        typeof result.error === "string"
+          ? { message: result.error }
+          : result.error,
+      status: result.response.status,
+    },
+    message
+  );
+}
+
+function unconfirmed(reason: string): ActionResponse {
+  return {
+    success: false,
+    error: `The part number write may have succeeded but could not be confirmed. ${reason} Check the part in Onshape before retrying.`,
+  };
+}
+
+/** Discover, write, and verify metadata using only the initiating request's identity. */
 export async function handlePartNumberUpdate(
   formData: FormData,
   request: Request
 ): Promise<ActionResponse> {
-  console.log("[ACTION] Starting part number update");
-
-  // Check Onshape authentication (required)
-  const onshapeAuthenticated = isOnshapeAuthenticatedFromRequest(request);
-  if (!onshapeAuthenticated) {
-    console.error("[ACTION] Not authenticated with Onshape");
+  if (!isOnshapeAuthenticatedFromRequest(request)) {
     return { success: false, error: "Not authenticated with Onshape" };
   }
 
   try {
     const partId = formData.get("partId")?.toString();
-    const partNumber = formData.get("partNumber")?.toString();
+    const partNumber = formData.get("partNumber")?.toString().trim();
     const documentId = formData.get("documentId")?.toString();
     const instanceType = formData.get("instanceType")?.toString() || "w";
     const instanceId = formData.get("instanceId")?.toString();
     const elementId = formData.get("elementId")?.toString();
-
-    console.log("[ACTION] Form data received:", {
-      partId,
-      partNumber,
-      documentId,
-      instanceType,
-      instanceId,
-      elementId,
-    });
-
     if (!partId || !partNumber || !documentId || !instanceId || !elementId) {
-      const missing = [];
-      if (!partId) missing.push("partId");
-      if (!partNumber) missing.push("partNumber");
-      if (!documentId) missing.push("documentId");
-      if (!instanceId) missing.push("instanceId");
-      if (!elementId) missing.push("elementId");
-      console.error("[ACTION] Missing required fields:", missing);
+      const missing = Object.entries({
+        partId,
+        partNumber,
+        documentId,
+        instanceId,
+        elementId,
+      })
+        .filter(([, value]) => !value)
+        .map(([key]) => key);
       return {
         success: false,
         error: `Missing required fields: ${missing.join(", ")}`,
       };
     }
 
-    const client = await createOnshapeApiClientReadOnly();
-    console.log("[ACTION] Client created successfully");
-
-    // First, get the metadata to find the propertyId for "Part number"
-    console.log("[ACTION] Fetching metadata for part:", {
-      documentId,
-      instanceType,
-      instanceId,
-      elementId,
-      partId,
+    const client = await createOnshapeApiClientFromRequest(request);
+    // Count successful HTTP traffic before the generated decoder runs, even
+    // when a metadata response contains invalid JSON.
+    client.interceptors.response.use((response) => {
+      if (response.ok) recordOnshapeUsage("metadata", "call");
+      return response;
     });
+    const path = {
+      did: documentId,
+      wvm: instanceType as "w" | "v" | "m",
+      wvmid: instanceId,
+      eid: elementId,
+      iden: "p" as const,
+      pid: partId,
+    };
     const metadataResponse = await getWmvepMetadata({
       client,
-      path: {
-        did: documentId,
-        wvm: instanceType as "w" | "v" | "m",
-        wvmid: instanceId,
-        eid: elementId,
-        iden: "p",
-        pid: partId,
-      },
-      query: {
-        includeComputedProperties: true,
-      },
+      path,
+      query: { includeComputedProperties: true },
     });
-
-    console.log("[ACTION] Metadata response received:", {
-      hasData: !!metadataResponse.data,
-      jsonType: metadataResponse.data?.jsonType,
-      propertiesCount: metadataResponse.data?.properties?.length || 0,
-    });
-
-    const metadata = metadataResponse.data;
-    if (!metadata || !metadata.properties) {
-      console.error(
-        "[ACTION] Failed to retrieve part metadata or properties missing"
-      );
-      console.error(
-        "[ACTION] Metadata object:",
-        JSON.stringify(metadata, null, 2)
-      );
-      return {
-        success: false,
-        error: "Failed to retrieve part metadata or no properties found",
-      };
-    }
-
-    // Log all available properties for debugging
-    console.log(
-      "[ACTION] Available properties:",
-      metadata.properties.map((prop: any) => ({
-        name: prop.name,
-        propertyId: prop.propertyId,
-        value: prop.value,
-        editable: prop.editable,
-      }))
+    const metadataFailure = upstreamFailure(
+      metadataResponse,
+      "Failed to retrieve part metadata"
     );
-
-    // Find the "Part number" property (try multiple possible names)
-    const partNumberProperty = metadata.properties.find((prop: any) => {
-      const name = prop.name?.toLowerCase();
-      return (
-        name === "part number" ||
-        name === "partnumber" ||
-        name === "part_number" ||
-        prop.propertyId?.includes("partnumber") ||
-        prop.propertyId?.includes("part_number")
-      );
-    });
-
-    console.log("[ACTION] Part number property search result:", {
-      found: !!partNumberProperty,
-      propertyName: partNumberProperty?.name,
-      propertyId: partNumberProperty?.propertyId,
-      editable: partNumberProperty?.editable,
-    });
-
-    if (!partNumberProperty || !partNumberProperty.propertyId) {
-      console.error("[ACTION] Part number property not found in metadata");
-      const availableNames = metadata.properties
-        .map((p: any) => p.name)
-        .filter(Boolean);
+    if (metadataFailure) return metadataFailure;
+    const properties = propertiesFrom(metadataResponse.data);
+    if (!properties) {
       return {
         success: false,
-        error: `Part number property not found. Available properties: ${availableNames.join(", ") || "none"}`,
+        error:
+          "Failed to retrieve part metadata: properties are missing or malformed",
+      };
+    }
+    const property = properties.find(isPartNumberProperty);
+    if (
+      !property ||
+      typeof property.propertyId !== "string" ||
+      !property.propertyId.trim()
+    ) {
+      return {
+        success: false,
+        error: "Part number property not found or malformed in part metadata",
       };
     }
 
-    // Update the part number using the metadata API
-    // Note: Even though the type says 'string', the generated client uses jsonBodySerializer
-    // which will JSON.stringify it, so we pass an object to avoid double-encoding
-    const updateBodyObj = {
+    // The generated schema calls this body a string. Its JSON serializer needs
+    // the object itself; a pre-serialized string would be encoded twice.
+    const body = {
       jsonType: "metadata-part",
-      partId: partId,
-      properties: [
-        {
-          value: partNumber.trim(),
-          propertyId: partNumberProperty.propertyId,
-        },
-      ],
-    };
-
-    // Verify request format matches Onshape API documentation
-    console.log("[ACTION] Update request body (verifying format):", {
-      jsonType: updateBodyObj.jsonType,
-      partId: updateBodyObj.partId,
-      propertiesCount: updateBodyObj.properties.length,
-      propertyValue: updateBodyObj.properties[0].value,
-      propertyId: updateBodyObj.properties[0].propertyId,
-      formatMatches:
-        updateBodyObj.jsonType === "metadata-part" &&
-        updateBodyObj.properties.length === 1 &&
-        updateBodyObj.properties[0].propertyId ===
-          partNumberProperty.propertyId,
+      partId,
+      properties: [{ value: partNumber, propertyId: property.propertyId }],
+    } as unknown as string;
+    // The write body is unused. Do not consume it: decoding or stream errors
+    // must not hide acceptance or prevent eviction and independent verification.
+    const updateResponse = await updateWvepMetadata({
+      client,
+      path,
+      body,
+      parseAs: "stream",
     });
-
-    console.log(
-      "[ACTION] Sending update request with body object:",
-      JSON.stringify(updateBodyObj, null, 2)
+    const writeFailure = upstreamFailure(
+      updateResponse,
+      "Onshape rejected the part number update"
     );
-
-    // Pass as object - the generated client will JSON.stringify it via jsonBodySerializer
-    // The type says 'string' but that appears to be incorrect - passing an object should work
-    const updateBody = updateBodyObj as any;
-
-    let updateResponse;
+    if (writeFailure) return writeFailure;
+    // Release the unused body without making confirmation depend on its stream.
+    void updateResponse.response.body?.cancel().catch(() => {});
     try {
-      updateResponse = await updateWvepMetadata({
-        client,
-        path: {
-          did: documentId,
-          wvm: instanceType as "w" | "v" | "m",
-          wvmid: instanceId,
-          eid: elementId,
-          iden: "p",
-          pid: partId,
-        },
-        body: updateBody, // Passing object - client will serialize it
-      });
-    } catch (updateError: any) {
-      console.error("[ACTION] Update API threw an error:", updateError);
-      console.error("[ACTION] Update error details:", {
-        message: updateError?.message,
-        status: updateError?.status,
-        response: updateError?.response
-          ? {
-              status: updateError.response.status,
-              statusText: updateError.response.statusText,
-              data: updateError.response.data,
-            }
-          : undefined,
-      });
-      throw updateError;
+      invalidateOnshapeCache(
+        cacheKey("parts", documentId, instanceType, instanceId, elementId)
+      );
+    } catch (error: unknown) {
+      console.error(
+        "[ACTION] Error invalidating parts after accepted write:",
+        error
+      );
+      return unconfirmed("The parts cache could not be refreshed.");
     }
 
-    // Log full response including status and headers if available
-    console.log("[ACTION] Update response received:", {
-      hasData: !!updateResponse.data,
-      response: JSON.stringify(updateResponse.data, null, 2),
-      responseKeys: updateResponse.data ? Object.keys(updateResponse.data) : [],
-      fullResponse: updateResponse,
-    });
-
-    // Check for HTTP status in response if available
-    if (updateResponse && typeof updateResponse === "object") {
-      const resp = updateResponse as any;
-      console.log("[ACTION] Update response status check:", {
-        status: resp.status,
-        statusText: resp.statusText,
-        ok: resp.ok,
-        headers: resp.headers ? Object.keys(resp.headers) : undefined,
-      });
-    }
-
-    // Log microversion info if available in response
-    if (updateResponse.data && typeof updateResponse.data === "object") {
-      const responseData = updateResponse.data as any;
-      console.log("[ACTION] Update response microversion info:", {
-        metadataMicroversion: responseData.metadataMicroversion,
-        microversionId: responseData.microversionId,
-        keys: Object.keys(responseData),
-      });
-    }
-
-    // Verify the update by fetching metadata again (as per Onshape docs step 4)
-    console.log("[ACTION] Verifying update by fetching metadata again...");
     try {
-      const verificationMetadataResponse = await getWmvepMetadata({
+      const verification = await getWmvepMetadata({
         client,
-        path: {
-          did: documentId,
-          wvm: instanceType as "w" | "v" | "m",
-          wvmid: instanceId,
-          eid: elementId,
-          iden: "p",
-          pid: partId,
-        },
-        query: {
-          includeComputedProperties: true,
-        },
+        path,
+        query: { includeComputedProperties: true },
       });
-
-      const verificationMetadata = verificationMetadataResponse.data;
-      if (verificationMetadata && verificationMetadata.properties) {
-        const updatedPartNumberProperty = verificationMetadata.properties.find(
-          (prop: any) => prop.propertyId === partNumberProperty.propertyId
-        );
-      } else {
-        console.warn(
-          "[ACTION] Could not verify update - verification metadata response missing properties"
+      const failure = upstreamFailure(
+        verification,
+        "Verification metadata request failed"
+      );
+      if (failure) return unconfirmed(`${failure.error}.`);
+      const updatedProperty = propertiesFrom(verification.data)?.find(
+        (candidate) => candidate.propertyId === property.propertyId
+      );
+      if (updatedProperty?.value !== partNumber) {
+        return unconfirmed(
+          "Verification did not return the requested part number."
         );
       }
-    } catch (verifyError) {
-      console.error(
-        "[ACTION] Error verifying update via metadata API:",
-        verifyError
-      );
-      // Don't fail the update if verification fails - it might just be a timing issue
+    } catch (error: unknown) {
+      console.error("[ACTION] Error verifying part number update:", error);
+      return unconfirmed("The verification request failed.");
     }
-
     return { success: true };
   } catch (error: unknown) {
     console.error("[ACTION] Error updating part number:", error);

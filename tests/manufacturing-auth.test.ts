@@ -341,14 +341,20 @@ test("parallel connector metadata actions use the current token without renewing
   const originalNow = Date.now;
   const originalFetch = globalThis.fetch;
   Date.now = () => originalNow() + 3400000;
+  // Part-number writes are read back, so later reads reflect the write.
+  let partNumber: string | undefined;
   globalThis.fetch = async (input) => {
     const request = input instanceof Request ? input : new Request(input);
     assert.match(request.url, /cad.onshape.com\/api\//);
-    return Response.json(
-      request.method === "GET"
-        ? { properties: [{ name: "Part number", propertyId: "part-number" }] }
-        : {}
-    );
+    if (request.method !== "GET") {
+      partNumber = "RHR-123";
+      return Response.json({});
+    }
+    return Response.json({
+      properties: [
+        { name: "Part number", propertyId: "part-number", value: partNumber },
+      ],
+    });
   };
   try {
     const form = new FormData();

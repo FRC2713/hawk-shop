@@ -21,17 +21,14 @@ import "@tanstack/react-start/server-only";
 export {
   getOAuthStateFromRequest,
   getOnshapeTokensFromRequest,
+  getOnshapeUserIdFromRequest,
   isOnshapeAuthenticatedFromRequest,
 } from "~/lib/onshapeAuthRequest";
 import {
   ONSHAPE_COOKIE_NAMES,
   hasUsableSession,
 } from "~/lib/onshapeAuthRequest";
-import {
-  cookieSameSite,
-  cookieSameSiteHeader,
-  cookieSecure,
-} from "~/lib/cookieOptions";
+import { cookieSameSite, cookieSecure } from "~/lib/cookieOptions";
 
 // Names live with the parser in `onshapeAuthRequest.ts`; this half reads the
 // same jar through the ambient request, so it must not keep its own copy.
@@ -108,6 +105,20 @@ export async function clearOnshapeTokens(): Promise<void> {
   deleteCookie(COOKIE_NAMES.ACCESS_TOKEN);
   deleteCookie(COOKIE_NAMES.REFRESH_TOKEN);
   deleteCookie(COOKIE_NAMES.EXPIRES_AT);
+  deleteCookie(COOKIE_NAMES.USER_ID);
+}
+
+/**
+ * Remember the signed-in user's Onshape id for the life of the session.
+ *
+ * Not a security boundary — it only stamps `created_by` on released cards, and
+ * the request is already gated on real tokens. It exists to stop the app buying
+ * the same `/users/current` answer once per released part.
+ *
+ * @server-only - This function modifies cookies and can only be called from Server Actions or Route Handlers
+ */
+export async function setOnshapeUserId(userId: string): Promise<void> {
+  setCookie(COOKIE_NAMES.USER_ID, userId, getCookieOptions());
 }
 
 /**
@@ -169,46 +180,4 @@ export async function clearOAuthRedirect(): Promise<void> {
  */
 export async function isOnshapeAuthenticated(): Promise<boolean> {
   return hasUsableSession(await getOnshapeTokens());
-}
-
-/**
- * Create cookie string for setting tokens (for React Router responses)
- */
-export function createTokenCookieString(
-  accessToken: string,
-  refreshToken: string,
-  expiresAt: number
-): string {
-  const sameSite = cookieSameSiteHeader();
-  const secure = cookieSecure() ? "Secure" : "";
-  const maxAge = MAX_AGE;
-
-  const accessTokenCookie = `${COOKIE_NAMES.ACCESS_TOKEN}=${accessToken}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
-  const refreshTokenCookie = `${COOKIE_NAMES.REFRESH_TOKEN}=${refreshToken}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
-  const expiresAtCookie = `${COOKIE_NAMES.EXPIRES_AT}=${expiresAt}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
-
-  return [accessTokenCookie, refreshTokenCookie, expiresAtCookie].join(", ");
-}
-
-/**
- * Create cookie string for clearing tokens (for React Router responses)
- */
-export function createClearTokenCookieString(): string {
-  const clearAccess = `${COOKIE_NAMES.ACCESS_TOKEN}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const clearRefresh = `${COOKIE_NAMES.REFRESH_TOKEN}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const clearExpires = `${COOKIE_NAMES.EXPIRES_AT}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const clearState = `${COOKIE_NAMES.OAUTH_STATE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-
-  return [clearAccess, clearRefresh, clearExpires, clearState].join(", ");
-}
-
-/**
- * Create cookie string for OAuth state (for React Router responses)
- */
-export function createOAuthStateCookieString(state: string): string {
-  const sameSite = cookieSameSiteHeader();
-  const secure = cookieSecure() ? "Secure" : "";
-  const maxAge = OAUTH_STATE_MAX_AGE;
-
-  return `${COOKIE_NAMES.OAUTH_STATE}=${state}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? `; ${secure}` : ""}`;
 }

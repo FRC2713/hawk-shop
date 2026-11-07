@@ -3,15 +3,30 @@ import {
   createOnshapeApiClient,
   getVersion,
 } from "~/lib/onshapeApi/generated-wrapper";
+import {
+  VERSION_TTL_MS,
+  cacheKey,
+  withOnshapeCache,
+} from "~/lib/onshapeApi/cache";
+import { requireAuth } from "~/lib/requireAuth";
 
 /**
  * API endpoint to fetch version information from Onshape
  * Returns version name and other metadata
+ *
+ * Every kanban card detail sheet asks for its version's name, and a version is
+ * frozen once cut — so this was the app's most repetitive spend against a quota
+ * that is annual and company-wide. Answers are cached server-side for a week.
  */
 export const Route = createFileRoute("/api/onshape/version")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        // A cache hit never reaches Onshape, so a token is no longer this
+        // route's implicit gate — see the same note on `api/onshape/parts`.
+        const unauthorized = await requireAuth();
+        if (unauthorized) return unauthorized;
+
         const url = new URL(request.url);
 
         // Extract query parameters
@@ -26,27 +41,33 @@ export const Route = createFileRoute("/api/onshape/version")({
         }
 
         try {
-          // Create Onshape API client with authentication
-          const client = await createOnshapeApiClient();
+          const data = await withOnshapeCache({
+            label: "version",
+            key: cacheKey("version", documentId, versionId),
+            ttlMs: VERSION_TTL_MS,
+            fetcher: async () => {
+              // Create Onshape API client with authentication
+              const client = await createOnshapeApiClient();
 
-          // Fetch version information
-          const response = await getVersion({
-            client,
-            path: {
-              did: documentId,
-              vid: versionId,
+              // Fetch version information
+              const response = await getVersion({
+                client,
+                path: {
+                  did: documentId,
+                  vid: versionId,
+                },
+              });
+
+              // Thrown rather than returned so the miss is not cached: a 404
+              // here is usually a token problem, and caching it for a week
+              // would hide the version until the TTL lapsed.
+              if (!response.data) throw new Error("Version not found");
+              return response.data;
             },
           });
 
-          if (!response.data) {
-            return Response.json(
-              { error: "Version not found" },
-              { status: 404 }
-            );
-          }
-
           // Return version data as JSON
-          return Response.json(response.data);
+          return Response.json(data);
         } catch (error) {
           console.error("Error fetching version from Onshape:", error);
 

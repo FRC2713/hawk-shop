@@ -39,20 +39,21 @@ export const queryKeys = {
     columns: () => ["kanban-columns"] as const,
   },
   onshape: {
-    /**
-     * `withThumbnails` is part of the key on purpose: the two callers of
-     * `/api/onshape/parts` ask for different payloads, and leaving it out let
-     * whichever query ran first serve the other one from cache.
-     */
-    parts: (params: OnshapePartsScope, withThumbnails: boolean) =>
+    partsScope: (params: OnshapePartsScope) =>
       [
         "onshape-parts",
         params.documentId,
         params.instanceType,
         params.instanceId,
         params.elementId,
-        withThumbnails,
       ] as const,
+    /**
+     * `withThumbnails` is part of the key on purpose: the two callers of
+     * `/api/onshape/parts` ask for different payloads, and leaving it out let
+     * whichever query ran first serve the other one from cache.
+     */
+    parts: (params: OnshapePartsScope, withThumbnails: boolean) =>
+      [...queryKeys.onshape.partsScope(params), withThumbnails] as const,
     version: (documentId: string, versionId: string) =>
       ["onshape-version", documentId, versionId] as const,
   },

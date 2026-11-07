@@ -6,7 +6,7 @@ import {
   saveFile,
   storagePathFromUrl,
 } from "~/lib/storage/files";
-import { getValidOnshapeTokenFromRequest } from "~/lib/tokenRefresh";
+import { getOnshapeTokenWithoutRefresh } from "~/lib/tokenRefresh";
 
 interface ThumbnailParams {
   documentId: string;
@@ -36,7 +36,7 @@ export async function uploadOnshapeThumbnail(
   params: ThumbnailParams
 ): Promise<string | null> {
   try {
-    const accessToken = await getValidOnshapeTokenFromRequest(request);
+    const accessToken = await getOnshapeTokenWithoutRefresh(request);
     if (!accessToken) {
       logger.error("[Images] No Onshape access token available");
       return null;

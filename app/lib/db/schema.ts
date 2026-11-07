@@ -162,6 +162,51 @@ export const partThumbnails = sqliteTable(
 );
 
 /**
+ * Server-side cache of Onshape API responses.
+ *
+ * Onshape bills an **annual, company-wide** API allocation (a team on EDU
+ * Enterprise gets 10,000 calls for the whole year, flat), so the scarce
+ * resource is the call itself, not latency. Two students opening the same Part
+ * Studio used to cost two calls; with this table it costs one.
+ *
+ * It lives in SQLite rather than memory on purpose — a container restart during
+ * build season must not re-buy every response the team already paid for.
+ *
+ * `expires_at` is null for entries that can never go stale: a version or
+ * microversion is frozen in Onshape, so parts fetched at `wvm=v` are immutable
+ * for as long as the version exists.
+ */
+export const onshapeApiCache = sqliteTable(
+  "onshape_api_cache",
+  {
+    cache_key: text("cache_key").primaryKey(),
+    payload: text("payload").notNull(),
+    created_at: text("created_at").notNull().$defaultFn(now),
+    expires_at: text("expires_at"),
+  },
+  (table) => [index("idx_onshape_api_cache_expires_at").on(table.expires_at)]
+);
+
+/**
+ * Per-day tally of Onshape calls actually issued vs. served from cache.
+ *
+ * Onshape's own usage page reports one number for the year with no endpoint
+ * breakdown, which is not enough to find out what is spending the allocation.
+ * `calls` counts requests that left the building; `hits` counts the ones this
+ * cache absorbed.
+ */
+export const onshapeApiUsage = sqliteTable(
+  "onshape_api_usage",
+  {
+    day: text("day").notNull(),
+    label: text("label").notNull(),
+    calls: integer("calls").notNull().default(0),
+    hits: integer("hits").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.label] })]
+);
+
+/**
  * Processes seeded on first boot so a fresh self-hosted install is usable
  * immediately. Mirrors migration 007 of the Postgres-era schema.
  */

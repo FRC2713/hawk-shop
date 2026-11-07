@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "64f2ff70-d87b-44e9-b3d0-4739cfde1c41",
+  "id": "76e3c66c-4c2a-4dec-be84-0ea615d63577",
   "prevId": "4a948c2c-c4e3-41d8-aa08-7541782a162c",
   "tables": {
     "equipment": {
@@ -407,55 +407,97 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "oauth_sessions": {
-      "name": "oauth_sessions",
+    "onshape_api_cache": {
+      "name": "onshape_api_cache",
       "columns": {
-        "access_hash": {
-          "name": "access_hash",
+        "cache_key": {
+          "name": "cache_key",
           "type": "text",
           "primaryKey": true,
           "notNull": true,
           "autoincrement": false
         },
-        "refresh_hash": {
-          "name": "refresh_hash",
+        "payload": {
+          "name": "payload",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "onshape_user_id": {
-          "name": "onshape_user_id",
+        "created_at": {
+          "name": "created_at",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "expires_at": {
           "name": "expires_at",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
-        },
-        "refresh_expires_at": {
-          "name": "refresh_expires_at",
+        }
+      },
+      "indexes": {
+        "idx_onshape_api_cache_expires_at": {
+          "name": "idx_onshape_api_cache_expires_at",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "onshape_api_usage": {
+      "name": "onshape_api_usage",
+      "columns": {
+        "day": {
+          "name": "day",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "calls": {
+          "name": "calls",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "hits": {
+          "name": "hits",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         }
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "onshape_api_usage_day_label_pk": {
+          "columns": [
+            "day",
+            "label"
+          ],
+          "name": "onshape_api_usage_day_label_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
@@ -609,13 +651,6 @@
         },
         "name": {
           "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "email": {
-          "name": "email",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -3,10 +3,7 @@
  * Documentation: https://onshape-public.github.io/docs/
  */
 
-import {
-  getValidOnshapeTokenFromRequest,
-  getOnshapeTokenWithoutRefresh,
-} from "../tokenRefresh";
+import { getOnshapeTokenWithoutRefresh } from "../tokenRefresh";
 import { onshapeApiRequest } from "./auth";
 
 export interface OnshapeUser {
@@ -208,23 +205,7 @@ export class OnshapeClient {
 }
 
 /**
- * Create an Onshape client with automatic token refresh
- * This should be used in server-side loaders/actions
- */
-export async function createOnshapeClient(
-  request: Request
-): Promise<OnshapeClient> {
-  const accessToken = await getValidOnshapeTokenFromRequest(request);
-  if (!accessToken) {
-    throw new Error("Not authenticated with Onshape");
-  }
-  return new OnshapeClient(accessToken);
-}
-
-/**
- * Create an Onshape client from tokens (for server components)
- * This should be used in server components where cookies are read-only
- * Token refresh happens in route handlers, not during render
+ * Create an Onshape client from the ambient request without renewing credentials.
  */
 export async function createOnshapeClientFromTokens(): Promise<OnshapeClient | null> {
   const accessToken = await getOnshapeTokenWithoutRefresh();
@@ -237,7 +218,6 @@ export async function createOnshapeClientFromTokens(): Promise<OnshapeClient | n
 /**
  * Get the current Onshape user from active tokens
  * Returns null if not authenticated or if the request fails
- * This should be used in server components
  */
 export async function getCurrentOnshapeUser(): Promise<OnshapeUser | null> {
   try {
