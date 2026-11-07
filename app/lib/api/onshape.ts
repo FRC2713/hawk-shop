@@ -73,7 +73,9 @@ export function onshapeVersionQuery(
       });
     },
     enabled: !!documentId && !!versionId,
-    staleTime: 5 * 60 * 1000,
+    // A cut version does not change, and the server caches it for a week
+    // anyway — refetching every 5 minutes only ever confirmed the same answer.
+    staleTime: 24 * 60 * 60 * 1000,
     retry: 1,
   });
 }

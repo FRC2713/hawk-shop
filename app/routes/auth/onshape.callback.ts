@@ -7,8 +7,10 @@ import {
   getOAuthRedirect,
   getOAuthState,
   setOnshapeTokens,
+  setOnshapeUserId,
 } from "~/lib/onshapeAuth";
 import { upsertUser } from "~/lib/db/users";
+import { recordOnshapeUsage } from "~/lib/onshapeApi/cache";
 import { resolveAppOrigin } from "~/lib/appOrigin";
 import { redirectResponse } from "~/lib/httpRedirect";
 import { safeRedirectPath } from "~/lib/safeRedirect";
@@ -202,6 +204,7 @@ export const Route = createFileRoute("/auth/onshape/callback")({
             );
 
             if (userResponse.ok) {
+              recordOnshapeUsage("users", "call");
               const userData = (await userResponse.json()) as {
                 id: string;
                 firstName?: string;
@@ -214,6 +217,11 @@ export const Route = createFileRoute("/auth/onshape/callback")({
                 id: userData.id,
                 hasFirstName: !!userData.firstName,
               });
+
+              // Park the id in a cookie so releasing a card does not have to
+              // re-ask Onshape who the user is — that was one API call per
+              // released part against an annual, company-wide allocation.
+              await setOnshapeUserId(userData.id);
 
               // Save user to database (first name + last initial)
               const savedUser = await upsertUser(
