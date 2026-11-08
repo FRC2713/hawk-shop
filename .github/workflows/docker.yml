@@ -4,6 +4,9 @@ name: Publish container
 # The steps live in FRC2713/hawk_suite/.github/workflows/publish-app.yml.
 
 on:
+  # Manual runs publish main again, e.g. when a run failed before any job started
+  # and GitHub refuses to re-run it.
+  workflow_dispatch:
   push:
     branches: [main]
     tags: ["v*"]
