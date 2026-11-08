@@ -6,9 +6,13 @@ services:
     container_name: hawk-shop
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"
     environment:
-      # --- Onshape OAuth (required) ---------------------------------------
+      # Trust only an isolated gateway which clears and injects Suite headers.
+      HAWK_SUITE_TRUST_PROXY: ${HAWK_SUITE_TRUST_PROXY:-false}
+      HAWK_SUITE_TEAM_ID: ${HAWK_SUITE_TEAM_ID:-}
+      HAWK_SUITE_ISSUER: ${HAWK_SUITE_ISSUER:-}
+      # --- Onshape CAD connection (optional) ---------------------------------------
       ONSHAPE_CLIENT_ID: ${ONSHAPE_CLIENT_ID}
       ONSHAPE_CLIENT_SECRET: ${ONSHAPE_CLIENT_SECRET}
       ONSHAPE_REDIRECT_URI: ${ONSHAPE_REDIRECT_URI}

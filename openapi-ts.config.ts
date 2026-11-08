@@ -4,7 +4,7 @@ export default defineConfig({
   client: "@hey-api/client-fetch",
   input: "https://cad.onshape.com/api/openapi",
   output: {
-    path: "app/lib/onshapeApi/generated",
+    path: "src/lib/onshapeApi/generated",
     format: "prettier",
   },
   plugins: [

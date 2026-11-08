@@ -1,0 +1,263 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { useState } from "react";
+import type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { onshapeVersionQuery, partActions, queryKeys } from "~/lib/api";
+import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
+import type { KanbanCardRow, ProcessRow } from "~/server/db/types";
+import { isPartEligibleForRelease } from "~/onshape_connector/utils/partEligibility";
+import { extractVersionId } from "~/onshape_connector/utils/versionUtils";
+import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
+import { type AddCardFormData, AddCardDialog } from "./AddCardDialog";
+import { ManufacturingStateBadge } from "./ManufacturingStateBadge";
+import { PartDueDate } from "./PartDueDate";
+import { PartColorChip } from "./parts/PartColorChip";
+
+interface PartMfgStateProps {
+  partNumber: string;
+  partId: string;
+  part?: BtPartMetadataInfo;
+  thumbnailUrl?: string;
+  onshapeParams?: {
+    documentId: string;
+    instanceType: string;
+    instanceId: string;
+    elementId: string;
+  };
+  matchingCard?: KanbanCardRow & { processes?: ProcessRow[] };
+  currentColumn?: KanbanColumn;
+  queryParams?: PartsPageSearchParams;
+}
+
+/**
+ * Component to display manufacturing tracking state for a part
+ */
+export function PartMfgState({
+  partNumber,
+  partId,
+  part,
+  thumbnailUrl,
+  onshapeParams,
+  matchingCard,
+  currentColumn,
+  queryParams,
+}: PartMfgStateProps) {
+  const queryClient = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Get version ID and fetch version info if we have query params
+  const versionId = queryParams ? extractVersionId(queryParams) : null;
+  const versionQuery = useQuery({
+    ...onshapeVersionQuery(queryParams?.documentId, versionId),
+    // Only a version instance has a version to name.
+    enabled:
+      !!queryParams?.documentId &&
+      !!versionId &&
+      queryParams.instanceType === "v",
+  });
+
+  const addCard = useMutation({
+    mutationFn: partActions.addCard,
+    onSuccess: (result) => {
+      if (!result.success) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.columns() });
+    },
+  });
+
+  const isSubmitting = addCard.isPending;
+  const result =
+    addCard.data ??
+    (addCard.error ? { success: false, error: "Failed to add card" } : null);
+
+  const handleAddCard = (formData: AddCardFormData) => {
+    setDialogOpen(false);
+    addCard.mutate({
+      partNumber,
+      processIds: formData.processIds,
+      quantityPerRobot: formData.quantityPerRobot,
+      quantityToMake: formData.quantityToMake,
+      dueDate: formData.dueDate
+        ? format(formData.dueDate, "yyyy-MM-dd")
+        : undefined,
+      onshapePart: onshapeParams ? { ...onshapeParams, partId } : undefined,
+      rawThumbnailUrl: thumbnailUrl,
+    });
+  };
+
+  // If card not found, show part properties and "Add to manufacturing tracker" button
+  if (!matchingCard) {
+    const isEligible = isPartEligibleForRelease(part, matchingCard);
+    const isButtonDisabled = isSubmitting || !isEligible;
+
+    return (
+      <div className="space-y-2">
+        {part && (
+          <table className="w-full text-xs">
+            <tbody className="divide-border divide-y">
+              <tr>
+                <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+                  Material
+                </td>
+                <td className="py-1.5">
+                  <Badge variant="secondary">
+                    {part.material?.displayName || "Not Set"}
+                  </Badge>
+                </td>
+              </tr>
+              <tr>
+                <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+                  Appearance
+                </td>
+                <td className="py-1.5">
+                  <PartColorChip color={part.appearance?.color} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+        <AddCardDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSubmit={handleAddCard}
+          isSubmitting={isSubmitting}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full"
+          disabled={isButtonDisabled}
+          onClick={() => setDialogOpen(true)}
+        >
+          Release
+        </Button>
+        {!isEligible && (
+          <p className="text-muted-foreground text-xs">
+            {!part?.material?.displayName
+              ? "Set the material on this part in Onshape to add it to the manufacturing tracker."
+              : !part?.partNumber
+                ? "Set the part number on this part in Onshape to add it to the manufacturing tracker."
+                : "This part cannot be added to the manufacturing tracker."}
+          </p>
+        )}
+        {result && !result.success && result.error && (
+          <p className="text-destructive text-xs">{result.error}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <table className="w-full text-xs">
+        <tbody className="divide-border divide-y">
+          {part && (
+            <>
+              <tr>
+                <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+                  Material
+                </td>
+                <td className="py-1.5">
+                  <Badge variant="secondary">
+                    {part.material?.displayName || "Not Set"}
+                  </Badge>
+                </td>
+              </tr>
+
+              <tr>
+                <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+                  Appearance
+                </td>
+                <td className="py-1.5">
+                  <PartColorChip color={part.appearance?.color} />
+                </td>
+              </tr>
+              {versionQuery.data?.name && (
+                <tr>
+                  <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+                    Version
+                  </td>
+                  <td className="py-1.5">
+                    <Badge variant="secondary">
+                      {versionQuery.isLoading
+                        ? "Loading..."
+                        : versionQuery.isError
+                          ? "Unable to load"
+                          : versionQuery.data?.name || "Unknown"}
+                    </Badge>
+                  </td>
+                </tr>
+              )}
+            </>
+          )}
+          <tr>
+            <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+              Manufacturing State
+            </td>
+            <td className="py-1.5">
+              {currentColumn ? (
+                <ManufacturingStateBadge column={currentColumn} />
+              ) : (
+                <span className="text-muted-foreground">Not Set</span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+              Quantity per Robot
+            </td>
+            <td className="py-1.5">
+              <Badge variant="secondary">
+                {matchingCard?.quantity_per_robot || "Not Set"}
+              </Badge>
+            </td>
+          </tr>
+          <tr>
+            <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+              Quantity to Make
+            </td>
+            <td className="py-1.5">
+              <Badge variant="secondary">
+                {matchingCard?.quantity_to_make || "Not Set"}
+              </Badge>
+            </td>
+          </tr>
+          {matchingCard.processes && matchingCard.processes.length > 0 && (
+            <tr>
+              <td className="text-muted-foreground py-1.5 pr-4 align-top font-medium">
+                Processes
+              </td>
+              <td className="py-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {matchingCard.processes.map((process: ProcessRow) => (
+                    <Badge
+                      key={process.id}
+                      variant="secondary"
+                      className="bg-muted text-foreground gap-1 text-xs font-normal"
+                    >
+                      {process.name}
+                    </Badge>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          )}
+          <tr>
+            <td className="text-muted-foreground py-1.5 pr-4 font-medium">
+              Due Date
+            </td>
+            <td className="py-1.5">
+              <PartDueDate card={matchingCard} />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {result && !result.success && result.error && (
+        <p className="text-destructive mt-2 text-xs">{result.error}</p>
+      )}
+    </div>
+  );
+}

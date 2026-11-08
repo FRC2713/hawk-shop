@@ -1,0 +1,49 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import Parts from "../components/islands/Parts";
+import { isOnshapeAuthenticated } from "../lib/onshapeAuth";
+import type { PartsPageSearchParams } from "../onshape_connector/utils/types";
+const search = Astro.url.searchParams;
+const type = search.get("instanceType");
+const queryParams: PartsPageSearchParams = {
+  documentId: search.get("documentId") || "",
+  instanceType: type === "v" || type === "m" ? type : "w",
+  instanceId: search.get("instanceId") || "",
+  elementId: search.get("elementId") || "",
+  elementType: search.get("elementType") || "",
+};
+const complete =
+  queryParams.documentId && queryParams.instanceId && queryParams.elementId;
+const connected = await isOnshapeAuthenticated();
+const returnTo = Astro.url.pathname + Astro.url.search;
+---
+
+<AppLayout title="Onshape parts" workspace>
+  {
+    complete && connected ? (
+      <Parts queryParams={queryParams} client:load />
+    ) : (
+      <main class="mx-auto max-w-xl space-y-4 p-6">
+        <p>
+          {!complete
+            ? "Open Hawk Shop from an Onshape Part Studio to choose parts for manufacturing."
+            : "Connect Onshape to load this Part Studio. Your manufacturing board remains available."}
+        </p>
+        {complete && (
+          <a
+            class="shop-button"
+            href={`/onshape?redirect=${encodeURIComponent(returnTo)}`}
+            target="_top"
+          >
+            Connect Onshape
+          </a>
+        )}
+        <p>
+          <a href="/kanban" class="underline">
+            Open board
+          </a>
+        </p>
+      </main>
+    )
+  }
+</AppLayout>

@@ -1,7 +1,7 @@
 /**
  * Standalone migration runner.
  *
- * The app also migrates on boot (see app/lib/db/client.ts), so this exists for
+ * The app also migrates on boot (see src/server/db/client.ts), so this exists for
  * the cases where you want to migrate without starting the server — CI, a
  * pre-deploy step, or checking a migration applies cleanly.
  */

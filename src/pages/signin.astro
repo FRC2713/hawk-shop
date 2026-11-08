@@ -1,0 +1,40 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { suiteUrl, suiteSettings } from "../server/suite-identity";
+import { safeRedirectPath } from "../lib/safeRedirect";
+const destination = safeRedirectPath(Astro.url.searchParams.get("redirect"));
+if (Astro.locals.identity)
+  return Astro.redirect(destination === "/signin" ? "/" : destination);
+const login = suiteUrl("auth/");
+const configured = suiteSettings().HAWK_SUITE_TRUST_PROXY === "true" && login;
+const loginUrl = login ? new URL(login) : undefined;
+if (loginUrl)
+  loginUrl.searchParams.set(
+    "redirect_url",
+    new URL(destination, process.env.APP_URL || Astro.url.origin).href
+  );
+Astro.response.status = configured ? 200 : 503;
+---
+
+<AppLayout title="Sign in"
+  ><main class="bg-card mx-auto max-w-md space-y-4 rounded-lg border p-6">
+    <h1 class="text-2xl">Sign in to Hawk Shop</h1>
+    {
+      configured ? (
+        <>
+          <>
+            <p>Use your Red Hawk Robotics Slack account through Hawk Suite.</p>
+            <a class="shop-button" href={loginUrl?.href} target="_top">
+              Sign in with Hawk Suite
+            </a>
+          </>
+        </>
+      ) : (
+        <p role="alert">
+          Hawk Suite authentication is not configured. Set the trusted gateway,
+          workspace, and issuer settings before using Shop.
+        </p>
+      )
+    }
+  </main></AppLayout
+>

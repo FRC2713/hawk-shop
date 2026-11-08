@@ -12,3 +12,9 @@ docs
 !.env.example
 .DS_Store
 *.tsbuildinfo
+
+dist
+.astro
+
+.claude/
+.tanstack/

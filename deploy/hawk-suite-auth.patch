@@ -1,0 +1,119 @@
+--- a/config/authentication/Caddyfile.template
++++ b/config/authentication/Caddyfile.template
+@@ -143,19 +143,37 @@
+         respond "Hawk Eye is temporarily unavailable." 503
+     }
+ }
+-# Shop is not gated: its cookies and Onshape login are preserved, and it receives no suite identity.
++# Shop uses the same workspace identity headers as Hawk Eye.
+ (shop-proxy) {
++    authorize with suite
+     reverse_proxy hawk-shop:3000 {
+         header_up -X-Hawk-Identity
+         header_down Location "^http://" "https://"
+     }
+ }
+-# Shop retains its own Onshape authentication, including the embedded view.
+-# Its card remains in the authenticated portal; direct access has no suite gate.
++# Health is public; embedded unauthenticated requests receive only a top-level
++# continuation. Shop verifies Suite identity on every data route itself.
+ shop.__DOMAIN__ {
+     route {
+         import clear-suite-identity
+-        import shop-proxy
++        @shop-health {
++            method GET HEAD
++            path /api/health /health
++        }
++        handle @shop-health {
++            reverse_proxy hawk-shop:3000
++        }
++        @shop-iframe {
++            method GET HEAD
++            path /onshape_connector /onshape_connector/
++            header Sec-Fetch-Dest iframe
++        }
++        handle @shop-iframe {
++            reverse_proxy hawk-shop:3000
++        }
++        handle {
++            import shop-proxy
++        }
+     }
+ }
+ (slack-app) {
+--- a/config/authentication/compose.yaml
++++ b/config/authentication/compose.yaml
+@@ -3,7 +3,7 @@
+   caddy:
+     image: ${HAWK_AUTH_IMAGE:?Pin the tested authentication image in the release}
+     environment:
+-      CADDY_CONFIG_REV: auth-identity-headers-v5
++      CADDY_CONFIG_REV: auth-shop-identity-headers-v6
+     volumes:
+       - ${HAWK_AUTH_CONFIG_DIR:?Private release configuration}:/etc/hawk-auth:ro
+       - ${HAWK_AUTH_CONFIG_DIR}/Caddyfile:/etc/caddy/Caddyfile:ro
+@@ -29,3 +29,11 @@
+     environment:
+       HAWK_SUITE_ISSUER: https://apps.${DOMAIN}/
+       HAWK_SUITE_PUBLIC_KEY: ${HAWK_AUTH_PUBLIC_KEY_BASE64:?Rendered by the authenticated release}
++
++  # The gateway is the only caller on Shop's isolated network. Strip caller
++  # headers before authorization; Shop validates the injected workspace identity.
++  hawk-shop:
++    environment:
++      HAWK_SUITE_TRUST_PROXY: "true"
++      HAWK_SUITE_TEAM_ID: ${HAWK_AUTH_SLACK_TEAM_ID:?Set the approved Slack workspace}
++      HAWK_SUITE_ISSUER: https://apps.${DOMAIN}/
+--- a/scripts/test-auth-routing.py
++++ b/scripts/test-auth-routing.py
+@@ -110,7 +110,7 @@
+             docker('exec',name+'-gateway','caddy','validate','--config','/etc/hawk-auth/Caddyfile.maintenance','--adapter','caddyfile')
+             check(True,'maintenance configuration validates')
+             valid = token()
+-            for host in ('mod','bot','scout'):
++            for host in ('mod','bot','scout','shop'):
+                 for value in (None, 'invalid', token(exp=int(time.time())-120), token(aud='wrong'), token(roles=['admin'])):
+                     status, location, body = request(host, headers={} if value is None else {'Cookie':'AUTHP_ACCESS_TOKEN='+value})
+                     check(status in (302,303,307,401,403), host+' rejects missing/invalid claims')
+@@ -125,7 +125,7 @@
+                         'X-Hawk-Slack-Team': 'TAPPROVED', 'X-Hawk-Slack-User': 'UTEST',
+                         'X-Token-User-Roles': 'suite/member'}
+             forged = {key: 'forged' for key in [*identity, 'X-Token-User-Name', 'X-Token-User-Email']}
+-            for host in ('mod', 'bot', 'scout'):
++            for host in ('mod', 'bot', 'scout', 'shop'):
+                 check(request(host, headers=forged)[0] != 200, host+' rejects forged identity without session')
+                 status, _, body = request(host, headers={**forged, 'Cookie': 'AUTHP_ACCESS_TOKEN='+valid})
+                 received = {k.lower(): v for k, v in json.loads(body).items()}
+@@ -140,7 +140,7 @@
+             received = {k.lower(): v for k,v in json.loads(body).items()}
+             check(status == 200 and received.get('x-hawk-slack-user') == 'UTEST'
+                   and 'x-token-user-email' not in received, 'duplicate mixed-case headers cannot survive')
+-            for host, path in [('shop','/'), ('scout','/health'), ('bot','/health'), ('mod','/slack/oauth_redirect')]:
++            for host, path in [('shop','/api/health'), ('scout','/health'), ('bot','/health'), ('mod','/slack/oauth_redirect')]:
+                 status, _, body = request(host, path, headers=forged)
+                 received = {k.lower(): v for k,v in json.loads(body).items()}
+                 check(status == 200 and not any(k.lower() in received for k in forged), host+' clears identity on bypass')
+@@ -149,11 +149,17 @@
+                     check(request(host,path,method)[0] == 200,host+' forwards exact '+method+' '+path)
+                 for path, method in [('/slack/events','GET'),('/slack/events/extra','POST'),('/slack/install','GET'),('/auth/slack/callback','POST')]:
+                     check(request(host,path,method)[0] != 200,host+' protects '+method+' '+path)
+-            check(request('shop','/auth/onshape/callback')[0] == 200,'Onshape GET callback reaches app')
+-            for path in ('/', '/onshape_connector', '/auth/onshape', '/api/health'):
+-                check(request('shop',path)[0] == 200,'Shop delegates '+path+' to existing app authentication')
+-            status, _, body = request('shop', headers={'Cookie':'app_session=preserved', 'X-Hawk-Identity':'forged'})
+-            check(status == 200 and 'app_session=preserved' in json.loads(body).get('Cookie',''), 'Shop app cookie preserved without gateway login')
++            for path in ('/', '/onshape_connector', '/auth/onshape', '/auth/onshape/callback', '/api/kanban/cards', '/api/onshape/token'):
++                check(request('shop',path)[0] in (302,303,307,401,403), 'Shop gates anonymous '+path)
++                check(request('shop',path,headers={'Cookie':'AUTHP_ACCESS_TOKEN='+valid})[0] == 200, 'Shop forwards signed '+path)
++            for method in ('GET', 'HEAD'):
++                check(request('shop','/api/health',method)[0] == 200, 'Shop keeps '+method+' health public')
++            status, _, body = request('shop','/onshape_connector?documentId=fixture',headers={**forged, 'Sec-Fetch-Dest':'iframe'})
++            received = {k.lower(): v for k,v in json.loads(body).items()}
++            check(status == 200 and not any(k.lower() in received for k in forged), 'Shop iframe entry clears identity and delegates only the public continuation')
++            check(request('shop','/api/kanban/cards',headers={'Sec-Fetch-Dest':'iframe'})[0] != 200, 'Shop iframe cannot bypass data authorization')
++            status, _, body = request('shop', headers={'Cookie':'AUTHP_ACCESS_TOKEN='+valid+'; app_session=preserved', 'X-Hawk-Identity':'forged'})
++            check(status == 200 and 'app_session=preserved' in json.loads(body).get('Cookie',''), 'Shop CAD cookie preserved with gateway login')
+             check('X-Hawk-Identity' not in json.loads(body),'Shop strips forged identity')
+             check('https://shop.__DOMAIN__/' in (ROOT/'config/authentication/portal.template').read_text(), 'Shop card retained in native authenticated portal')
+             check(request('scout','/api/write','POST',{'Cookie':'AUTHP_ACCESS_TOKEN='+valid})[0] == 503,'Eye writes remain unavailable')

@@ -1,0 +1,226 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { getCards } from "../server/kanbanApi/cards";
+import { getKanbanConfig } from "../server/kanbanApi/config";
+import { getEquipment } from "../server/equipmentApi/equipment";
+import { listUsers } from "../server/db/users";
+import { getProcesses } from "../server/processesApi/processes";
+import {
+  formatDistanceToNow,
+  parseISO,
+  differenceInCalendarDays,
+} from "date-fns";
+const [cardResult, config, equipmentResult, users, processes] =
+  await Promise.all([
+    getCards(),
+    getKanbanConfig(),
+    getEquipment(),
+    listUsers(),
+    getProcesses(),
+  ]);
+const cards = cardResult.cards;
+const processRows = processes.processes;
+const equipment = equipmentResult.equipment;
+const doneId = config.columns.at(-1)?.id;
+const active = cards.filter((card) => card.column_id !== doneId);
+const attention = active
+  .filter((card) => card.due_date)
+  .map((card) => ({
+    card,
+    days: differenceInCalendarDays(parseISO(card.due_date!), new Date()),
+  }))
+  .filter((entry) => entry.days <= 7)
+  .sort((a, b) => a.days - b.days);
+const recent = [...cards]
+  .sort((a, b) => b.date_updated.localeCompare(a.date_updated))
+  .slice(0, 5);
+const stats = [
+  { label: "Parts in progress", value: active.length, href: "/kanban" },
+  {
+    label: "Overdue",
+    value: attention.filter((entry) => entry.days < 0).length,
+    href: "/kanban",
+  },
+  {
+    label: "Unassigned",
+    value: active.filter(
+      (card) => !card.assignee || card.assignee === "Unassigned"
+    ).length,
+    href: "/kanban",
+  },
+  { label: "Equipment", value: equipment.length, href: "/equipment" },
+];
+function dueLabel(days: number) {
+  return days < 0
+    ? `${Math.abs(days)} day${days === -1 ? "" : "s"} overdue`
+    : days === 0
+      ? "Due today"
+      : days === 1
+        ? "Due tomorrow"
+        : `Due in ${days} days`;
+}
+---
+
+<AppLayout title="Overview"
+  ><main class="space-y-6">
+    <header class="flex flex-wrap items-baseline justify-between gap-2">
+      <h1 class="text-2xl">Shop overview</h1><a
+        class="text-sm underline"
+        href="/onshape">Onshape connection</a
+      >
+    </header>
+    {
+      (cardResult.error || equipmentResult.error) && (
+        <p role="alert" class="border-primary bg-card border-l-4 p-4">
+          Some shop data could not be loaded. Reload this page to try again.
+        </p>
+      )
+    }
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {
+        stats.map((stat) => (
+          <a
+            class="bg-card hover:border-primary rounded-lg border p-4"
+            href={stat.href}
+          >
+            <>
+              <span class="block text-sm">{stat.label}</span>
+              <strong class="brand-figures mt-2 block text-2xl">
+                {stat.value}
+              </strong>
+            </>
+          </a>
+        ))
+      }
+    </div>
+    <div class="grid gap-4 lg:grid-cols-2">
+      <section class="bg-card rounded-lg border p-4">
+        <header class="mb-3 flex items-center justify-between">
+          <h2>Board</h2><a class="text-sm underline" href="/kanban"
+            >Open board</a
+          >
+        </header>
+        <dl class="space-y-2">
+          {
+            config.columns.map((column) => (
+              <div class="flex items-center justify-between border-b pb-2">
+                <>
+                  <dt>{column.title}</dt>
+                  <dd class="brand-figures">
+                    {
+                      cards.filter((card) => card.column_id === column.id)
+                        .length
+                    }
+                  </dd>
+                </>
+              </div>
+            ))
+          }
+        </dl>
+        {
+          !cards.length && (
+            <p class="mt-3 text-sm">
+              No cards yet. Add a card on the board or release parts from
+              Onshape.
+            </p>
+          )
+        }
+        <a class="mt-3 inline-block text-sm underline" href="/kanban/done"
+          >{cards.length - active.length} completed parts</a
+        >
+      </section>
+      <section class="bg-card rounded-lg border p-4">
+        <h2 class="mb-3">Needs attention</h2>
+        {
+          attention.length ? (
+            <ul class="space-y-3">
+              {attention.slice(0, 6).map(({ card, days }) => (
+                <li class="flex items-baseline justify-between gap-3 text-sm">
+                  <a href="/kanban" class="truncate underline">
+                    {card.title}
+                  </a>
+                  <span class:list={["shrink-0", days < 0 && "font-semibold"]}>
+                    {dueLabel(days)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p class="text-sm">Nothing due in the next 7 days.</p>
+          )
+        }
+        {
+          attention.length > 6 && (
+            <a href="/kanban" class="mt-3 block text-sm underline">
+              {attention.length - 6} more on the board
+            </a>
+          )
+        }
+      </section>
+      <section class="bg-card rounded-lg border p-4">
+        <header class="mb-3 flex items-center justify-between">
+          <h2>Equipment</h2><a class="text-sm underline" href="/equipment"
+            >Manage</a
+          >
+        </header>
+        <dl class="grid grid-cols-2 gap-3 text-sm">
+          {
+            [
+              { id: "available", label: "Available" },
+              { id: "in-use", label: "In use" },
+              { id: "maintenance", label: "Maintenance" },
+              { id: "retired", label: "Retired" },
+            ].map((status) => (
+              <div class="flex justify-between gap-3 border-b pb-2">
+                <>
+                  <dt>{status.label}</dt>
+                  <dd class="brand-figures">
+                    {
+                      equipment.filter((item) => item.status === status.id)
+                        .length
+                    }
+                  </dd>
+                </>
+              </div>
+            ))
+          }
+        </dl>
+        <p class="mt-3 text-sm">{processRows.length} processes defined</p>
+      </section>
+      <section class="bg-card rounded-lg border p-4">
+        <h2 class="mb-3">Recent activity</h2>{
+          recent.length ? (
+            <ul class="space-y-3">
+              {recent.map((card) => (
+                <li class="flex items-start justify-between gap-3 text-sm">
+                  <div class="min-w-0">
+                    <a href="/kanban" class="block truncate underline">
+                      {card.title}
+                    </a>
+                    <p class="text-muted-foreground text-xs">
+                      {config.columns.find(
+                        (column) => column.id === card.column_id
+                      )?.title ?? card.column_id}
+                      {card.assignee &&
+                        ` · ${users.find((user) => user.onshape_user_id === card.assignee)?.name ?? card.assignee}`}
+                    </p>
+                  </div>
+                  <time
+                    class="text-muted-foreground shrink-0 text-xs"
+                    datetime={card.date_updated}
+                  >
+                    {formatDistanceToNow(parseISO(card.date_updated), {
+                      addSuffix: true,
+                    })}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p class="text-sm">Nothing has moved yet.</p>
+          )
+        }
+      </section>
+    </div>
+  </main></AppLayout
+>

@@ -1,0 +1,154 @@
+---
+import "../styles/global.css";
+import { suiteUrl } from "../server/suite-identity";
+interface Props {
+  title: string;
+  workspace?: boolean;
+}
+const { title, workspace = false } = Astro.props;
+const identity = Astro.locals.identity;
+const name = identity?.name ?? identity?.email ?? "Suite member";
+const initials = name
+  .split(/[\s@._-]+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((part) => part[0]?.toUpperCase())
+  .join("");
+const links = [
+  { href: "/", label: "Overview" },
+  { href: "/kanban", label: "Board" },
+  { href: "/equipment", label: "Equipment" },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Manufacturing, equipment, and processes for Red Hawk Robotics."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title} · Hawk Shop</title>
+  </head>
+  <body class:list={[workspace && "shop-workspace"]}>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="app-header bg-card border-b">
+      <div
+        class="shop-header mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-3"
+      >
+        <a
+          href="/"
+          aria-label="Hawk Shop overview"
+          class="flex items-center gap-3 no-underline"
+        >
+          <span class="brand-mark" aria-hidden="true"
+            ><img
+              src="/brand/2713-red.svg"
+              alt=""
+              width="83"
+              height="24"
+            /></span
+          >
+          <span
+            ><strong class="block text-sm leading-tight">Hawk Shop</strong><span
+              class="text-muted-foreground block text-xs">Manufacturing</span
+            ></span
+          >
+        </a>
+        {
+          identity && (
+            <div class="flex items-center gap-4">
+              <nav
+                aria-label="Main navigation"
+                class="app-navigation flex items-center gap-4"
+              >
+                {links.map((link) => (
+                  <a
+                    href={link.href}
+                    aria-current={
+                      (
+                        link.href === "/"
+                          ? Astro.url.pathname === "/"
+                          : Astro.url.pathname.startsWith(link.href)
+                      )
+                        ? "page"
+                        : undefined
+                    }
+                    class="text-sm font-semibold"
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </nav>
+              <details class="account-menu" data-account-menu>
+                <summary
+                  class="account-trigger text-sm font-semibold"
+                  aria-label={`Account: ${name}`}
+                >
+                  <>
+                    <span class="account-avatar" aria-hidden="true">
+                      {initials}
+                    </span>
+                    <span class="account-trigger-name">{name}</span>
+                  </>
+                </summary>
+                <div class="account-panel bg-popover text-popover-foreground border">
+                  <p class="account-name">{name}</p>
+                  {identity.email && (
+                    <p class="account-email">{identity.email}</p>
+                  )}
+                  <a class="account-sign-out" href="/onshape">
+                    Onshape connection
+                  </a>
+                  <a class="account-sign-out" href={suiteUrl("auth/portal")}>
+                    Hawk Suite
+                  </a>
+                  <a class="account-sign-out" href="/auth/logout">
+                    Sign out of Hawk Suite
+                  </a>
+                </div>
+              </details>
+            </div>
+          )
+        }
+      </div>
+    </header>
+    <div
+      id="main-content"
+      tabindex="-1"
+      class:list={[
+        "shop-content",
+        workspace
+          ? "min-h-0 flex-1"
+          : "mx-auto w-full max-w-6xl px-5 py-6 sm:py-8",
+      ]}
+    >
+      <slot />
+    </div>
+    {
+      !workspace && (
+        <footer class="text-muted-foreground mx-auto w-full max-w-6xl px-5 py-8 text-xs">
+          Red Hawk Robotics · FRC 2713
+        </footer>
+      )
+    }
+  </body>
+</html>
+<script>
+  for (const menu of document.querySelectorAll<HTMLDetailsElement>(
+    "[data-account-menu]"
+  )) {
+    document.addEventListener("click", (event) => {
+      if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+    });
+    menu.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && menu.open) {
+        menu.open = false;
+        menu.querySelector("summary")?.focus();
+      }
+    });
+  }
+</script>

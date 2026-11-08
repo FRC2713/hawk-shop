@@ -1,0 +1,41 @@
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/600.css";
+@import "@fontsource/barlow/700-italic.css";
+@import "@fontsource/barlow-condensed/700-italic.css";
+@import "@fontsource/open-sans/400.css";
+@import "@fontsource/open-sans/600.css";
+@import "@fontsource/roboto-mono/400.css";
+@import "@fontsource/roboto-mono/700.css";
+
+:root {
+  --hawk-red: #ba0c2f;
+  --hawk-tone-red: #c91f43;
+  --hawk-charcoal: #333333;
+  --hawk-black: #000000;
+  --hawk-grey: #a3a19e;
+  --hawk-light-grey: #f2f2f2;
+  --hawk-white: #ffffff;
+  --hawk-teal: #5fc7ba;
+  /* FRC alliance identity, separate from product branding. */
+  --alliance-red: var(--hawk-red);
+  --alliance-blue: #1d4ed8;
+  --alliance-foreground: var(--hawk-white);
+  --hawk-body-font: "Open Sans", sans-serif;
+  --hawk-heading-font: "Barlow", sans-serif;
+  --hawk-display-font: "Barlow Condensed", sans-serif;
+  --hawk-figure-font: "Roboto Mono", monospace;
+}
+.brand-mark {
+  display: inline-flex;
+  padding: 12px;
+  flex-shrink: 0;
+}
+.brand-mark img {
+  display: block;
+  height: 24px;
+  width: auto;
+}
+.brand-figures {
+  font-family: var(--hawk-figure-font);
+  font-variant-numeric: tabular-nums;
+}

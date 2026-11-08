@@ -1,0 +1,49 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { isOnshapeAuthenticated } from "../lib/onshapeAuth";
+import { safeRedirectPath } from "../lib/safeRedirect";
+const connected = await isOnshapeAuthenticated();
+const destination = safeRedirectPath(
+  Astro.url.searchParams.get("redirect") || "/onshape"
+);
+const error = Astro.url.searchParams.get("error");
+---
+
+<AppLayout title="Onshape connection"
+  ><main class="bg-card max-w-xl space-y-4 rounded-lg border p-6">
+    <h1 class="text-2xl">Onshape connection</h1>
+    <p>
+      You are signed in with Hawk Suite. Connect Onshape to browse CAD parts,
+      release them to the board, and write part numbers.
+    </p>
+    {
+      error && (
+        <p role="alert" class="text-destructive">
+          {error}
+        </p>
+      )
+    }
+    <p>
+      {
+        connected
+          ? "Onshape is connected."
+          : "Onshape is not connected, or the connection needs renewal."
+      }
+    </p>
+    <a
+      class="shop-button"
+      href={`/auth/onshape?redirect=${encodeURIComponent(destination)}`}
+      target="_top">{connected ? "Continue with Onshape" : "Connect Onshape"}</a
+    >
+    {
+      connected && (
+        <form method="post" action="/auth/onshape/disconnect">
+          <button class="underline" type="submit">
+            Disconnect Onshape
+          </button>
+        </form>
+      )
+    }
+    <p><a href="/kanban" class="underline">Return to board</a></p>
+  </main></AppLayout
+>

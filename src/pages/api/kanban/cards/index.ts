@@ -1,0 +1,68 @@
+import { currentRequest } from "~/server/request-context";
+import type { APIRoute } from "astro";
+import { requireAuth } from "~/lib/requireAuth";
+import { createCard, getCards } from "~/server/kanbanApi/cards";
+
+export const GET: APIRoute = async ({ request }) => {
+  const unauthorized = await requireAuth();
+  if (unauthorized) return unauthorized;
+
+  try {
+    const columnId = new URL(request.url).searchParams.get("columnId");
+
+    const result = await getCards();
+
+    if (result.error) {
+      console.error("[KANBAN CARDS] Error loading cards:", result.error);
+      return Response.json({ cards: [], error: result.error }, { status: 500 });
+    }
+
+    let cards = result.cards;
+
+    // Filter by columnId if provided
+    if (columnId) {
+      cards = cards.filter((card) => card.column_id === columnId);
+    }
+
+    return Response.json({ cards });
+  } catch (error) {
+    console.error("[KANBAN CARDS] Error loading cards:", error);
+    return Response.json({ cards: [] }, { status: 500 });
+  }
+};
+export const POST: APIRoute = async ({ request }) => {
+  const unauthorized = await requireAuth();
+  if (unauthorized) return unauthorized;
+
+  try {
+    const body = await request.json();
+
+    // Validate required field (only title is required)
+    if (!body.title) {
+      return Response.json(
+        { error: "Missing required field: title" },
+        { status: 400 }
+      );
+    }
+
+    // Create the card
+    const newCard = await createCard({
+      id: body.id,
+      title: body.title,
+      imageUrl: body.imageUrl,
+      assignee: body.assignee,
+      machine: body.machine,
+      dueDate: body.dueDate,
+      content: body.content,
+      processIds: body.processIds || [],
+      createdBy: currentRequest().locals.identity?.subject,
+    });
+
+    return Response.json({ card: newCard }, { status: 201 });
+  } catch (error) {
+    console.error("[KANBAN CARDS] Error creating card:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to create card";
+    return Response.json({ error: errorMessage }, { status: 500 });
+  }
+};
