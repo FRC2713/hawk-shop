@@ -17,5 +17,8 @@ The board column containing a manufacturing card. Moving a card to a different c
 **Status notification**:
 A message in the team's designated Slack channel reporting a status change and mentioning the submitter when their Slack identity is known.
 
+**Status history**:
+The permanent record of a card's status changes; unlike status notifications, it is never deleted.
+
 **Slack administrator**:
 An active workspace admin or workspace owner in the Red Hawk Robotics Slack workspace. Managing a channel alone does not qualify.

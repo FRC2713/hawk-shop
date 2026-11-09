@@ -82,6 +82,29 @@ export const kanbanCards = sqliteTable(
   ]
 );
 
+// Permanent snapshots. No card foreign key: history survives card deletion.
+export const statusHistory = sqliteTable(
+  "status_history",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    card_id: text("card_id").notNull(),
+    card_title: text("card_title").notNull(),
+    from_column_id: text("from_column_id"),
+    to_column_id: text("to_column_id").notNull(),
+    from_status: text("from_status"),
+    to_status: text("to_status").notNull(),
+    from_column_index: integer("from_column_index"),
+    to_column_index: integer("to_column_index").notNull(),
+    actor_id: text("actor_id").notNull(),
+    actor_name: text("actor_name").notNull(),
+    moved_at: text("moved_at").notNull(),
+  },
+  (table) => [
+    index("idx_status_history_card_moved_at").on(table.card_id, table.moved_at),
+    index("idx_status_history_moved_at").on(table.moved_at),
+  ]
+);
+
 export const kanbanConfig = sqliteTable("kanban_config", {
   id: text("id").primaryKey(),
   columns: text("columns", { mode: "json" })

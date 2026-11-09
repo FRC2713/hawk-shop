@@ -29,6 +29,8 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+export type StatusHistoryRow = typeof schema.statusHistory.$inferSelect;
+
 export type KanbanCardRow = typeof kanbanCards.$inferSelect;
 export type KanbanCardInsert = typeof kanbanCards.$inferInsert;
 export type KanbanCardUpdate = Partial<KanbanCardInsert>;
