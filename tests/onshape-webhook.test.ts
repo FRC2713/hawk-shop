@@ -20,6 +20,12 @@ beforeEach(() => {
   process.env.ONSHAPE_WEBHOOK_BASE_URL = "https://shop.example.org";
 });
 
+/** A workspace read also registers a webhook; these tests only count reads. */
+const isWebhookRegistration = (input: RequestInfo | URL) =>
+  /\/api\/v\d+\/webhooks$/.test(
+    new URL(input instanceof Request ? input.url : String(input)).pathname
+  );
+
 type Scope = { documentId: string; instanceType: "w" | "v" };
 
 /** Count upstream parts reads per scope; every other Onshape call fails. */
@@ -31,6 +37,7 @@ function countPartsReads(t: { mock: { method: Function } }) {
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request =
         input instanceof Request ? input : new Request(input, init);
+      if (isWebhookRegistration(request)) return Response.json({ id: "hook" });
       const match = /\/parts\/d\/([^/]+)\/([wvm])\//.exec(request.url);
       assert.ok(match, request.url);
       const key = `${match[1]}/${match[2]}`;
@@ -109,7 +116,8 @@ test("a read already in flight when the change arrives is not cached", async (t)
   let reads = 0;
   let release!: () => void;
   const started = new Promise<void>((resolveStarted) => {
-    t.mock.method(globalThis, "fetch", async () => {
+    t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL) => {
+      if (isWebhookRegistration(input)) return Response.json({ id: "hook" });
       reads++;
       if (reads === 1) {
         resolveStarted();

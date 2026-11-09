@@ -8,7 +8,10 @@ import {
   formatObservedAt as when,
   onshapeRemainingStatus,
 } from "../lib/onshapeApi/remaining";
+import { onshapeWebhookStatus } from "../lib/onshapeApi/webhooks";
 const configured = isOnshapeConfigured();
+const webhooks = onshapeWebhookStatus();
+const whenOrNever = (value: string | null) => (value ? when(value) : "never");
 const { totals, byDay } = summarizeOnshapeUsage();
 const { rows, latest, warnAt, exhausted, low } = onshapeRemainingStatus();
 // Brand callout: Light Grey panel, 4px red rail, 12/14px padding.
@@ -125,6 +128,30 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
         endpoint. It is not the yearly allocation, which only Onshape's
         developer portal shows.
       </p>
+    </section>
+
+    <section class="space-y-2" aria-labelledby="webhooks-heading">
+      <h2 id="webhooks-heading" class="text-xl">Change webhooks</h2>
+      {
+        webhooks.enabled ? (
+          <>
+            <p>
+              Registered for{" "}
+              <span class="brand-figures">{count(webhooks.registered)}</span>{" "}
+              {webhooks.registered === 1 ? "document" : "documents"}.
+            </p>
+            <ul class="text-muted-foreground text-sm">
+              <li>Last event: {whenOrNever(webhooks.lastEventAt)}</li>
+              <li>Last check: {whenOrNever(webhooks.lastCheckedAt)}</li>
+            </ul>
+          </>
+        ) : (
+          <p>
+            Disabled. Workspace reads refresh when their cache expires. Set
+            ONSHAPE_WEBHOOK_SECRET and ONSHAPE_WEBHOOK_BASE_URL to enable them.
+          </p>
+        )
+      }
     </section>
 
     <p>
