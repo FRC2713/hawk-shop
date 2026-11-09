@@ -1,0 +1,1 @@
+ALTER TABLE `kanban_cards` ADD `release_issues` text;

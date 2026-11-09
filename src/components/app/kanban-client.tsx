@@ -29,6 +29,7 @@ export function MfgKanbanClient({
   const [isEditMode, setIsEditMode] = useState(false);
   const [hideImages, setHideImages] = useState(false);
   const [selectedProcessIds, setSelectedProcessIds] = useState<string[]>([]);
+  const [hasWarningsOnly, setHasWarningsOnly] = useState(false);
   const [sortByUser, setSortByUser] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -271,6 +272,8 @@ export function MfgKanbanClient({
               isSaving={saveConfigMutation.isPending}
               onHideImages={handleHideImages}
               hideImages={hideImages}
+              hasWarningsOnly={hasWarningsOnly}
+              onHasWarningsOnlyChange={setHasWarningsOnly}
               selectedProcessIds={selectedProcessIds}
               onProcessFilterChange={handleProcessFilterChange}
               sortByUser={sortByUser}
@@ -294,6 +297,7 @@ export function MfgKanbanClient({
               processFilterIds={selectedProcessIds}
               sortByUser={sortByUser}
               searchQuery={searchQuery}
+              hasWarningsOnly={hasWarningsOnly}
               onAddColumn={isEditMode ? handleAddColumn : undefined}
               onRenameColumn={isEditMode ? handleRenameColumn : undefined}
               onDeleteColumn={isEditMode ? handleDeleteColumn : undefined}

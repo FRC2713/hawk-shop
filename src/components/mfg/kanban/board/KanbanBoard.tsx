@@ -46,6 +46,7 @@ interface KanbanBoardProps {
   processFilterIds?: string[];
   sortByUser?: boolean;
   searchQuery?: string;
+  hasWarningsOnly?: boolean;
   onAddColumn?: () => void;
   onRenameColumn?: (id: string, newTitle: string) => void;
   onDeleteColumn?: (id: string) => void;
@@ -60,6 +61,7 @@ export function KanbanBoard({
   processFilterIds = [],
   sortByUser = false,
   searchQuery = "",
+  hasWarningsOnly = false,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -143,12 +145,13 @@ export function KanbanBoard({
       cards.filter(
         (card) =>
           searchScores.has(card.id) &&
+          (!hasWarningsOnly || !!card.release_issues?.length) &&
           (processFilterIds.length === 0 ||
             card.processes?.some((process) =>
               processFilterIds.includes(process.id)
             ))
       ),
-    [cards, searchScores, processFilterIds]
+    [cards, searchScores, processFilterIds, hasWarningsOnly]
   );
 
   // Mutation to update card column

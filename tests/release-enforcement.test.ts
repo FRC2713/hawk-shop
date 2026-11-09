@@ -16,6 +16,20 @@ const post = endpoint(
 );
 const { fetchPartsFromOnshape } =
   await import("../src/onshape_connector/utils/partsQuery.server");
+const read = endpoint(
+  await import("../src/pages/api/kanban/cards/index"),
+  "GET"
+);
+async function readCards() {
+  const response = await read(
+    new Request("http://localhost/api/kanban/cards", {
+      headers: sessionRequest("student").headers,
+    }),
+    {}
+  );
+  assert.equal(response.status, 200);
+  return (await response.json()).cards;
+}
 const scope = {
   documentId: "release-doc",
   instanceType: "v" as const,
@@ -98,6 +112,31 @@ test("server uses cached part facts for every blocker and allows warnings withou
   assert.equal(created.success, true, created.error);
   assert.equal(created.data.title, "WARN");
   assert.equal(created.data.onshape_microversion_id, "actual-micro");
+  assert.deepEqual(
+    (await readCards()).find(
+      (card: { id: string }) => card.id === created.data.id
+    ).release_issues,
+    [
+      {
+        code: "missing-description",
+        severity: "warning",
+        message: "This part has no description.",
+        fix: "Add a description in Onshape so the shop knows what it is.",
+      },
+      {
+        code: "quantity-below-per-robot",
+        severity: "warning",
+        message: "Quantity to make is below quantity per robot.",
+        fix: "Check the requested quantities, including any parts already in stock.",
+      },
+      {
+        code: "placeholder-material",
+        severity: "warning",
+        message: "This part uses a placeholder material.",
+        fix: "Choose the stock material in Onshape before manufacturing.",
+      },
+    ]
+  );
   const duplicate = await release("warning", {
     documentId,
     partNumber: "BYPASS-DUPLICATE",
@@ -130,4 +169,104 @@ test("partial or invalid CAD scope cannot bypass checks", async (t) => {
       error: "A complete Onshape part scope is required for release.",
     });
   }
+});
+
+test("a clean release stores null warnings, including when a caller submits forged warnings", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json([
+      {
+        partId: "clean",
+        partNumber: "CLEAN",
+        description: "Finished bracket",
+        material: { displayName: "6061 Aluminum" },
+      },
+    ])
+  );
+  const response = await release("clean", {
+    documentId: "clean-release-doc",
+    quantityToMake: "8",
+    release_issues: JSON.stringify([
+      { code: "forged", severity: "warning", message: "Forged" },
+    ]),
+  });
+  assert.equal(response.status, 200);
+  const created = await response.json();
+  assert.equal(created.data.release_issues, null);
+  assert.equal(
+    (await readCards()).find(
+      (card: { id: string }) => card.id === created.data.id
+    ).release_issues,
+    null
+  );
+});
+
+test("workspace edits and card updates preserve the release warning snapshot", async (t) => {
+  let part = {
+    partId: "snapshot",
+    partNumber: "SNAPSHOT",
+    description: "",
+    material: { displayName: "Unknown" },
+    microversionId: "before",
+  };
+  t.mock.method(globalThis, "fetch", async () => Response.json([part]));
+  const workspace = {
+    ...scope,
+    documentId: "snapshot-doc",
+    instanceType: "w" as const,
+  };
+  const response = await release("snapshot", workspace);
+  assert.equal(response.status, 200);
+  const created = (await response.json()).data;
+  assert.deepEqual(
+    created.release_issues.map((issue: { code: string }) => issue.code),
+    [
+      "released-from-workspace",
+      "missing-description",
+      "quantity-below-per-robot",
+      "placeholder-material",
+    ]
+  );
+  part = {
+    ...part,
+    description: "Fixed description",
+    material: { displayName: "6061 Aluminum" },
+    microversionId: "after",
+  };
+  const { invalidateOnshapeCache, cacheKey } =
+    await import("../src/lib/onshapeApi/cache");
+  invalidateOnshapeCache(
+    cacheKey(
+      "parts",
+      workspace.documentId,
+      "w",
+      workspace.instanceId,
+      workspace.elementId
+    )
+  );
+  await inRequest(sessionRequest("student"), async () =>
+    Response.json(await fetchPartsFromOnshape(workspace))
+  );
+  const patch = endpoint(
+    await import("../src/pages/api/kanban/cards/[id]"),
+    "PATCH",
+    { id: created.id }
+  );
+  const updated = await patch(
+    new Request(`http://localhost/api/kanban/cards/${created.id}`, {
+      method: "PATCH",
+      headers: {
+        ...Object.fromEntries(sessionRequest("student").headers),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ quantity_to_make: 8, release_issues: null }),
+    }),
+    { id: created.id }
+  );
+  assert.equal(updated.status, 200);
+  const persisted = (await readCards()).find(
+    (card: { id: string }) => card.id === created.id
+  );
+  assert.equal(persisted.onshape_microversion_id, "after");
+  assert.equal(persisted.quantity_to_make, 8);
+  assert.deepEqual(persisted.release_issues, created.release_issues);
 });
