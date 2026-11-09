@@ -41,6 +41,32 @@ export const onRequest = defineMiddleware(async (context, next) => {
       );
     }
     if (path === "/signin") return next();
+    const isExchange =
+      context.url.pathname === "/auth/embed/exchange" &&
+      context.request.method === "POST";
+    // Authenticate ordinary requests first; the proof-based exchange must
+    // enforce the same origin requirement before it can set any cookie.
+    if (
+      (context.locals.identity || isExchange) &&
+      !["GET", "HEAD", "OPTIONS"].includes(context.request.method)
+    ) {
+      const origin = context.request.headers.get("origin");
+      const expected = process.env.APP_URL
+        ? new URL(process.env.APP_URL).origin
+        : context.url.origin;
+      if (origin !== expected)
+        return Response.json(
+          { error: "Request origin is not allowed." },
+          { status: 403 }
+        );
+    }
+    // The exchange proves possession of a one-use code and its iframe verifier.
+    // It grants no identity itself; Caddy validates the resulting Suite token.
+    if (isExchange) {
+      const response = await next();
+      response.headers.set("Cache-Control", "no-store");
+      return response;
+    }
     if (!context.locals.identity) {
       const configured = suiteSettings().HAWK_SUITE_TRUST_PROXY === "true";
       if (path.startsWith("/api/") || path.startsWith("/_actions/")) {
@@ -57,21 +83,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
         );
       }
       const destination = context.url.pathname + context.url.search;
-      // Slack and Suite use top-level cookies. An Onshape iframe can only
-      // offer a top-level continuation, never a second authentication bypass.
+      // Anonymous embedded entry renders only the connection UI. Data remains
+      // gated, including the API requests the parts island would make.
       if (
         path === "/onshape_connector" &&
+        ["GET", "HEAD"].includes(context.request.method) &&
         context.request.headers.get("sec-fetch-dest") === "iframe"
       ) {
-        return new Response(
-          `<html lang="en"><meta name="viewport" content="width=device-width"><title>Open Hawk Shop</title><body><p>Open Hawk Shop to sign in with Hawk Suite and release these parts.</p><a target="_top" href="/signin?redirect=${encodeURIComponent(destination)}">Open Hawk Shop</a></body></html>`,
-          {
-            headers: {
-              "Content-Type": "text/html; charset=utf-8",
-              "Cache-Control": "no-store",
-            },
-          }
-        );
+        const response = await next();
+        response.headers.set("Cache-Control", "no-store");
+        return response;
       }
       return context.redirect(
         `/signin?redirect=${encodeURIComponent(destination)}`
@@ -87,18 +108,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
         parts.slice(1).join(" ") || undefined,
         identity.email ?? null
       );
-    }
-    // Require same-origin writes for JSON, multipart, uploads, and actions.
-    if (!["GET", "HEAD", "OPTIONS"].includes(context.request.method)) {
-      const origin = context.request.headers.get("origin");
-      const expected = process.env.APP_URL
-        ? new URL(process.env.APP_URL).origin
-        : context.url.origin;
-      if (origin !== expected)
-        return Response.json(
-          { error: "Request origin is not allowed." },
-          { status: 403 }
-        );
     }
     const response = await next();
     response.headers.set("Cache-Control", "private, no-store");

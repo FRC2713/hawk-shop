@@ -105,6 +105,13 @@ export function redirectToSignIn(): void {
   signInRedirectStarted = true;
 
   const returnTo = window.location.pathname + window.location.search;
+  if (
+    window.self !== window.top &&
+    window.location.pathname === "/onshape_connector"
+  ) {
+    window.location.reload();
+    return;
+  }
   window.location.href = `/signin?redirect=${encodeURIComponent(returnTo)}`;
 }
 

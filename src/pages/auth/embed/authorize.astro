@@ -1,0 +1,55 @@
+---
+import AppLayout from "../../../layouts/AppLayout.astro";
+import {
+  issueEmbeddedCode,
+  validEmbeddedProof,
+} from "../../../server/embedded-auth";
+const challenge = Astro.url.searchParams.get("challenge");
+const token = Astro.cookies.get("AUTHP_ACCESS_TOKEN")?.value;
+if (!Astro.locals.identity || !validEmbeddedProof(challenge) || !token)
+  return new Response(
+    "Unable to connect. Close this window and try again from Onshape.",
+    { status: 400 }
+  );
+let code: string;
+try {
+  code = issueEmbeddedCode(challenge, token);
+} catch {
+  return new Response("Too many pending connections. Try again in a minute.", {
+    status: 429,
+  });
+}
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+Astro.response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+---
+
+<AppLayout title="Connect Onshape">
+  <main
+    id="main-content"
+    class="bg-card mx-auto max-w-md space-y-4 rounded-lg border p-6"
+    data-embedded-code={code}
+    data-challenge={challenge}
+  >
+    <h1 class="text-2xl">Connecting to Onshape</h1>
+    <p id="connection-status" role="status">
+      Keep this window open until your connection finishes. Part selection will
+      open inside Onshape.
+    </p>
+  </main>
+</AppLayout>
+<script>
+  const element = document.querySelector<HTMLElement>("[data-embedded-code]")!;
+  if (window.opener) {
+    window.opener.postMessage(
+      {
+        type: "hawk-shop-connect",
+        code: element.dataset.embeddedCode,
+        challenge: element.dataset.challenge,
+      },
+      window.location.origin
+    );
+  } else {
+    document.getElementById("connection-status")!.textContent =
+      "Return to Onshape and click Connect Hawk Suite again.";
+  }
+</script>
