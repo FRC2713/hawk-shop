@@ -26,7 +26,13 @@ export const PUT: APIRoute = async ({ request }) => {
     !body ||
     typeof body.enabled !== "boolean" ||
     !(body.channel_id === null || typeof body.channel_id === "string") ||
-    (body.enabled && !body.channel_id)
+    (body.enabled && !body.channel_id) ||
+    (body.reports_enabled !== undefined &&
+      typeof body.reports_enabled !== "boolean") ||
+    (body.reports_channel_id !== undefined &&
+      body.reports_channel_id !== null &&
+      typeof body.reports_channel_id !== "string") ||
+    (body.reports_enabled && !body.reports_channel_id && !body.channel_id)
   )
     return Response.json(
       { error: "Choose a channel before enabling notifications." },
@@ -36,11 +42,20 @@ export const PUT: APIRoute = async ({ request }) => {
     const channel = body.channel_id
       ? await validateSlackChannel(body.channel_id)
       : null;
+    const reportChannel = body.reports_channel_id
+      ? await validateSlackChannel(body.reports_channel_id)
+      : null;
     return Response.json(
       saveSlackSettings(
         channel?.id ?? null,
         channel?.name ?? null,
-        body.enabled
+        body.enabled,
+        body.reports_enabled === undefined
+          ? undefined
+          : {
+              reports_enabled: body.reports_enabled,
+              reports_channel_id: reportChannel?.id ?? null,
+            }
       ),
       { headers: { "Cache-Control": "no-store" } }
     );

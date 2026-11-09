@@ -16,6 +16,7 @@ import {
   type PendingSlackNotification,
 } from "./queue";
 import { getSlackSettings } from "./settings";
+import { deliverProblemReports } from "./reports";
 
 const state = globalThis as typeof globalThis & {
   __hawkSlackWorker?: {
@@ -146,6 +147,7 @@ export async function runSlackDelivery({
   if (worker.running) return;
   worker.running = true;
   try {
+    await deliverProblemReports(now);
     cleanupSlackPending(now());
     for (const group of claimGroups(now())) {
       const row = group[0];

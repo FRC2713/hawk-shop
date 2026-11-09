@@ -57,6 +57,13 @@
       "when": 1794240609652,
       "tag": "0007_chubby_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794240966481,
+      "tag": "0008_abnormal_imperial_guard",
+      "breakpoints": true
     }
   ]
 }
