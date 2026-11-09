@@ -1,5 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -198,7 +199,65 @@ test("Suite login preserves a safe destination and never redirects to an outside
   const embedded = await fetch(origin + "/onshape_connector?documentId=test", {
     headers: { "Sec-Fetch-Dest": "iframe" },
   });
-  assert.match(await embedded.text(), /target="_top"/);
+  assert.match(await embedded.text(), /Connect Hawk Suite/);
+});
+
+test("embedded exchange requires same-origin proof and never authenticates raw cookies", async () => {
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const popup = await call(`/auth/embed/authorize?challenge=${challenge}`, {
+    headers: { Cookie: "AUTHP_ACCESS_TOKEN=fixture-suite-token" },
+  });
+  assert.equal(popup.status, 200);
+  assert.equal(popup.headers.get("cache-control"), "private, no-store");
+  const html = await popup.text();
+  assert.ok(!html.includes("fixture-suite-token"));
+  const code = html.match(/data-embedded-code="([A-Za-z0-9_-]+)"/)?.[1];
+  assert.ok(code);
+  const exchange = (proof: string, requestOrigin = origin) =>
+    fetch(origin + "/auth/embed/exchange", {
+      method: "POST",
+      headers: { Origin: requestOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code, verifier: proof }),
+      redirect: "manual",
+    });
+  assert.equal((await exchange(verifier, "https://evil.example")).status, 403);
+  assert.equal(
+    (await exchange(randomBytes(32).toString("base64url"))).status,
+    401
+  );
+  const result = await exchange(verifier);
+  assert.equal(result.status, 204);
+  assert.match(
+    result.headers.get("set-cookie") || "",
+    /HttpOnly; SameSite=None; Partitioned/
+  );
+  assert.equal((await exchange(verifier)).status, 401);
+  assert.equal(
+    (
+      await fetch(origin + "/api/users", {
+        headers: { Cookie: "__Host-hawk-shop-embedded=fixture-suite-token" },
+      })
+    ).status,
+    401,
+    "only the gateway may turn a validated cookie into identity"
+  );
+  for (const path of ["/auth/embed/exchange/", "/auth/embed/exchange/extra"]) {
+    assert.equal(
+      (
+        await fetch(origin + path, {
+          method: "POST",
+          headers: { Origin: origin },
+          redirect: "manual",
+        })
+      ).status,
+      302
+    );
+  }
+  assert.match(
+    (await call("/auth/logout")).headers.get("set-cookie") || "",
+    /Partitioned; Max-Age=0/
+  );
 });
 
 test("Astro serves useful overview content without JavaScript and registers Suite assignees", async () => {

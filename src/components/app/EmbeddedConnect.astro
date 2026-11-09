@@ -1,0 +1,97 @@
+<main
+  id="main-content"
+  class="bg-card mx-auto max-w-md space-y-4 rounded-lg border p-6"
+>
+  <h1 class="text-2xl">Release parts inside Onshape</h1>
+  <p>
+    Connect your Hawk Suite account to choose and release parts here. A sign-in
+    window will close when you're connected.
+  </p>
+  <button type="button" class="shop-button" id="connect-suite"
+    >Connect Hawk Suite</button
+  >
+  <p id="connection-status" role="status" aria-live="polite"></p>
+  <noscript>Enable JavaScript to connect Hawk Suite inside Onshape.</noscript>
+</main>
+<script>
+  import { connectEmbeddedSession } from "../../lib/api/embedded-auth";
+  const button = document.getElementById("connect-suite") as HTMLButtonElement;
+  const status = document.getElementById("connection-status")!;
+  let popup: Window | null = null;
+  let verifier = "";
+  let challenge = "";
+  let exchanging = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const encode = (bytes: Uint8Array) =>
+    btoa(String.fromCharCode(...bytes))
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replaceAll("=", "");
+  function reset(message: string) {
+    if (timer) clearInterval(timer);
+    popup?.close();
+    popup = null;
+    verifier = "";
+    challenge = "";
+    exchanging = false;
+    button.disabled = false;
+    status.textContent = message;
+  }
+  button.addEventListener("click", async () => {
+    // Open synchronously during the click so popup blockers allow the window.
+    popup = window.open("about:blank", "_blank", "popup,width=520,height=680");
+    if (!popup) {
+      status.textContent =
+        "Allow popups for Hawk Shop, then try connecting again.";
+      return;
+    }
+    button.disabled = true;
+    status.textContent = "Finish connecting in the sign-in window.";
+    try {
+      verifier = encode(crypto.getRandomValues(new Uint8Array(32)));
+      challenge = encode(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(verifier)
+          )
+        )
+      );
+      popup.location.href = `/auth/embed/authorize?challenge=${encodeURIComponent(challenge)}`;
+      const deadline = Date.now() + 5 * 60_000;
+      timer = setInterval(() => {
+        if (popup?.closed && !exchanging)
+          reset("The sign-in window closed. Connect again to continue.");
+        else if (Date.now() > deadline)
+          reset("The connection timed out. Connect again to continue.");
+      }, 500);
+    } catch {
+      reset("Unable to start the connection. Try again.");
+    }
+  });
+  window.addEventListener("message", async (event) => {
+    if (
+      event.origin !== window.location.origin ||
+      !popup ||
+      event.source !== popup ||
+      event.data?.type !== "hawk-shop-connect" ||
+      event.data.challenge !== challenge ||
+      typeof event.data.code !== "string" ||
+      exchanging
+    )
+      return;
+    exchanging = true;
+    try {
+      if (!(await connectEmbeddedSession(event.data.code, verifier))) {
+        reset(
+          "Your browser blocked the embedded session. Allow embedded cookies for Hawk Shop, then connect again."
+        );
+        return;
+      }
+      reset("Connected. Opening parts…");
+      window.location.reload();
+    } catch {
+      reset("Unable to finish connecting. Try again.");
+    }
+  });
+</script>
