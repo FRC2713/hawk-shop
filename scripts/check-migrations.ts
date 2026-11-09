@@ -197,6 +197,36 @@ export function checkMigrations(
           );
           continue;
         }
+        const removed = previous.columns.filter(
+          (column) => !current.columns.includes(column)
+        );
+        const replacements = current.columns.filter(
+          (column) => !previous.columns.includes(column)
+        );
+        // A rebuild does not declare which new column replaces a removed one.
+        // Require a distinct replacement preserving each old column's values.
+        // Intentional drop-and-add transformations need an allowlist reason.
+        if (replacements.length) {
+          for (const column of removed) {
+            const replacement = replacements.findIndex((candidate) =>
+              previous.rows.every((row) => {
+                const match = current.rows.find((currentRow) =>
+                  previous.keys.every((key) =>
+                    isDeepStrictEqual(currentRow[key], row[key])
+                  )
+                );
+                return (
+                  match && isDeepStrictEqual(row[column], match[candidate])
+                );
+              })
+            );
+            if (replacement === -1)
+              failures.push(
+                `${migration}: ${table}: column ${column} has no value-preserving replacement column; intentional replacements require an allowlist reason`
+              );
+            else replacements.splice(replacement, 1);
+          }
+        }
         for (const row of previous.rows) {
           const match = current.rows.find((candidate) =>
             previous.keys.every((key) =>

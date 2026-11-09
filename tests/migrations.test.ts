@@ -80,6 +80,33 @@ test("migration check preserves values by primary key across a correct column re
   );
 });
 
+test("migration check catches corrupted values during a rebuilt column rename", () => {
+  fixture(
+    [
+      createParts,
+      "CREATE TABLE __new_parts (id TEXT PRIMARY KEY, name TEXT NOT NULL); --> statement-breakpoint\nINSERT INTO __new_parts (id, name) SELECT id, 'LOST' FROM parts; --> statement-breakpoint\nDROP TABLE parts; --> statement-breakpoint\nALTER TABLE __new_parts RENAME TO parts;",
+    ],
+    (folder) => {
+      assert.match(
+        checkMigrations(folder, seeds).join("\n"),
+        /0001_fixture\.sql.*parts.*title.*replacement column/
+      );
+    }
+  );
+});
+
+test("migration check accepts a rebuilt rename alongside a new column", () => {
+  fixture(
+    [
+      createParts,
+      "CREATE TABLE __new_parts (id TEXT PRIMARY KEY, quantity INTEGER NOT NULL, name TEXT NOT NULL); --> statement-breakpoint\nINSERT INTO __new_parts (id, quantity, name) SELECT id, 1, title FROM parts; --> statement-breakpoint\nDROP TABLE parts; --> statement-breakpoint\nALTER TABLE __new_parts RENAME TO parts;",
+    ],
+    (folder) => {
+      assert.deepEqual(checkMigrations(folder, seeds), []);
+    }
+  );
+});
+
 test("migration check catches scrambled values even when row counts are unchanged", () => {
   fixture(
     [
