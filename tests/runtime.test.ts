@@ -963,8 +963,12 @@ test(
       await expect(spacer).toBeVisible();
       await searchFor("24-112");
       await expect(bracket).toBeVisible();
-      await expect(spacer).toHaveCount(0);
-      for (const query of ["braket", "RACKET", "112"]) {
+      // Exact siblings no longer suppress the connector's fuzzy number matches.
+      await expect(spacer).toBeVisible();
+      await searchFor("112");
+      await expect(bracket).toBeVisible();
+      await expect(plate).toBeVisible();
+      for (const query of ["braket", "RACKET"]) {
         await searchFor(query);
         await expect(bracket).toBeVisible();
         await expect(plate).toHaveCount(0);

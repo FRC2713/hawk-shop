@@ -1,50 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useUrlSearch } from "~/hooks/useUrlSearch";
+import { useMemo } from "react";
 import { ArrowLeft, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { KanbanCard } from "~/components/mfg/kanban/cards/KanbanCard";
 import { useQuery } from "@tanstack/react-query";
 import { kanbanCardsQuery, kanbanConfigQuery, usersQuery } from "~/lib/api";
 import { Input } from "~/components/ui/input";
-import { buildSearchIndex } from "~/lib/search";
+import { buildCardSearchIndex, buildCardUsersMap } from "~/lib/card-search";
 
 export function DoneClient() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const restoreSearch = () =>
-      setSearchQuery(new URL(window.location.href).searchParams.get("q") || "");
-    restoreSearch();
-    const focusSearch = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (
-        event.key !== "/" ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        (target instanceof HTMLElement &&
-          (target.closest("input, textarea, select, [role='textbox']") ||
-            target.isContentEditable))
-      )
-        return;
-      event.preventDefault();
-      searchRef.current?.focus();
-    };
-    window.addEventListener("popstate", restoreSearch);
-    window.addEventListener("keydown", focusSearch);
-    return () => {
-      window.removeEventListener("popstate", restoreSearch);
-      window.removeEventListener("keydown", focusSearch);
-    };
-  }, []);
-
-  const changeSearch = (query: string) => {
-    setSearchQuery(query);
-    const url = new URL(window.location.href);
-    if (query) url.searchParams.set("q", query);
-    else url.searchParams.delete("q");
-    window.history.replaceState(window.history.state, "", url);
-  };
+  const { searchQuery, changeSearch, searchRef } = useUrlSearch();
   const { data: config } = useQuery(kanbanConfigQuery());
   const { data: cards = [], isLoading: isLoadingCards } =
     useQuery(kanbanCardsQuery());
@@ -64,37 +29,10 @@ export function DoneClient() {
   }, [cards, doneColumnId]);
 
   // Create user lookup map
-  const usersMap = useMemo(() => {
-    const map = new Map<string, (typeof users)[0]>();
-    users.forEach((user) => {
-      map.set(user.onshape_user_id, user);
-    });
-    return map;
-  }, [users]);
+  const usersMap = useMemo(() => buildCardUsersMap(users), [users]);
 
   const searchIndex = useMemo(
-    () =>
-      buildSearchIndex(doneCards, [
-        { value: (card) => card.title, weight: 2 },
-        { value: (card) => card.content, weight: 2 },
-        {
-          value: (card) =>
-            card.assignee
-              ? usersMap.get(card.assignee)?.name || card.assignee
-              : null,
-        },
-        {
-          value: (card) =>
-            card.created_by
-              ? usersMap.get(card.created_by)?.name || card.created_by
-              : null,
-        },
-        { value: (card) => card.machine },
-        {
-          value: (card) =>
-            card.processes?.map((process) => process.name).join(" "),
-        },
-      ]),
+    () => buildCardSearchIndex(doneCards, usersMap),
     [doneCards, usersMap]
   );
 

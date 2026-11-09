@@ -1,5 +1,6 @@
+import { useUrlSearch } from "~/hooks/useUrlSearch";
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { KanbanSquare, Search, Settings2, Edit, Save, X } from "lucide-react";
@@ -31,43 +32,7 @@ export function MfgKanbanClient({
   const [selectedProcessIds, setSelectedProcessIds] = useState<string[]>([]);
   const [hasWarningsOnly, setHasWarningsOnly] = useState(false);
   const [sortByUser, setSortByUser] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const restoreSearch = () =>
-      setSearchQuery(new URL(window.location.href).searchParams.get("q") || "");
-    restoreSearch();
-    const focusSearch = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (
-        event.key !== "/" ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        (target instanceof HTMLElement &&
-          (target.closest("input, textarea, select, [role='textbox']") ||
-            target.isContentEditable))
-      )
-        return;
-      event.preventDefault();
-      searchRef.current?.focus();
-    };
-    window.addEventListener("popstate", restoreSearch);
-    window.addEventListener("keydown", focusSearch);
-    return () => {
-      window.removeEventListener("popstate", restoreSearch);
-      window.removeEventListener("keydown", focusSearch);
-    };
-  }, []);
-
-  const changeSearch = (query: string) => {
-    setSearchQuery(query);
-    const url = new URL(window.location.href);
-    if (query) url.searchParams.set("q", query);
-    else url.searchParams.delete("q");
-    window.history.replaceState(window.history.state, "", url);
-  };
+  const { searchQuery, changeSearch, searchRef } = useUrlSearch();
   const [originalConfig, setOriginalConfig] = useState<KanbanConfig | null>(
     null
   );
