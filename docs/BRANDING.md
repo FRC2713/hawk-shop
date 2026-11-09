@@ -31,7 +31,7 @@ Self-host the Fontsource distributions. Barlow is the heading family; use bold i
 
 ## Marks
 
-Use the supplied 2713 numeral mark in this robotics-facing app. `public/brand/2713-red.svg` and `2713-white.svg` are unmodified originals from [0.0_Logos](https://drive.google.com/drive/folders/1lstp4AtVu2wvspR0g0_SdS4uL_KSES3o). Red file ID: `1YA34hNKIWKR4J-Rt0wK9FjGitdmUikTF`. White file ID: `1sFzW5A22MfWiNpc2FnKNkU_dliucKHY3`.
+Use the supplied 2713 numeral mark in this robotics-facing app. `public/brand/2713-red.svg` and `public/brand/2713-white.svg` are unmodified originals from [0.0_Logos](https://drive.google.com/drive/folders/1lstp4AtVu2wvspR0g0_SdS4uL_KSES3o). Red file ID: `1YA34hNKIWKR4J-Rt0wK9FjGitdmUikTF`. White file ID: `1sFzW5A22MfWiNpc2FnKNkU_dliucKHY3`.
 
 Never typeset, redraw, stretch, rotate, recolor, or add effects to a team mark. For the numeral artwork, use at least 24px cap height with half the artwork height clear on every side. The shared header treatment uses a 24px-high mark with 12px clear space on a transparent background, so it sits directly on the header in both themes. The nearby Hawk Shop name is product text, not part of the official mark. The favicon uses a plain color field rather than squeezing the numeral mark below its minimum size.
 
