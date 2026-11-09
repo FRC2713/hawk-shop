@@ -22,7 +22,7 @@ All CAD reads and writes share the key's Onshape permissions, so its account sho
 
 The iframe-only connector entry bypasses gateway authorization to show a top-level continuation, with all caller identity headers cleared. It returns no shop data. The top-level request then passes through the normal Suite gate and preserves the original Part Studio query. This supports Suite's SameSite=Lax cookies without opening any API or CAD operation to unauthenticated callers.
 
-The image now runs Node 24 and Astro's `dist/server/entry.mjs`. Preserve the existing `/data` volume. Starting the image without Suite configuration leaves health checks available and returns a setup error for data requests.
+The image now runs Node 24 and Astro's generated server entry at dist/server/entry.mjs, produced by `npm run build`. Preserve the existing `/data` volume. Starting the image without Suite configuration leaves health checks available and returns a setup error for data requests.
 
 ## Verification
 

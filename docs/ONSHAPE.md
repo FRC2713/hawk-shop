@@ -46,7 +46,7 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Running out returns 402 Payment Required, not 429.** It is not a window to wait out: requests stay rejected until the allocation resets.
   - Label: documented
   - Source: [API Limits](https://onshape-public.github.io/docs/auth/limits/), [Response Codes](https://onshape-public.github.io/docs/api-adv/errors/)
-  - Relied on by: `assertOnshapeAllocation` and `onshapeErrorResponse` in `auth.ts` (every route answers a 402 as "Onshape API allocation used up"); `recordOnshapeRemaining`, which records a 402 even without the header
+  - Relied on by: `assertOnshapeAllocation` and `onshapeErrorResponse` in `src/lib/onshapeApi/auth.ts` (every route answers a 402 as "Onshape API allocation used up"); `recordOnshapeRemaining`, which records a 402 even without the header
 
 - **Only 2xx and 3xx responses count.** API-key calls that return 4xx or 5xx are not charged.
   - Label: documented

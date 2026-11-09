@@ -16,6 +16,7 @@
     "preview": "astro preview",
     "test": "node --import ./tests/register-server-only.mjs --import tsx --test tests/*.test.ts",
     "check:migrations": "node --import tsx --test tests/migrations.test.ts",
+    "check:docs": "node --import tsx --test tests/docs-paths.test.ts",
     "test:runtime": "HAWK_SHOP_VERIFY_BUILT_SERVER=1 node --import ./tests/register-server-only.mjs --import tsx --test tests/slack-runtime.test.ts"
   },
   "dependencies": {
