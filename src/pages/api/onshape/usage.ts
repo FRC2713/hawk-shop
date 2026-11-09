@@ -26,14 +26,7 @@ export const GET: APIRoute = async () => {
     const [latest] = remainingByLabel;
     return Response.json({
       ...summarizeOnshapeUsage(),
-      remaining: latest
-        ? {
-            label: latest.label,
-            value: latest.value,
-            observedAt: latest.observedAt,
-            lastStatus: latest.lastStatus,
-          }
-        : null,
+      remaining: latest ?? null,
       remainingByLabel,
     });
   } catch (error) {

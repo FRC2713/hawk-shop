@@ -492,14 +492,19 @@ test(
       ).toBeVisible();
       await expect(page.getByText(/not the yearly allocation/i)).toBeVisible();
       await expect(page.getByRole("alert")).toContainText("below 1,000");
-      await expect(page.getByText("users: 3,000")).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Onshape's reported count is low" })
+      ).toBeVisible();
+      await expect(
+        page.getByText(/users: 3,000 \(observed Nov 8, 2026/)
+      ).toBeVisible();
       await expect(page.getByText("Calls sent to Onshape")).toBeVisible();
       await expect(page.getByText(/allocation used up/i)).toHaveCount(0);
 
       seed("thumbnails", 0, "2026-11-09T13:00:00.000Z", 402);
       await page.reload();
       await expect(
-        page.getByText("Onshape API allocation used up")
+        page.getByRole("heading", { name: "Onshape API allocation used up" })
       ).toBeVisible();
       await expect(
         page.getByText("Onshape API access is not configured")

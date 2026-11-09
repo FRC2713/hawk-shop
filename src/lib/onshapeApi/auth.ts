@@ -17,6 +17,22 @@ export class OnshapeAllocationExhaustedError extends Error {
   }
 }
 
+/** Call before turning a non-OK Onshape response into any other error, so a
+ * 402 reads the same on every path (see docs/ONSHAPE.md#allocation-and-billing). */
+export function assertOnshapeAllocation(response: Response | undefined): void {
+  if (response?.status === 402) throw new OnshapeAllocationExhaustedError();
+}
+
+/** The route answer for errors that mean the same everywhere: 409 when no key
+ * is configured, 402 when the allocation is used up. Null for anything else. */
+export function onshapeErrorResponse(error: unknown): Response | null {
+  if (error instanceof OnshapeConfigurationError)
+    return Response.json({ error: error.message }, { status: 409 });
+  if (error instanceof OnshapeAllocationExhaustedError)
+    return Response.json({ error: error.message }, { status: 402 });
+  return null;
+}
+
 export function onshapeOrigin(): string {
   const url = new URL(
     process.env.ONSHAPE_BASE_URL || "https://cad.onshape.com"
@@ -117,9 +133,12 @@ export async function onshapeFetch(
     const response = await globalThis.fetch(
       new Request(request, { headers, redirect: "manual" })
     );
-    // Every response, errors included, may carry Onshape's remaining count.
-    recordOnshapeRemaining(url, response);
-    if (response.status < 300 || response.status >= 400) return response;
+    if (response.status < 300 || response.status >= 400) {
+      // The final response, errors included, carries Onshape's remaining
+      // count. Redirect hops are skipped.
+      recordOnshapeRemaining(url, response);
+      return response;
+    }
     if (![307, 308].includes(response.status))
       throw new Error("Onshape returned an unsupported redirect.");
     const location = response.headers.get("location");

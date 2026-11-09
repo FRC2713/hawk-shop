@@ -1,4 +1,7 @@
-import { OnshapeConfigurationError } from "~/lib/onshapeApi/auth";
+import {
+  assertOnshapeAllocation,
+  onshapeErrorResponse,
+} from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
 import {
   createOnshapeApiClient,
@@ -56,6 +59,7 @@ export const GET: APIRoute = async ({ request }) => {
           },
         });
 
+        assertOnshapeAllocation(response.response);
         // Thrown rather than returned so the miss is not cached: a 404
         // here is usually a token problem, and caching it for a week
         // would hide the version until the TTL lapsed.
@@ -73,8 +77,8 @@ export const GET: APIRoute = async ({ request }) => {
     let errorMessage = "Failed to fetch version";
     let statusCode = 500;
 
-    if (error instanceof OnshapeConfigurationError)
-      return Response.json({ error: error.message }, { status: 409 });
+    const known = onshapeErrorResponse(error);
+    if (known) return known;
     if (error instanceof Error) {
       if (
         error.message.includes("Not authenticated") ||
