@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { queueProblemReport } from "~/lib/slack/reports";
@@ -33,9 +34,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
         ? body.context
         : {};
     return queueProblemReport(locals.identity!, body.message.trim(), context);
-  } catch {
+  } catch (error) {
     return Response.json(
-      { error: "Your report could not be saved. Please try again." },
+      {
+        error: "Your report could not be saved. Please try again.",
+        errorId: logServerError("REPORTS", error),
+      },
       { status: 503 }
     );
   }

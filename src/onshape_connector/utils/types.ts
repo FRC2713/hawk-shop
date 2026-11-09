@@ -25,6 +25,7 @@ export type PartsPageSearchParams = {
 export interface ActionResponse {
   success: boolean;
   error?: string;
+  errorId?: string;
   data?: unknown;
   redirect?: string;
   headers?: {

@@ -95,10 +95,12 @@ test("a part-number release answers a 402 inline with the same message", async (
   const response = await inRequest(request, async () =>
     Response.json(await handlePartNumberUpdate(data, request))
   );
-  assert.deepEqual(await response.json(), {
+  const { errorId, ...payload } = await response.json();
+  assert.deepEqual(payload, {
     success: false,
     error: "Onshape API allocation used up.",
   });
+  assert.match(errorId, /^[a-f0-9]{12}$/);
 });
 
 test("a redirect records only the final response's header, not each hop", async (t) => {

@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { getMetrics, parseMetricsRange } from "~/server/kanbanApi/metrics";
@@ -11,5 +12,15 @@ export const GET: APIRoute = async ({ url }) => {
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
-  return Response.json(await getMetrics(range));
+  try {
+    return Response.json(await getMetrics(range));
+  } catch (error) {
+    return Response.json(
+      {
+        error: "Shop metrics could not be loaded.",
+        errorId: logServerError("METRICS", error),
+      },
+      { status: 500 }
+    );
+  }
 };

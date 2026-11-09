@@ -392,7 +392,11 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
     <main className="container mx-auto px-4 py-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-2">
         {/* Error Messages */}
-        {displayError && <ErrorDisplay error={displayError} />}
+        {displayError && (
+          <ErrorDisplay
+            error={partsError || cardsError || columnsError || displayError}
+          />
+        )}
 
         {/* Partial error states - show data even if some queries failed */}
         {(cardsError || columnsError) && !partsError && (

@@ -1,4 +1,5 @@
 import "virtual:hawk-shop/server-only";
+import { logServerError } from "~/server/errors";
 
 import { captureSlackTransition } from "~/lib/slack/queue";
 import type { SessionActor } from "~/lib/sessionActor";
@@ -79,6 +80,7 @@ export async function getCardStatusHistory(cardId: string) {
 export interface GetCardsResult {
   cards: KanbanCardWithProcesses[];
   error?: string;
+  errorId?: string;
 }
 
 /**
@@ -137,8 +139,8 @@ export async function getCards(): Promise<GetCardsResult> {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown error fetching cards";
-    console.error("[KANBAN CARDS] Error fetching cards:", message);
-    return { cards: [], error: message };
+    const errorId = logServerError("KANBAN CARDS", error);
+    return { cards: [], error: message, errorId };
   }
 }
 

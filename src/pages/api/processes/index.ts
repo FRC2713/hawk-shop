@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { createProcess, getProcesses } from "~/server/processesApi/processes";
@@ -10,17 +11,18 @@ export const GET: APIRoute = async () => {
     const result = await getProcesses();
 
     if (result.error) {
-      console.error("[PROCESSES] Error loading processes:", result.error);
+      const errorId =
+        result.errorId ?? logServerError("PROCESSES", new Error(result.error));
       return Response.json(
-        { processes: [], error: result.error },
+        { processes: [], error: result.error, errorId },
         { status: 500 }
       );
     }
 
     return Response.json({ processes: result.processes });
   } catch (error) {
-    console.error("[PROCESSES] Error loading processes:", error);
-    return Response.json({ processes: [] }, { status: 500 });
+    const errorId = logServerError("PROCESSES", error);
+    return Response.json({ processes: [], errorId }, { status: 500 });
   }
 };
 export const POST: APIRoute = async ({ request }) => {
@@ -51,9 +53,9 @@ export const POST: APIRoute = async ({ request }) => {
 
     return Response.json({ process: newProcess }, { status: 201 });
   } catch (error) {
-    console.error("[PROCESSES] Error creating process:", error);
+    const errorId = logServerError("PROCESSES", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to create process";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };

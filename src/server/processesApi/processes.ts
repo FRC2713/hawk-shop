@@ -1,4 +1,5 @@
 import "virtual:hawk-shop/server-only";
+import { logServerError } from "~/server/errors";
 
 import { asc, eq } from "drizzle-orm";
 import { db } from "~/server/db/client";
@@ -15,6 +16,7 @@ import type {
 export interface GetProcessesResult {
   processes: ProcessRow[];
   error?: string;
+  errorId?: string;
 }
 
 /**
@@ -34,8 +36,8 @@ export async function getProcesses(): Promise<GetProcessesResult> {
       error instanceof Error
         ? error.message
         : "Unknown error fetching processes";
-    console.error("[PROCESSES] Error fetching processes:", message);
-    return { processes: [], error: message };
+    const errorId = logServerError("PROCESSES", error);
+    return { processes: [], error: message, errorId };
   }
 }
 

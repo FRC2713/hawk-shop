@@ -21,11 +21,28 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly path: string
+    readonly path: string,
+    readonly errorId?: string
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+export function getErrorId(error: unknown): string | undefined {
+  return error &&
+    typeof error === "object" &&
+    "errorId" in error &&
+    typeof error.errorId === "string"
+    ? error.errorId
+    : undefined;
+}
+
+/** Render failures have no server response; keep their references distinct. */
+export function identifyClientError(error: Error): Error & { errorId: string } {
+  return Object.assign(error, {
+    errorId: getErrorId(error) ?? `client-${crypto.randomUUID().slice(0, 8)}`,
+  });
 }
 
 type ApiRequest = Omit<RequestInit, "body"> & {
@@ -65,14 +82,11 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
-    throw new ApiError(
-      await readErrorMessage(
-        response,
-        fallbackError ?? `Request to ${path} failed`
-      ),
-      response.status,
-      path
+    const failure = await readError(
+      response,
+      fallbackError ?? `Request to ${path} failed`
     );
+    throw new ApiError(failure.message, response.status, path, failure.errorId);
   }
 
   return (await response.json()) as T;
@@ -98,19 +112,23 @@ export function redirectToSignIn(): void {
  * Pull the handler's `{ error }` string out of a failed response, falling back
  * to `fallback` when the body is missing, empty, or not the expected shape.
  */
-async function readErrorMessage(
+async function readError(
   response: Response,
   fallback: string
-): Promise<string> {
+): Promise<{ message: string; errorId?: string }> {
+  const headerId = response.headers.get("X-Error-ID") ?? undefined;
   try {
     const body = await response.json();
     if (body && typeof body.error === "string" && body.error) {
-      return body.error;
+      return {
+        message: body.error,
+        errorId: typeof body.errorId === "string" ? body.errorId : headerId,
+      };
     }
   } catch {
     // Non-JSON or empty body — the fallback is the best we have.
   }
-  return fallback;
+  return { message: fallback, errorId: headerId };
 }
 
 /** Build a query string, dropping keys whose value is undefined. */

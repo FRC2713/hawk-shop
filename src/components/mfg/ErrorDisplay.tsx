@@ -1,15 +1,26 @@
 import { Card, CardContent } from "~/components/ui/card";
 import { AlertCircle } from "lucide-react";
+import { ReportProblemButton } from "~/components/app/report-problem";
+import { getErrorId } from "~/lib/api/client";
 
 interface ErrorDisplayProps {
-  error: string;
+  error: string | Error;
+  errorId?: string;
+  cardId?: string;
   exampleUrl?: string;
 }
 
 /**
  * Component to display error messages with optional example URL
  */
-export function ErrorDisplay({ error, exampleUrl }: ErrorDisplayProps) {
+export function ErrorDisplay({
+  error,
+  errorId,
+  cardId,
+  exampleUrl,
+}: ErrorDisplayProps) {
+  const message = typeof error === "string" ? error : error.message;
+  const reference = errorId ?? getErrorId(error);
   return (
     <Card className="border-destructive">
       <CardContent className="pt-6">
@@ -18,7 +29,19 @@ export function ErrorDisplay({ error, exampleUrl }: ErrorDisplayProps) {
             <AlertCircle className="h-5 w-5" />
             <p className="text-sm font-semibold">Error</p>
           </div>
-          <p className="text-sm">{error}</p>
+          <p className="text-sm">{message}</p>
+          {reference && (
+            <p className="text-sm">
+              Error ID: <code>{reference}</code>
+            </p>
+          )}
+          <ReportProblemButton
+            context={{
+              error_id: reference,
+              error_message: message,
+              card_id: cardId,
+            }}
+          />
           {exampleUrl && (
             <div className="bg-muted mt-4 space-y-2 rounded-md p-3 text-xs">
               <p className="font-semibold">Example URL format:</p>

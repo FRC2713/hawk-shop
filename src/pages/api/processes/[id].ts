@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import {
@@ -19,10 +20,10 @@ export const GET: APIRoute = async ({ params }) => {
 
     return Response.json({ process });
   } catch (error) {
-    console.error("[PROCESSES] Error fetching process:", error);
+    const errorId = logServerError("PROCESSES", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to fetch process";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };
 export const PUT: APIRoute = async ({ request, params }) => {
@@ -55,10 +56,10 @@ export const PUT: APIRoute = async ({ request, params }) => {
     const updatedProcess = await updateProcess(params.id!, updates);
     return Response.json({ process: updatedProcess });
   } catch (error) {
-    console.error("[PROCESSES] Error updating process:", error);
+    const errorId = logServerError("PROCESSES", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to update process";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };
 export const DELETE: APIRoute = async ({ params }) => {
@@ -69,9 +70,9 @@ export const DELETE: APIRoute = async ({ params }) => {
     const deletedProcess = await deleteProcess(params.id!);
     return Response.json({ process: deletedProcess });
   } catch (error) {
-    console.error("[PROCESSES] Error deleting process:", error);
+    const errorId = logServerError("PROCESSES", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to delete process";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };

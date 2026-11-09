@@ -1,6 +1,8 @@
 import { Component, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
+import { identifyClientError, getErrorId } from "~/lib/api/client";
 
 interface KanbanBoardErrorBoundaryProps {
   children: ReactNode;
@@ -22,11 +24,15 @@ export class KanbanBoardErrorBoundary extends Component<
   }
 
   static getDerivedStateFromError(error: Error): KanbanBoardErrorBoundaryState {
-    return { hasError: true, error };
+    return { hasError: true, error: identifyClientError(error) };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("[KanbanBoard] Error caught by boundary:", error, errorInfo);
+    console.error(
+      `[KanbanBoard] errorId=${getErrorId(error)}`,
+      error,
+      errorInfo
+    );
   }
 
   handleReset = () => {
@@ -46,10 +52,7 @@ export class KanbanBoardErrorBoundary extends Component<
               <AlertTriangle className="text-destructive size-8" />
             </div>
             <h3 className="mb-2 text-lg font-semibold">Something went wrong</h3>
-            <p className="text-muted-foreground mb-6 text-sm">
-              {this.state.error?.message ||
-                "An unexpected error occurred while loading the kanban board."}
-            </p>
+            {this.state.error && <ErrorDisplay error={this.state.error} />}
             <div className="flex gap-3">
               <Button onClick={this.handleReset} variant="outline">
                 Try again

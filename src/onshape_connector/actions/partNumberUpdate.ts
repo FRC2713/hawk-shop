@@ -200,7 +200,6 @@ export async function handlePartNumberUpdate(
     }
     return { success: true };
   } catch (error: unknown) {
-    console.error("[ACTION] Error updating part number:", error);
     return createErrorResponse(error, "Failed to update part number");
   }
 }

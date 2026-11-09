@@ -1,3 +1,4 @@
+import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Layers, Plus } from "lucide-react";
@@ -31,18 +32,7 @@ export function ProcessesSection() {
     setDeleteDialogOpen(true);
   };
 
-  if (error) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <p className="text-destructive text-center text-sm">
-            Failed to load processes.{" "}
-            {error instanceof Error ? error.message : "Unknown error"}
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (error) return <ErrorDisplay error={error} />;
 
   return (
     <>

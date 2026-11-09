@@ -730,3 +730,91 @@ test(
     }
   }
 );
+
+test("metrics render on the server for members and validate the date range", async () => {
+  const response = await call("/metrics?start=2026-01-01&end=2026-01-31");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  for (const text of [
+    "Shop metrics",
+    "Time in each status",
+    "Weekly throughput",
+    'name="start"',
+    'value="2026-01-01"',
+  ])
+    assert.ok(html.includes(text), text);
+  assert.equal((await call("/metrics?start=2026-02-30")).status, 400);
+  assert.equal((await fetch(origin + "/api/metrics")).status, 401);
+  const overview = await (await call("/")).text();
+  assert.ok(overview.includes('href="/metrics"'));
+});
+
+test("error displays and workflow boundaries open reports with their error references", async () => {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ extraHTTPHeaders: identity });
+  const page = await context.newPage();
+  const database = new Database(join(data, "hawk-shop.db"));
+  try {
+    database
+      .prepare(
+        "INSERT INTO slack_config (id, enabled, reports_enabled, reports_channel_id, generation, updated_at) VALUES ('default',0,1,'CREPORTS',0,?) ON CONFLICT(id) DO UPDATE SET reports_enabled=1,reports_channel_id='CREPORTS'"
+      )
+      .run(new Date().toISOString());
+    await page.route("**/api/equipment", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Fixture equipment failure",
+          errorId: "abcdef123456",
+        }),
+      })
+    );
+    await page.goto(origin + "/equipment");
+    await expect(page.getByText("Error ID:")).toContainText("abcdef123456", {
+      timeout: 15000,
+    });
+    await page
+      .getByRole("button", { name: "Report this", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByLabel("What went wrong?").fill("The equipment page failed");
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText("Report ID:");
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("abcdef123456");
+    const posts = await readFile(join(data, "slack-posts.jsonl"), "utf8");
+    assert.ok(posts.includes("Fixture equipment failure"));
+    await page.unroute("**/api/equipment");
+    // An invalid equipment shape causes a render failure caught by the island boundary.
+    await page.route("**/api/equipment", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ equipment: { invalid: true } }),
+      })
+    );
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Unable to display this workflow" })
+    ).toBeVisible();
+    await expect(page.getByText("Error ID:")).toContainText("client-");
+    await page
+      .getByRole("button", { name: "Report this", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+  } finally {
+    database
+      .prepare("UPDATE slack_config SET reports_enabled=0 WHERE id='default'")
+      .run();
+    database.close();
+    await browser.close();
+  }
+});

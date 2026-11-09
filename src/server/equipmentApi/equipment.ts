@@ -1,4 +1,5 @@
 import "virtual:hawk-shop/server-only";
+import { logServerError } from "~/server/errors";
 
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "~/server/db/client";
@@ -20,6 +21,7 @@ import { deleteEquipmentImage } from "./images";
 export interface GetEquipmentResult {
   equipment: EquipmentWithProcesses[];
   error?: string;
+  errorId?: string;
 }
 
 /**
@@ -79,8 +81,8 @@ export async function getEquipment(): Promise<GetEquipmentResult> {
       error instanceof Error
         ? error.message
         : "Unknown error fetching equipment";
-    console.error("[EQUIPMENT] Error fetching equipment:", message);
-    return { equipment: [], error: message };
+    const errorId = logServerError("EQUIPMENT", error);
+    return { equipment: [], error: message, errorId };
   }
 }
 

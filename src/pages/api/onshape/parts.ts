@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import { onshapeErrorResponse } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
@@ -43,7 +44,7 @@ export const GET: APIRoute = async ({ request }) => {
     // Return parts data as JSON
     return Response.json(parts);
   } catch (error) {
-    console.error("Error fetching parts from Onshape:", error);
+    const errorId = logServerError("ONSHAPE", error);
 
     // Provide more specific error messages
     let errorMessage = "Failed to fetch parts";
@@ -61,6 +62,9 @@ export const GET: APIRoute = async ({ request }) => {
       }
     }
 
-    return Response.json({ error: errorMessage }, { status: statusCode });
+    return Response.json(
+      { error: errorMessage, errorId },
+      { status: statusCode }
+    );
   }
 };

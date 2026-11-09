@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
@@ -13,8 +14,13 @@ export const GET: APIRoute = async ({ request }) => {
     const result = await getCards();
 
     if (result.error) {
-      console.error("[KANBAN CARDS] Error loading cards:", result.error);
-      return Response.json({ cards: [], error: result.error }, { status: 500 });
+      const errorId =
+        result.errorId ??
+        logServerError("KANBAN CARDS", new Error(result.error));
+      return Response.json(
+        { cards: [], error: result.error, errorId },
+        { status: 500 }
+      );
     }
 
     let cards = result.cards;
@@ -26,8 +32,8 @@ export const GET: APIRoute = async ({ request }) => {
 
     return Response.json({ cards });
   } catch (error) {
-    console.error("[KANBAN CARDS] Error loading cards:", error);
-    return Response.json({ cards: [] }, { status: 500 });
+    const errorId = logServerError("KANBAN CARDS", error);
+    return Response.json({ cards: [], errorId }, { status: 500 });
   }
 };
 export const POST: APIRoute = async ({ request }) => {
@@ -62,9 +68,9 @@ export const POST: APIRoute = async ({ request }) => {
 
     return Response.json({ card: newCard }, { status: 201 });
   } catch (error) {
-    console.error("[KANBAN CARDS] Error creating card:", error);
+    const errorId = logServerError("KANBAN CARDS", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to create card";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };

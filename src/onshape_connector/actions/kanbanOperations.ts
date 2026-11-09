@@ -1,3 +1,4 @@
+import { createErrorResponse } from "../utils/errorHandling";
 import { z } from "zod";
 import { createCard, updateCard } from "~/server/kanbanApi/cards";
 import { logger } from "~/lib/logger";
@@ -193,14 +194,7 @@ export async function handleAddKanbanCard(
 
     return { success: true, data: card };
   } catch (error) {
-    logger.error("[Kanban] Error adding card:", error);
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Failed to add card to tracker",
-    };
+    return createErrorResponse(error, "Failed to add card to tracker");
   }
 }
 
@@ -228,11 +222,7 @@ export async function handleMoveKanbanCard(
     const card = await updateCard(cardId, { column_id: columnId }, actor);
     return { success: true, data: card };
   } catch (error) {
-    logger.error("[Kanban] Error moving card:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Failed to move card",
-    };
+    return createErrorResponse(error, "Failed to move card");
   }
 }
 
@@ -266,11 +256,6 @@ export async function handleUpdateKanbanDueDate(
     );
     return { success: true, data: card };
   } catch (error) {
-    logger.error("[Kanban] Error updating due date:", error);
-    return {
-      success: false,
-      error:
-        error instanceof Error ? error.message : "Failed to update due date",
-    };
+    return createErrorResponse(error, "Failed to update due date");
   }
 }

@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
@@ -19,8 +20,10 @@ export const GET: APIRoute = async ({ params }) => {
     const result = await getCards();
 
     if (result.error) {
-      console.error("[KANBAN CARD] Error loading cards:", result.error);
-      return Response.json({ error: result.error }, { status: 500 });
+      const errorId =
+        result.errorId ??
+        logServerError("KANBAN CARD", new Error(result.error));
+      return Response.json({ error: result.error, errorId }, { status: 500 });
     }
 
     const card = result.cards.find((c) => c.id === id);
@@ -33,8 +36,11 @@ export const GET: APIRoute = async ({ params }) => {
       card: { ...card, status_history: await getCardStatusHistory(id) },
     });
   } catch (error) {
-    console.error("[KANBAN CARD] Error loading card:", error);
-    return Response.json({ error: "Failed to load card" }, { status: 500 });
+    const errorId = logServerError("KANBAN CARD", error);
+    return Response.json(
+      { error: "Failed to load card", errorId },
+      { status: 500 }
+    );
   }
 };
 export const PATCH: APIRoute = async ({ request, params }) => {
@@ -59,12 +65,15 @@ export const PATCH: APIRoute = async ({ request, params }) => {
 
     return Response.json({ card: cardWithProcesses || updatedCard });
   } catch (error) {
-    console.error("[KANBAN CARD] Error in action:", error);
+    const errorId = logServerError("KANBAN CARD", error);
     const errorMessage =
       error instanceof Error ? error.message : "Operation failed";
     const statusCode =
       error instanceof Error && error.message === "Card not found" ? 404 : 500;
-    return Response.json({ error: errorMessage }, { status: statusCode });
+    return Response.json(
+      { error: errorMessage, errorId },
+      { status: statusCode }
+    );
   }
 };
 export const DELETE: APIRoute = async ({ params }) => {
@@ -78,11 +87,14 @@ export const DELETE: APIRoute = async ({ params }) => {
     await deleteCardImage(deletedCard.image_url);
     return Response.json({ card: deletedCard });
   } catch (error) {
-    console.error("[KANBAN CARD] Error in action:", error);
+    const errorId = logServerError("KANBAN CARD", error);
     const errorMessage =
       error instanceof Error ? error.message : "Operation failed";
     const statusCode =
       error instanceof Error && error.message === "Card not found" ? 404 : 500;
-    return Response.json({ error: errorMessage }, { status: statusCode });
+    return Response.json(
+      { error: errorMessage, errorId },
+      { status: statusCode }
+    );
   }
 };

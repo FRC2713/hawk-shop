@@ -50,7 +50,6 @@ export const POST: APIRoute = async ({ request }) => {
       }
       return Response.json(result, { status, headers });
     } catch (error: unknown) {
-      console.error("Error in Kanban card operation:", error);
       const errorResponse = createErrorResponse(
         error,
         "Failed to perform card operation"
