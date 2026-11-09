@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns3, Plus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { buildCardSearchIndex, buildCardUsersMap } from "~/lib/card-search";
 import type {
   KanbanColumn as KanbanColumnType,
   KanbanConfig,
@@ -33,7 +34,7 @@ import {
   usersQuery,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
-import type { KanbanCardRow, UserRow } from "~/server/db/types";
+import type { KanbanCardRow } from "~/server/db/types";
 import { KanbanCard as KanbanCardComponent } from "../cards/KanbanCard";
 import { KanbanColumn } from "../columns/KanbanColumn";
 import { KanbanBulkEditBar } from "./KanbanBulkEditBar";
@@ -46,6 +47,7 @@ interface KanbanBoardProps {
   processFilterIds?: string[];
   sortByUser?: boolean;
   searchQuery?: string;
+  hasWarningsOnly?: boolean;
   onAddColumn?: () => void;
   onRenameColumn?: (id: string, newTitle: string) => void;
   onDeleteColumn?: (id: string) => void;
@@ -60,6 +62,7 @@ export function KanbanBoard({
   processFilterIds = [],
   sortByUser = false,
   searchQuery = "",
+  hasWarningsOnly = false,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -98,42 +101,35 @@ export function KanbanBoard({
     useQuery(kanbanCardsQuery());
   const { data: users = [] } = useQuery(usersQuery());
 
-  // Filter cards by search query and process filter
-  const filteredCards = useMemo(() => {
-    let result = cards;
+  // Resolve Suite subjects to names for assignee and submitter search.
+  const usersMap = useMemo(() => buildCardUsersMap(users), [users]);
 
-    // Filter by search query (part number or name via title/content)
-    if (searchQuery.trim()) {
-      const query = searchQuery.trim().toLowerCase();
-      result = result.filter((card) => {
-        const titleMatch = card.title?.toLowerCase().includes(query);
-        const contentMatch = card.content?.toLowerCase().includes(query);
-        return titleMatch || contentMatch;
-      });
-    }
+  const searchIndex = useMemo(
+    () => buildCardSearchIndex(cards, usersMap),
+    [cards, usersMap]
+  );
 
-    // Filter by process: when processFilterIds has values, only show cards that have at least one of those processes
-    if (processFilterIds.length > 0) {
-      result = result.filter((card) => {
-        const cardProcesses =
-          (card as KanbanCardRow & { processes?: { id: string }[] })
-            .processes || [];
-        const cardProcessIds = cardProcesses.map((p) => p.id);
-        return processFilterIds.some((id) => cardProcessIds.includes(id));
-      });
-    }
+  const searchScores = useMemo(
+    () =>
+      new Map(
+        searchIndex.search(searchQuery).map(({ id, score }) => [id, score])
+      ),
+    [searchIndex, searchQuery]
+  );
 
-    return result;
-  }, [cards, searchQuery, processFilterIds]);
-
-  // Create user lookup map for O(1) access
-  const usersMap = useMemo(() => {
-    const map = new Map<string, UserRow>();
-    users.forEach((user) => {
-      map.set(user.onshape_user_id, user);
-    });
-    return map;
-  }, [users]);
+  const filteredCards = useMemo(
+    () =>
+      cards.filter(
+        (card) =>
+          searchScores.has(card.id) &&
+          (!hasWarningsOnly || !!card.release_issues?.length) &&
+          (processFilterIds.length === 0 ||
+            card.processes?.some((process) =>
+              processFilterIds.includes(process.id)
+            ))
+      ),
+    [cards, searchScores, processFilterIds, hasWarningsOnly]
+  );
 
   // Mutation to update card column
   const moveCardMutation = useMutation({
@@ -211,13 +207,13 @@ export function KanbanBoard({
           }
         }
 
-        // If no sorting or same values, maintain original order
-        return 0;
+        // Relevance breaks user ties; equal scores preserve the original order.
+        return (searchScores.get(b.id) || 0) - (searchScores.get(a.id) || 0);
       });
     });
 
     return grouped;
-  }, [filteredCards, sortByUser]);
+  }, [filteredCards, sortByUser, searchScores]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;

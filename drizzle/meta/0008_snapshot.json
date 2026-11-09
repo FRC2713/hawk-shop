@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "abd1a49b-5b65-4257-be60-fa974ab01258",
-  "prevId": "4d44908e-475d-49a2-b45a-95269a9e1e96",
+  "id": "a0a7d4c4-eb88-47ec-bfd4-79f5418762a6",
+  "prevId": "bab048f3-43d1-4b78-a76b-59bfa550d350",
   "tables": {
     "equipment": {
       "name": "equipment",
@@ -293,6 +293,13 @@
         },
         "content": {
           "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "release_issues": {
+          "name": "release_issues",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -191,6 +191,7 @@ export const KanbanCard = memo(function KanbanCard({
           <div className="flex flex-col items-start justify-between gap-2">
             <KanbanCardHeader
               title={card.title}
+              warningCount={card.release_issues?.length ?? 0}
               attributes={attributes}
               listeners={listeners}
               isSelected={isSelected}

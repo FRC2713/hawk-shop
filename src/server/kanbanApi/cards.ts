@@ -164,6 +164,7 @@ export async function getColumnIdByPosition(
  * Input type for creating a card
  */
 export interface CreateCardInput {
+  releaseIssues?: KanbanCardRow["release_issues"];
   title: string;
   imageUrl?: string;
   assignee?: string;
@@ -218,6 +219,9 @@ export async function createCard(
           machine: cardData.machine ?? null,
           due_date: cardData.dueDate ?? null,
           content: cardData.content ?? null,
+          release_issues: cardData.releaseIssues?.length
+            ? cardData.releaseIssues
+            : null,
           created_by: actor.onshape_user_id,
           quantity_per_robot: cardData.quantityPerRobot ?? null,
           quantity_to_make: cardData.quantityToMake ?? null,

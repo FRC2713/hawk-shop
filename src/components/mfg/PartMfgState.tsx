@@ -9,7 +9,7 @@ import { Button } from "~/components/ui/button";
 import { onshapeVersionQuery, partActions, queryKeys } from "~/lib/api";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { KanbanCardRow, ProcessRow } from "~/server/db/types";
-import { isPartEligibleForRelease } from "~/onshape_connector/utils/partEligibility";
+
 import { extractVersionId } from "~/onshape_connector/utils/versionUtils";
 import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 import { type AddCardFormData, AddCardDialog } from "./AddCardDialog";
@@ -91,8 +91,7 @@ export function PartMfgState({
 
   // If card not found, show part properties and "Add to manufacturing tracker" button
   if (!matchingCard) {
-    const isEligible = isPartEligibleForRelease(part, matchingCard);
-    const isButtonDisabled = isSubmitting || !isEligible;
+    const isButtonDisabled = isSubmitting;
 
     return (
       <div className="space-y-2">
@@ -121,6 +120,9 @@ export function PartMfgState({
           </table>
         )}
         <AddCardDialog
+          part={part}
+          matchingCard={matchingCard}
+          instanceType={onshapeParams?.instanceType}
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           onSubmit={handleAddCard}
@@ -136,15 +138,6 @@ export function PartMfgState({
         >
           Release
         </Button>
-        {!isEligible && (
-          <p className="text-muted-foreground text-xs">
-            {!part?.material?.displayName
-              ? "Set the material on this part in Onshape to add it to the manufacturing tracker."
-              : !part?.partNumber
-                ? "Set the part number on this part in Onshape to add it to the manufacturing tracker."
-                : "This part cannot be added to the manufacturing tracker."}
-          </p>
-        )}
         {result && !result.success && result.error && (
           <ErrorMessage error={result.error} errorId={result.errorId} />
         )}
