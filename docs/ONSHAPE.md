@@ -205,15 +205,30 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 
 Onshape's developer guide has no thumbnails page; the endpoints are only in the OpenAPI spec.
 
-- **Part thumbnails are fetched from `/api/v10/thumbnails/d/{did}/{wvm}/{wvmid}/e/{eid}/p/{pid}?outputFormat=PNG&pixelSize=300`.** That part-level path is not in the OpenAPI spec the generated client was built from, which lists element and document thumbnails only.
+- **A part's `thumbnailInfo` in a parts read (`withThumbnails=true`) gives one href per size, `https://cad.onshape.com/api/thumbnails/<40-hex id>/s/<size>`, for sizes `600x340`, `300x300`, `300x170` and `70x40`.** The href names no document, element or part; `thumbnailInfo.id` is the same 40-hex id, and `thumbnailInfo.href` (`/api/thumbnails/<id>?t=<ms>`) is the size list.
+  - Label: observed
+  - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
+  - Relied on by: the connector (releases with the `300x300` href); `syncWorkspaceCardMicroversions` (moves a card to the part's current `300x300` href); `findStoredThumbnail` (a microversion row only answers the URL it was fetched from, because the href can't be checked against caller-supplied part ids)
+
+- **Part thumbnails can also be fetched from `/api/v10/thumbnails/d/{did}/{wvm}/{wvmid}/e/{eid}/p/{pid}?outputFormat=PNG&pixelSize=300`.** That part-level path is not in the OpenAPI spec the generated client was built from, which lists element and document thumbnails only.
   - Label: unverified
-  - Source: URL built by `uploadOnshapeThumbnail` and the connector's release action
+  - Source: URL built by `uploadOnshapeThumbnail` (which has no caller) and the connector's release action fallback
   - Relied on by: `uploadOnshapeThumbnail`, the release action's fallback thumbnail URL
 
-- **The thumbnail hrefs in the parts list point at `*.onshape.com` and need a signed request.**
-  - Label: unverified
-  - Source: assumption behind the thumbnail route's `?url=` form
+- **The thumbnail hrefs in the parts list point at `cad.onshape.com`, and an API-key-signed GET returns the PNG.** An unsigned request was not tried.
+  - Label: observed
+  - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
   - Relied on by: `/api/onshape/thumbnail`
+
+- **Fetching one size (`…/s/300x300`) returns that PNG. The size-list href (`/api/thumbnails/<id>`) returns JSON describing every size, not an image.** So requesting a single size is already what Hawk Shop does; there is no "list of sizes" image request to avoid.
+  - Label: observed
+  - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
+  - Relied on by: the connector and `releaseThumbnailHref` (pick the `300x300` href)
+
+- **A thumbnail image answers 200 to `Accept: */*` and to `Accept: image/png` (same bytes and ETag), and 406 "Request not acceptable." to `Accept: application/json`.** The signer sends `application/json` unless the caller sets an `Accept`, so image fetches must set one. The image response carries `Cache-Control: must-revalidate,no-cache,no-store` and an `ETag`.
+  - Label: observed
+  - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
+  - Relied on by: `/api/onshape/thumbnail` and `uploadOnshapeThumbnail` (send `Accept: */*`)
 
 - **A thumbnail fetch counts against the allocation like any other API call.** It follows from "API-key calls that return 2xx or 3xx count", but no one has seen it on Onshape's usage page. #55 records observations here.
   - Label: unverified
@@ -225,15 +240,15 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
   - Source: assumption in the thumbnail route
   - Relied on by: `/api/onshape/thumbnail`, `deleteCardImage` (leaves `thumbnails/` alone because cards share them)
 
-- **A workspace thumbnail URL stays the same when the part's geometry changes,** so caching by URL alone serves the old shape after an edit. That is why thumbnails are now keyed by the part's microversion when the caller knows it.
+- **Whether a part's thumbnail href (its 40-hex id) changes when the part's geometry changes.** Two readings are possible: the id is per part, so the same URL serves a new picture after an edit; or it is per rendering, so an edit yields a new URL. Hawk Shop handles both: thumbnails are keyed by microversion _and_ URL, and a workspace card's `image_url` follows the part's current href on each parts read.
   - Label: unverified
-  - Source: #48 problem statement; follows from the URL naming the workspace, not a microversion
-  - Relied on by: `/api/onshape/thumbnail` (`findStoredThumbnail`)
+  - Source: needs a geometry edit to observe, which was not made on 2026-11-09
+  - Relied on by: `/api/onshape/thumbnail` (`findStoredThumbnail`), `syncWorkspaceCardMicroversions`
 
-- **A thumbnail that is still rendering answers 406 to `Accept: image/*` and 404 to `*/*`.** Our signer sends `Accept: application/json` unless the caller sets one, which thumbnail fetches don't.
+- **A thumbnail that is still rendering answers 404 to `Accept: */*`.** (FRCDesignApp also saw 406 for `image/*`; for a rendered per-part thumbnail we saw `image/png` succeed.)
   - Label: unverified
-  - Source: FRCDesignApp ONSHAPE.md (seen with OAuth)
-  - Relied on by: nothing yet; relevant to #55
+  - Source: FRCDesignApp ONSHAPE.md (seen with OAuth); needs a geometry edit to observe, not made on 2026-11-09
+  - Relied on by: nothing yet; #56
 
 - **The version form of the element thumbnail endpoint is unreliable; the workspace form is reliable.**
   - Label: unverified
@@ -288,14 +303,24 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/)
   - Relied on by: the webhook route (answers 200 to every authenticated delivery); `ensureOnshapeWebhook`; the boot delay in `src/server/startup.ts`
 
-- **The registration response is the webhook as JSON, with its `id`.**
-  - Label: unverified
-  - Source: the webhook info shape in Onshape's API Explorer; not seen with our key
+- **The registration response is 200 with the webhook as JSON, including its `id`, `href`, `isTransient`, `droppedEventCount`, and `url` exactly as sent.** Onshape accepted all three of `ONSHAPE_DOCUMENT_CHANGE_EVENTS` as event names.
+  - Label: observed
+  - Source: observed 2026-11-09 14:40 UTC, one `POST /api/v6/webhooks` with the production API key, Hawk Shop's registration body, and a callback on an unresolvable `.invalid` host
   - Relied on by: `ensureOnshapeWebhook` (a response without `id` counts as a failed registration)
 
-- **`GET /api/v6/webhooks` with an API key lists the key owner's webhooks as `{ items: [{ id, url, … }], next }`, and `DELETE /api/v6/webhooks/{webhookid}` removes one.**
+- **A registration whose callback can't be reached still answers 200, and the webhook is gone within a minute** (`GET /api/v6/webhooks/{id}` → 404, and it isn't listed). This matches the documented cancellation after a failed `webhook.register` ping.
+  - Label: observed
+  - Source: the registration above, followed by a list and a GET by id about a minute later
+  - Relied on by: the boot delay in `src/server/startup.ts`; the daily `recheckOnshapeWebhooks`, which registers again any webhook that vanished. It also means a deployment whose callback Onshape can't reach will register a webhook on every check, so `ONSHAPE_WEBHOOK_BASE_URL` must be reachable from the internet.
+
+- **`GET /api/v6/webhooks` rejects `limit` above 20 with 400 ("must be less than or equal to 20"). With `limit=20` and no `company` or `user` parameter it answers 200 with `{ href, items, next, previous }`, `next` null on the last page.**
+  - Label: observed
+  - Source: observed 2026-11-09 14:40 UTC with the production API key; the key had no live webhooks, so `items` was empty
+  - Relied on by: `recheckOnshapeWebhooks` (`limit=20`, follows `next`)
+
+- **The listing includes the key owner's live webhooks, each with its `url`, and `DELETE /api/v6/webhooks/{webhookid}` removes one.**
   - Label: unverified
-  - Source: Onshape's API Explorer (Webhook endpoints); not called with our key. The listing may need a `company` or `user` query parameter for a key on a company account.
+  - Source: Onshape's API Explorer (Webhook endpoints). Not yet seen: the only webhook registered on 2026-11-09 was dropped before it could be listed or deleted, because its callback was unreachable.
   - Relied on by: `recheckOnshapeWebhooks`. If the listing omits `url`, a listed webhook is treated as healthy and strays aren't detected.
 
 - **The `filter` `{$DocumentId} = '<id>'` limits a webhook to one document.**

@@ -75,6 +75,12 @@ function fakeOnshape(t: { mock: { method: Function } }) {
           return Response.json({ ...body, id: hook.id });
         }
         if (request.method === "GET") {
+          // Observed 2026-11-09: Onshape answers 400 to limit > 20.
+          if (Number(url.searchParams.get("limit") ?? 20) > 20)
+            return Response.json(
+              [{ message: "must be less than or equal to 20" }],
+              { status: 400 }
+            );
           state.listed++;
           return Response.json({ items: state.hooks, next: null });
         }

@@ -90,7 +90,7 @@ type ListedWebhook = { id: string; url?: string };
 
 async function listWebhooks(): Promise<ListedWebhook[]> {
   const hooks: ListedWebhook[] = [];
-  let next: string | null = "/v6/webhooks?limit=100";
+  let next: string | null = "/v6/webhooks?limit=20";
   for (let page = 0; next && page < 50; page++) {
     const response = await onshapeApiRequest(next);
     assertOnshapeAllocation(response);

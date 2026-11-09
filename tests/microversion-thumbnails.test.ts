@@ -3,6 +3,7 @@ import { after, test, type TestContext } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 const dataDir = await mkdtemp(join(tmpdir(), "hawk-microversion-"));
 process.env.DATA_DIR = dataDir;
@@ -21,10 +22,27 @@ const usageRoute = await import("../src/pages/api/onshape/usage");
 
 const cookie = await signIn();
 
-/** A fake Onshape: one Part Studio whose parts' microversions the test sets. */
-function fakeOnshape(t: TestContext, documentId: string) {
+/**
+ * A fake Onshape: one Part Studio whose parts' microversions the test sets.
+ *
+ * Thumbnail hrefs have Onshape's real shape (observed 2026-11-09):
+ * `/api/thumbnails/<40-hex id>/s/300x300`, with no document, element or part
+ * id in the path. Whether the id changes when the part's geometry does is not
+ * yet observed, so `contentAddressed` models both: false keeps one href per
+ * part that serves the current picture; true gives each microversion its own
+ * href.
+ */
+function fakeOnshape(
+  t: TestContext,
+  documentId: string,
+  { contentAddressed = false } = {}
+) {
   const microversions = new Map<string, string>();
   const thumbnailFetches: string[] = [];
+  const thumbnailIds = new Map<
+    string,
+    { partId: string; microversionId: string | null }
+  >();
   let partsReads = 0;
   t.mock.method(
     globalThis,
@@ -46,12 +64,21 @@ function fakeOnshape(t: TestContext, documentId: string) {
           }))
         );
       }
-      if (url.pathname.includes("/thumbnails/")) {
-        const partId = url.pathname.split("/p/")[1];
+      const thumbnail = /^\/api\/thumbnails\/([0-9a-f]{40})\/s\//.exec(
+        url.pathname
+      );
+      // Observed 2026-11-09: a thumbnail asked for as JSON answers 406.
+      if (thumbnail && request.headers.get("Accept") === "application/json")
+        return Response.json(
+          { message: "Request not acceptable.", status: 406 },
+          { status: 406 }
+        );
+      if (thumbnail && thumbnailIds.has(thumbnail[1])) {
+        const { partId, microversionId } = thumbnailIds.get(thumbnail[1])!;
         thumbnailFetches.push(partId);
-        // The workspace URL never changes; the picture it returns does.
+        // A per-part href serves whatever the part looks like now.
         return new Response(
-          `image of ${partId} at ${microversions.get(partId)}`,
+          `image of ${partId} at ${microversionId ?? microversions.get(partId)}`,
           {
             headers: { "Content-Type": "image/png" },
           }
@@ -61,7 +88,14 @@ function fakeOnshape(t: TestContext, documentId: string) {
     }
   );
   function thumbnailHref(partId: string) {
-    return `https://cad.onshape.com/api/v10/thumbnails/d/${documentId}/w/ws/e/studio/p/${partId}?outputFormat=PNG&pixelSize=300`;
+    const microversionId = contentAddressed
+      ? (microversions.get(partId) ?? null)
+      : null;
+    const id = createHash("sha1")
+      .update(`${documentId}:${partId}:${microversionId ?? ""}`)
+      .digest("hex");
+    thumbnailIds.set(id, { partId, microversionId });
+    return `https://cad.onshape.com/api/thumbnails/${id}/s/300x300`;
   }
   return {
     microversions,
@@ -211,6 +245,46 @@ function connectorQuery(
     microversionId: part.microversionId,
   }).toString();
 }
+
+test("the connector shows a part's new picture once its microversion changes", async (t) => {
+  const onshape = fakeOnshape(t, "doc-connector-change");
+  onshape.microversions.set("P1", "mv-1");
+  const [before] = await readParts("doc-connector-change");
+  assert.equal(
+    await thumbnail(connectorQuery("doc-connector-change", before)),
+    "image of P1 at mv-1"
+  );
+
+  onshape.microversions.set("P1", "mv-2");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const [after] = await readParts("doc-connector-change");
+  // Same href, new microversion: the stored mv-1 picture must not answer.
+  assert.equal(
+    after.thumbnailInfo.sizes[0].href,
+    before.thumbnailInfo.sizes[0].href
+  );
+  assert.equal(
+    await thumbnail(connectorQuery("doc-connector-change", after)),
+    "image of P1 at mv-2"
+  );
+  assert.deepEqual(onshape.thumbnailFetches, ["P1", "P1"]);
+});
+
+test("when Onshape gives an edited part a new thumbnail href, its card follows it", async (t) => {
+  const onshape = fakeOnshape(t, "doc-new-href", { contentAddressed: true });
+  onshape.microversions.set("P1", "mv-1");
+  const [part] = await readParts("doc-new-href");
+  const card = await release("doc-new-href", part);
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
+
+  onshape.microversions.set("P1", "mv-2");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await readParts("doc-new-href");
+
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-2");
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-2");
+  assert.deepEqual(onshape.thumbnailFetches, ["P1", "P1"]);
+});
 
 test("two parts reads with the same microversions cost one thumbnail fetch per part", async (t) => {
   const onshape = fakeOnshape(t, "doc-same");

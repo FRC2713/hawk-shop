@@ -2,7 +2,7 @@ import "virtual:hawk-shop/server-only";
 
 import { captureSlackTransition } from "~/lib/slack/queue";
 import type { SessionActor } from "~/lib/sessionActor";
-import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import {
   DEFAULT_KANBAN_COLUMNS,
@@ -330,18 +330,46 @@ export async function setCardProcesses(
  * Cards with no recorded microversion (released before microversions were
  * saved) are left alone so upgrading refetches nothing.
  */
+/** The thumbnail href the connector releases with: 300x300 when offered. */
+function releaseThumbnailHref(part: {
+  thumbnailInfo?: { sizes?: { size?: string; href?: string }[] } | null;
+}): string | undefined {
+  const sizes = part.thumbnailInfo?.sizes ?? [];
+  return (
+    sizes.find((size) => size.size === "300x300")?.href ||
+    sizes[0]?.href ||
+    undefined
+  );
+}
+
+const THUMBNAIL_PROXY_PREFIX = "/api/onshape/thumbnail?url=";
+
 export function syncWorkspaceCardMicroversions(
   scope: { documentId: string; workspaceId: string; elementId: string },
-  parts: { partId?: string; microversionId?: string }[]
+  parts: {
+    partId?: string;
+    microversionId?: string;
+    thumbnailInfo?: { sizes?: { size?: string; href?: string }[] } | null;
+  }[]
 ): void {
   const changedIds: string[] = [];
   try {
     db.transaction((tx) => {
       for (const part of parts) {
         if (!part.partId || !part.microversionId) continue;
+        // Onshape's part thumbnail href is an opaque id
+        // (`/api/thumbnails/<id>/s/300x300`) that may change when the part
+        // does. Cards released with an Onshape thumbnail follow the new href;
+        // a card whose picture was uploaded keeps it.
+        const href = releaseThumbnailHref(part);
         const changed = tx
           .update(kanbanCards)
-          .set({ onshape_microversion_id: part.microversionId })
+          .set({
+            onshape_microversion_id: part.microversionId,
+            ...(href && {
+              image_url: sql`CASE WHEN ${kanbanCards.image_url} LIKE ${THUMBNAIL_PROXY_PREFIX + "%"} THEN ${THUMBNAIL_PROXY_PREFIX + encodeURIComponent(href)} ELSE ${kanbanCards.image_url} END`,
+            }),
+          })
           .where(
             and(
               eq(kanbanCards.onshape_document_id, scope.documentId),

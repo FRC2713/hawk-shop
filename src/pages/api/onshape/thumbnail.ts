@@ -54,32 +54,6 @@ function partFrom(fields: {
   return { documentId, elementId, partId, microversionId };
 }
 
-/**
- * Does this Onshape thumbnail URL show this part? Its path names the document,
- * element and part (`/thumbnails/d/<doc>/w/<ws>/e/<element>/p/<part>`), so a
- * `?url=` request can only key its image under the part the URL is for.
- */
-function urlShowsPart(
-  imageUrl: string,
-  part: OnshapePartMicroversion
-): boolean {
-  let segments: string[];
-  try {
-    segments = new URL(imageUrl).pathname.split("/").map(decodeURIComponent);
-  } catch {
-    return false;
-  }
-  const after = (marker: string) => {
-    const index = segments.indexOf(marker);
-    return index === -1 ? undefined : segments[index + 1];
-  };
-  return (
-    after("d") === part.documentId &&
-    after("e") === part.elementId &&
-    after("p") === part.partId
-  );
-}
-
 type PartThumbnailKey = {
   document_id: string;
   instance_type: string;
@@ -132,9 +106,10 @@ function rowIs(key: PartThumbnailKey) {
 /**
  * Find a stored thumbnail for this request.
  *
- * With a microversion, only that microversion's row counts: a workspace
- * thumbnail URL stays the same when the part changes, so matching by URL would
- * serve the old shape. A legacy row (stored before microversion keys, so with
+ * With a microversion, only that microversion's row fetched from this same URL
+ * counts. Onshape's part thumbnail href may stay the same when the part
+ * changes, so matching by URL alone could serve the old shape; requiring the
+ * URL as well means caller-supplied ids can't pin another part's picture. A legacy row (stored before microversion keys, so with
  * no `microversion_id`) for the same URL is adopted once as this
  * microversion's image, so upgrading refetches nothing.
  *
@@ -161,7 +136,7 @@ function findStoredThumbnail(
     const current = tx
       .select({ storage_path: partThumbnails.storage_path })
       .from(partThumbnails)
-      .where(rowIs(key))
+      .where(and(rowIs(key), eq(partThumbnails.source_url, imageUrl)))
       .get();
     if (current) return current.storage_path;
 
@@ -267,9 +242,10 @@ export const GET: APIRoute = async ({ request }) => {
       partId: params.get("partId"),
       microversionId: params.get("microversionId"),
     });
-    // The ids come from the caller. Key by them only when the URL is that
-    // part's own thumbnail; otherwise one part could overwrite another's row.
-    if (part && !urlShowsPart(resolveImageUrl(rawImageUrl), part)) part = null;
+    // The ids come from the caller, and Onshape's thumbnail href
+    // (`/api/thumbnails/<id>/s/<size>`) names no part, so nothing ties them
+    // together. findStoredThumbnail only serves a part's row to the URL it was
+    // fetched from, so a mismatched request costs at most one refetch.
   }
 
   // Normalize: if the stored value is our proxy URL, use the real Onshape
@@ -318,7 +294,9 @@ export const GET: APIRoute = async ({ request }) => {
 
   let response: Response;
   try {
-    response = await onshapeFetch(imageUrl);
+    // The signer defaults to `Accept: application/json`, which Onshape
+    // answers with 406 for an image (observed 2026-11-09, docs/ONSHAPE.md).
+    response = await onshapeFetch(imageUrl, { headers: { Accept: "*/*" } });
     assertOnshapeAllocation(response);
   } catch (error) {
     const known = onshapeErrorResponse(error);
