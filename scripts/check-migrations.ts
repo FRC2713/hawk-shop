@@ -1,5 +1,6 @@
 import {
   cpSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -15,7 +16,7 @@ import { migrationAllowlist } from "./migration-allowlist";
 
 type SqlValue = string | number | bigint | Buffer | null;
 export type SeedFixture = Record<string, Record<string, SqlValue>[]>;
-type Journal = { entries: { tag: string }[] };
+type Journal = { entries: { tag: string; when: number }[] };
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
 function tables(db: Database.Database): string[] {
@@ -48,6 +49,10 @@ function checkIntegrity(
   migration: string,
   failures: string[]
 ) {
+  for (const table of tables(db)) {
+    if (table.startsWith("__new_") || table.startsWith("__old_"))
+      failures.push(`${migration}: ${table}: temporary table remains`);
+  }
   for (const violation of db.pragma("foreign_key_check") as {
     table: string;
     rowid: number;
@@ -83,10 +88,11 @@ function snapshot(db: Database.Database, table: string) {
   };
 }
 
-/** Checks disposable databases only. Starting-database support belongs to #61. */
+/** Migrates disposable databases, optionally copied from an existing database. */
 export function checkMigrations(
   migrationsFolder: string,
-  fixtures: SeedFixture
+  fixtures: SeedFixture,
+  startingDatabase?: string
 ): string[] {
   const failures: string[] = [];
   const temp = mkdtempSync(join(tmpdir(), "hawk-migration-check-"));
@@ -99,15 +105,42 @@ export function checkMigrations(
     );
     const staged = join(temp, "drizzle");
     cpSync(migrationsFolder, staged, { recursive: true });
-    empty = new Database(join(temp, "empty.db"));
-    empty.pragma("journal_mode = WAL");
-    empty.pragma("foreign_keys = ON");
-    db = new Database(join(temp, "seeded.db"));
+    const databasePath = join(temp, "check.db");
+    if (startingDatabase !== undefined) {
+      migration = "<starting database>";
+      // Never open the source with SQLite: even a read-only connection can
+      // change its shared-memory file. Only filesystem copies touch it.
+      cpSync(startingDatabase, databasePath);
+      for (const suffix of ["-wal", "-shm"]) {
+        if (existsSync(`${startingDatabase}${suffix}`))
+          cpSync(`${startingDatabase}${suffix}`, `${databasePath}${suffix}`);
+      }
+    } else {
+      empty = new Database(join(temp, "empty.db"));
+      empty.pragma("journal_mode = WAL");
+      empty.pragma("foreign_keys = ON");
+    }
+    db = new Database(databasePath);
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
+    const applied = db
+      .prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = '__drizzle_migrations'"
+      )
+      .get()
+      ? ((
+          db
+            .prepare(
+              "SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1"
+            )
+            .get() as { created_at: number } | undefined
+        )?.created_at ?? 0)
+      : 0;
+    checkIntegrity(db, migration, failures);
     for (let index = 0; index < journal.entries.length; index++) {
       migration = `${journal.entries[index].tag}.sql`;
       const sql = readFileSync(join(migrationsFolder, migration), "utf8");
+      if (journal.entries[index].when <= applied) continue;
       // Only explicit DROP statements permit a table to disappear. A rebuild
       // that reuses the table name must still preserve its rows and values.
       const drops = new Set(
@@ -119,7 +152,7 @@ export function checkMigrations(
             ),
         ].map((match) => match[1] ?? match[2] ?? match[3] ?? match[4])
       );
-      seed(db, fixtures);
+      if (startingDatabase === undefined) seed(db, fixtures);
       const before = new Map(
         tables(db).map((table) => [table, snapshot(db!, table)])
       );
@@ -131,18 +164,13 @@ export function checkMigrations(
         })
       );
       try {
-        migrate(drizzle(empty), { migrationsFolder: staged });
+        if (empty) migrate(drizzle(empty), { migrationsFolder: staged });
       } catch (error) {
         failures.push(`${migration}: <empty database>: ${String(error)}`);
         break;
       }
       migrate(drizzle(db), { migrationsFolder: staged });
       checkIntegrity(db, migration, failures);
-      for (const table of tables(db)) {
-        if (table.startsWith("__new_") || table.startsWith("__old_")) {
-          failures.push(`${migration}: ${table}: temporary table remains`);
-        }
-      }
       for (const [table, previous] of before) {
         if (migrationAllowlist[journal.entries[index].tag]?.trim()) continue;
         if (!tables(db).includes(table)) {
@@ -190,10 +218,10 @@ export function checkMigrations(
         }
       }
     }
-    seed(db, fixtures);
+    if (startingDatabase === undefined) seed(db, fixtures);
     checkIntegrity(db, migration, failures);
     for (const table of tables(db)) {
-      if (!fixtures[table]?.length)
+      if (startingDatabase === undefined && !fixtures[table]?.length)
         failures.push(`${migration}: ${table}: add seed rows for ${table}`);
     }
   } catch (error) {
