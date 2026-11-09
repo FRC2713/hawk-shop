@@ -4,7 +4,7 @@ export interface SearchField<T> {
   weight?: number;
 }
 
-function words(text: string): string[] {
+export function searchTerms(text: string): string[] {
   return (
     text
       .toLowerCase()
@@ -31,7 +31,7 @@ export function buildSearchIndex<T extends { id: string }>(
   const entries = items.map((item) => ({
     id: item.id,
     tokens: fields.flatMap((field) =>
-      words(field.value(item) || "").flatMap((word) => {
+      searchTerms(field.value(item) || "").flatMap((word) => {
         const segments = word.split(/[-/]/);
         const tokens = [word, ...segments];
         for (let i = 1; i < segments.length; i++) {
@@ -46,7 +46,7 @@ export function buildSearchIndex<T extends { id: string }>(
 
   return {
     search(query: string): { id: string; score: number }[] {
-      const terms = words(query);
+      const terms = searchTerms(query);
       return entries
         .flatMap(({ id, tokens }) => {
           let score = 0;

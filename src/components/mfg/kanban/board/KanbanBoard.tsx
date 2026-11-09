@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns3, Plus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { buildSearchIndex } from "~/lib/search";
+import { buildCardSearchIndex, buildCardUsersMap } from "~/lib/card-search";
 import type {
   KanbanColumn as KanbanColumnType,
   KanbanConfig,
@@ -101,34 +101,10 @@ export function KanbanBoard({
   const { data: users = [] } = useQuery(usersQuery());
 
   // Resolve Suite subjects to names for assignee and submitter search.
-  const usersMap = useMemo(
-    () => new Map(users.map((user) => [user.onshape_user_id, user])),
-    [users]
-  );
+  const usersMap = useMemo(() => buildCardUsersMap(users), [users]);
 
   const searchIndex = useMemo(
-    () =>
-      buildSearchIndex(cards, [
-        { value: (card) => card.title, weight: 2 },
-        { value: (card) => card.content, weight: 2 },
-        {
-          value: (card) =>
-            card.assignee
-              ? usersMap.get(card.assignee)?.name || card.assignee
-              : null,
-        },
-        {
-          value: (card) =>
-            card.created_by
-              ? usersMap.get(card.created_by)?.name || card.created_by
-              : null,
-        },
-        { value: (card) => card.machine },
-        {
-          value: (card) =>
-            card.processes?.map((process) => process.name).join(" "),
-        },
-      ]),
+    () => buildCardSearchIndex(cards, usersMap),
     [cards, usersMap]
   );
 
