@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import {
   assertOnshapeAllocation,
   onshapeErrorResponse,
@@ -71,7 +72,7 @@ export const GET: APIRoute = async ({ request }) => {
     // Return version data as JSON
     return Response.json(data);
   } catch (error) {
-    console.error("Error fetching version from Onshape:", error);
+    const errorId = logServerError("ONSHAPE", error);
 
     // Provide more specific error messages
     let errorMessage = "Failed to fetch version";
@@ -98,6 +99,9 @@ export const GET: APIRoute = async ({ request }) => {
       }
     }
 
-    return Response.json({ error: errorMessage }, { status: statusCode });
+    return Response.json(
+      { error: errorMessage, errorId },
+      { status: statusCode }
+    );
   }
 };

@@ -414,3 +414,41 @@ test("channel discovery stops with a safe error when Slack returns excessive pag
     globalThis.fetch = original;
   }
 });
+
+test("only Slack administrators can manage report settings and channels", async () => {
+  const cookie = await signIn();
+  const original = fetch;
+  controlSlack();
+  try {
+    const payload = {
+      enabled: false,
+      channel_id: "C123",
+      reports_enabled: true,
+      reports_channel_id: "CREPORTS",
+    };
+    const saved = await endpoint(
+      config,
+      "PUT"
+    )(jsonRequest("/api/slack/config", "PUT", cookie, payload));
+    assert.equal(saved.status, 200);
+    const settings = await saved.json();
+    assert.equal(settings.reports_enabled, true);
+    assert.equal(settings.reports_channel_id, "CREPORTS");
+    const readback = await (await read(cookie)).json();
+    assert.equal(readback.reports_channel_id, "CREPORTS");
+    role = { is_admin: false };
+    const rejected = await endpoint(
+      config,
+      "PUT"
+    )(
+      jsonRequest("/api/slack/config", "PUT", cookie, {
+        ...payload,
+        reports_enabled: false,
+      })
+    );
+    assert.equal(rejected.status, 403);
+  } finally {
+    globalThis.fetch = original;
+    role = { is_admin: true };
+  }
+});

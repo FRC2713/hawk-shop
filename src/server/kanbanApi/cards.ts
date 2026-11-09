@@ -1,4 +1,5 @@
 import "virtual:hawk-shop/server-only";
+import { logServerError } from "~/server/errors";
 
 import { captureSlackTransition } from "~/lib/slack/queue";
 import type { SessionActor } from "~/lib/sessionActor";
@@ -8,6 +9,9 @@ import {
   DEFAULT_KANBAN_COLUMNS,
   kanbanCardProcesses,
   kanbanCards,
+  kanbanConfig,
+  statusHistory,
+  users,
   processes as processesTable,
 } from "~/server/db/schema";
 import { getKanbanColumns } from "~/server/kanbanApi/config";
@@ -18,12 +22,65 @@ import type {
   ProcessRow,
 } from "~/server/db/types";
 
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function captureStatusHistory(
+  tx: Transaction,
+  previous: KanbanCardRow | null,
+  card: KanbanCardRow,
+  actor: SessionActor
+) {
+  const columns = (
+    tx.select().from(kanbanConfig).where(eq(kanbanConfig.id, "default")).get()
+      ?.columns ?? DEFAULT_KANBAN_COLUMNS
+  )
+    .slice()
+    .sort((a, b) => a.position - b.position);
+  const status = (id: string) =>
+    columns.find((column) => column.id === id)?.title ?? id;
+  const actorName = tx
+    .select()
+    .from(users)
+    .where(eq(users.onshape_user_id, actor.onshape_user_id))
+    .get()?.name;
+  tx.insert(statusHistory)
+    .values({
+      card_id: card.id,
+      card_title: card.title,
+      from_column_id: previous?.column_id ?? null,
+      to_column_id: card.column_id,
+      from_status: previous ? status(previous.column_id) : null,
+      to_status: status(card.column_id),
+      from_column_index: previous
+        ? columns.findIndex((column) => column.id === previous.column_id)
+        : null,
+      to_column_index: columns.findIndex(
+        (column) => column.id === card.column_id
+      ),
+      actor_id: actor.onshape_user_id,
+      actor_name: actor.name || actorName || "Unknown member",
+      moved_at: previous ? card.date_updated : card.date_created,
+    })
+    .run();
+}
+
+/** Also reads archived history after the card has been deleted. */
+export async function getCardStatusHistory(cardId: string) {
+  return db
+    .select()
+    .from(statusHistory)
+    .where(eq(statusHistory.card_id, cardId))
+    .orderBy(asc(statusHistory.moved_at), asc(statusHistory.id))
+    .all();
+}
+
 /**
  * Result type for getCards to distinguish errors from empty results
  */
 export interface GetCardsResult {
   cards: KanbanCardWithProcesses[];
   error?: string;
+  errorId?: string;
 }
 
 /**
@@ -82,8 +139,8 @@ export async function getCards(): Promise<GetCardsResult> {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown error fetching cards";
-    console.error("[KANBAN CARDS] Error fetching cards:", message);
-    return { cards: [], error: message };
+    const errorId = logServerError("KANBAN CARDS", error);
+    return { cards: [], error: message, errorId };
   }
 }
 
@@ -135,6 +192,7 @@ export async function createCard(
   cardData: CreateCardInput,
   actor: SessionActor
 ): Promise<KanbanCardRow> {
+  if (!actor.onshape_user_id) throw new Error("Verified actor required");
   // Get column ID for position 0
   const columnId = await getColumnIdByPosition(0);
 
@@ -147,35 +205,39 @@ export async function createCard(
 
   let card: KanbanCardRow;
   try {
-    const [inserted] = await db
-      .insert(kanbanCards)
-      .values({
-        id: cardId,
-        column_id: columnId,
-        title: cardData.title,
-        image_url: cardData.imageUrl ?? null,
-        assignee: cardData.assignee ?? null,
-        date_created: now,
-        date_updated: now,
-        machine: cardData.machine ?? null,
-        due_date: cardData.dueDate ?? null,
-        content: cardData.content ?? null,
-        release_issues: cardData.releaseIssues?.length
-          ? cardData.releaseIssues
-          : null,
-        created_by: actor.onshape_user_id,
-        quantity_per_robot: cardData.quantityPerRobot ?? null,
-        quantity_to_make: cardData.quantityToMake ?? null,
-        onshape_document_id: cardData.onshapeDocumentId ?? null,
-        onshape_instance_type: cardData.onshapeInstanceType ?? null,
-        onshape_instance_id: cardData.onshapeInstanceId ?? null,
-        onshape_element_id: cardData.onshapeElementId ?? null,
-        onshape_part_id: cardData.onshapePartId ?? null,
-        onshape_version_id: cardData.onshapeVersionId ?? null,
-        onshape_microversion_id: cardData.onshapeMicroversionId ?? null,
-      })
-      .returning();
-    card = inserted;
+    card = db.transaction((tx) => {
+      const inserted = tx
+        .insert(kanbanCards)
+        .values({
+          id: cardId,
+          column_id: columnId,
+          title: cardData.title,
+          image_url: cardData.imageUrl ?? null,
+          assignee: cardData.assignee ?? null,
+          date_created: now,
+          date_updated: now,
+          machine: cardData.machine ?? null,
+          due_date: cardData.dueDate ?? null,
+          content: cardData.content ?? null,
+          release_issues: cardData.releaseIssues?.length
+            ? cardData.releaseIssues
+            : null,
+          created_by: actor.onshape_user_id,
+          quantity_per_robot: cardData.quantityPerRobot ?? null,
+          quantity_to_make: cardData.quantityToMake ?? null,
+          onshape_document_id: cardData.onshapeDocumentId ?? null,
+          onshape_instance_type: cardData.onshapeInstanceType ?? null,
+          onshape_instance_id: cardData.onshapeInstanceId ?? null,
+          onshape_element_id: cardData.onshapeElementId ?? null,
+          onshape_part_id: cardData.onshapePartId ?? null,
+          onshape_version_id: cardData.onshapeVersionId ?? null,
+          onshape_microversion_id: cardData.onshapeMicroversionId ?? null,
+        })
+        .returning()
+        .get();
+      captureStatusHistory(tx, null, inserted, actor);
+      return inserted;
+    });
   } catch (error) {
     console.error("[KANBAN CARDS] Error creating card:", error);
     const message = error instanceof Error ? error.message : "unknown error";
@@ -235,7 +297,10 @@ export async function updateCard(
       .where(eq(kanbanCards.id, cardId))
       .returning()
       .get();
-    if (changed) captureSlackTransition(tx, previous, updated, actor);
+    if (changed) {
+      captureStatusHistory(tx, previous, updated, actor);
+      captureSlackTransition(tx, previous, updated, actor);
+    }
     return updated;
   });
 

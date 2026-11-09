@@ -1,3 +1,5 @@
+import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
+import { ReportProblemButton } from "~/components/app/report-problem";
 import { useState, useMemo } from "react";
 import {
   Calendar,
@@ -41,6 +43,7 @@ import { Badge } from "~/components/ui/badge";
 import type { UseMutationResult } from "@tanstack/react-query";
 import {
   kanbanColumnsQuery,
+  kanbanCardDetailsQuery,
   onshapePartsQuery,
   onshapeVersionQuery,
   queryKeys,
@@ -136,6 +139,7 @@ export function KanbanCardDetails({
   usersMap,
 }: KanbanCardDetailsProps) {
   const [imageError, setImageError] = useState(false);
+  const detailsQuery = useQuery(kanbanCardDetailsQuery(card.id));
 
   // Check if card has Onshape properties from database
   const hasOnshapeProperties = useMemo(() => {
@@ -314,9 +318,16 @@ export function KanbanCardDetails({
   );
 
   return (
-    <SheetContent className="flex w-full flex-col sm:max-w-lg">
+    <SheetContent
+      data-report-card-id={card.id}
+      className="flex w-full flex-col sm:max-w-lg"
+    >
       <SheetHeader className="space-y-1">
         <SheetTitle className="text-xl">{card.title}</SheetTitle>
+        <ReportProblemButton
+          context={{ card_id: card.id }}
+          children="Report a problem with this card"
+        />
         <SheetDescription className="flex items-center gap-2">
           <Clock className="size-3" />
           Created {formatDate(card.date_created)}
@@ -622,6 +633,53 @@ export function KanbanCardDetails({
             </div>
           </div>
         )}
+
+        <section aria-label="Status history" className="space-y-2">
+          <h4 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
+            Status history
+          </h4>
+          {detailsQuery.isPending ? (
+            <p className="text-muted-foreground text-sm" role="status">
+              Loading status history...
+            </p>
+          ) : detailsQuery.isError ? (
+            <div role="alert" className="space-y-2">
+              <ErrorMessage error={detailsQuery.error} cardId={card.id} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void detailsQuery.refetch()}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : detailsQuery.data.status_history.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No status changes recorded yet.
+            </p>
+          ) : (
+            <ol className="divide-y rounded-lg border">
+              {detailsQuery.data.status_history.map((entry) => (
+                <li key={entry.id} className="space-y-1 px-4 py-3 text-sm">
+                  <p className="font-semibold break-words">
+                    {entry.from_status === null
+                      ? `Released into ${entry.to_status}`
+                      : `${entry.from_status} → ${entry.to_status}`}
+                  </p>
+                  <p className="text-muted-foreground break-words">
+                    {entry.actor_name}
+                  </p>
+                  <time
+                    dateTime={entry.moved_at}
+                    className="brand-figures text-muted-foreground block text-xs"
+                  >
+                    {new Date(entry.moved_at).toLocaleString()}
+                  </time>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
       </div>
 
       {/* Actions - Sticky at bottom */}

@@ -1,5 +1,7 @@
 ---
 import "../styles/global.css";
+import { reportsEnabled } from "../server/reports";
+import { ReportProblem } from "../components/app/report-problem";
 import { suiteUrl } from "../server/suite-identity";
 interface Props {
   title: string;
@@ -7,6 +9,7 @@ interface Props {
 }
 const { title, workspace = false } = Astro.props;
 const identity = Astro.locals.identity;
+const reporting = Boolean(identity && reportsEnabled());
 const name = identity?.name ?? identity?.email ?? "Suite member";
 const initials = name
   .split(/[\s@._-]+/)
@@ -18,6 +21,7 @@ const links = [
   { href: "/", label: "Overview" },
   { href: "/kanban", label: "Board" },
   { href: "/equipment", label: "Equipment" },
+  { href: "/metrics", label: "Metrics" },
 ];
 ---
 
@@ -33,7 +37,10 @@ const links = [
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title} · Hawk Shop</title>
   </head>
-  <body class:list={[workspace && "shop-workspace"]}>
+  <body
+    data-reports-enabled={String(reporting)}
+    class:list={[workspace && "shop-workspace"]}
+  >
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="app-header bg-card border-b">
       <div
@@ -100,6 +107,7 @@ const links = [
                   {identity.email && (
                     <p class="account-email">{identity.email}</p>
                   )}
+                  {reporting && <ReportProblem client:load />}
                   <a class="account-sign-out" href="/slack">
                     Slack settings
                   </a>

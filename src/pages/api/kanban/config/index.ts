@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import {
@@ -15,8 +16,8 @@ export const GET: APIRoute = async () => {
     const config = await getKanbanConfig();
     return Response.json(config);
   } catch (error) {
-    console.error("[KANBAN CONFIG] Error loading config:", error);
-    return Response.json(DEFAULT_CONFIG, { status: 500 });
+    const errorId = logServerError("KANBAN CONFIG", error);
+    return Response.json({ ...DEFAULT_CONFIG, errorId }, { status: 500 });
   }
 };
 export const PUT: APIRoute = async ({ request }) => {
@@ -38,9 +39,9 @@ export const PUT: APIRoute = async ({ request }) => {
 
     return Response.json({ success: true, config });
   } catch (error) {
-    console.error("[KANBAN CONFIG] Error saving config:", error);
+    const errorId = logServerError("KANBAN CONFIG", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to save config";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };

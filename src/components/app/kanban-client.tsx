@@ -1,3 +1,4 @@
+import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useUrlSearch } from "~/hooks/useUrlSearch";
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
@@ -71,8 +72,11 @@ export function MfgKanbanClient({
         );
       }
       toast.error("Failed to save configuration", {
-        description:
-          error instanceof Error ? error.message : "Unknown error occurred",
+        description: (
+          <ErrorMessage
+            error={error instanceof Error ? error : "Unknown error"}
+          />
+        ),
       });
     },
   });

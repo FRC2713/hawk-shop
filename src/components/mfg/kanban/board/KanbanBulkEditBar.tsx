@@ -1,3 +1,4 @@
+import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns3, Loader2, User, Wrench, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -102,7 +103,11 @@ export function KanbanBulkEditBar({
     },
     onError: (error) => {
       toast.error("Failed to assign cards", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: (
+          <ErrorMessage
+            error={error instanceof Error ? error : "Unknown error"}
+          />
+        ),
       });
     },
   });
@@ -120,7 +125,11 @@ export function KanbanBulkEditBar({
     },
     onError: (error) => {
       toast.error("Failed to set machine", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: (
+          <ErrorMessage
+            error={error instanceof Error ? error : "Unknown error"}
+          />
+        ),
       });
     },
   });

@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import {
@@ -21,9 +22,9 @@ export const GET: APIRoute = async ({ params }) => {
 
     return Response.json({ equipment });
   } catch (error) {
-    console.error("[EQUIPMENT] Error loading equipment:", error);
+    const errorId = logServerError("EQUIPMENT", error);
     return Response.json(
-      { error: "Failed to load equipment" },
+      { error: "Failed to load equipment", errorId },
       { status: 500 }
     );
   }
@@ -76,14 +77,17 @@ export const PUT: APIRoute = async ({ request, params }) => {
     const equipmentWithProcesses = await getEquipmentById(id);
     return Response.json({ equipment: equipmentWithProcesses });
   } catch (error) {
-    console.error("[EQUIPMENT] Error updating equipment:", error);
+    const errorId = logServerError("EQUIPMENT", error);
     const errorMessage =
       error instanceof Error ? error.message : "Operation failed";
     const statusCode =
       error instanceof Error && error.message === "Equipment not found"
         ? 404
         : 500;
-    return Response.json({ error: errorMessage }, { status: statusCode });
+    return Response.json(
+      { error: errorMessage, errorId },
+      { status: statusCode }
+    );
   }
 };
 export const DELETE: APIRoute = async ({ params }) => {
@@ -95,13 +99,16 @@ export const DELETE: APIRoute = async ({ params }) => {
     const deletedEquipment = await deleteEquipment(id);
     return Response.json({ equipment: deletedEquipment });
   } catch (error) {
-    console.error("[EQUIPMENT] Error deleting equipment:", error);
+    const errorId = logServerError("EQUIPMENT", error);
     const errorMessage =
       error instanceof Error ? error.message : "Operation failed";
     const statusCode =
       error instanceof Error && error.message === "Equipment not found"
         ? 404
         : 500;
-    return Response.json({ error: errorMessage }, { status: statusCode });
+    return Response.json(
+      { error: errorMessage, errorId },
+      { status: statusCode }
+    );
   }
 };

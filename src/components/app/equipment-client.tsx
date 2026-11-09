@@ -1,3 +1,4 @@
+import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { equipmentQuery, type EquipmentWithProcesses } from "~/lib/api";
@@ -99,18 +100,7 @@ export function EquipmentClient() {
     setDetailsSheetOpen(true);
   };
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-lg border p-12 text-center">
-        <p className="text-destructive mb-2 font-semibold">
-          Error loading equipment
-        </p>
-        <p className="text-muted-foreground text-sm">
-          {error instanceof Error ? error.message : "An unknown error occurred"}
-        </p>
-      </div>
-    );
-  }
+  if (error) return <ErrorDisplay error={error} />;
 
   return (
     <div className="flex h-full min-h-0 flex-col">

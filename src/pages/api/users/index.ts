@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { listUsers } from "~/server/db/users";
@@ -11,6 +12,9 @@ export const GET: APIRoute = async () => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to list users";
-    return Response.json({ error: message }, { status: 500 });
+    return Response.json(
+      { error: message, errorId: logServerError("USERS", error) },
+      { status: 500 }
+    );
   }
 };

@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { createEquipment, getEquipment } from "~/server/equipmentApi/equipment";
@@ -10,17 +11,18 @@ export const GET: APIRoute = async () => {
     const result = await getEquipment();
 
     if (result.error) {
-      console.error("[EQUIPMENT] Error loading equipment:", result.error);
+      const errorId =
+        result.errorId ?? logServerError("EQUIPMENT", new Error(result.error));
       return Response.json(
-        { equipment: [], error: result.error },
+        { equipment: [], error: result.error, errorId },
         { status: 500 }
       );
     }
 
     return Response.json({ equipment: result.equipment });
   } catch (error) {
-    console.error("[EQUIPMENT] Error loading equipment:", error);
-    return Response.json({ equipment: [] }, { status: 500 });
+    const errorId = logServerError("EQUIPMENT", error);
+    return Response.json({ equipment: [], errorId }, { status: 500 });
   }
 };
 export const POST: APIRoute = async ({ request }) => {
@@ -56,9 +58,9 @@ export const POST: APIRoute = async ({ request }) => {
 
     return Response.json({ equipment: newEquipment }, { status: 201 });
   } catch (error) {
-    console.error("[EQUIPMENT] Error creating equipment:", error);
+    const errorId = logServerError("EQUIPMENT", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to create equipment";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };

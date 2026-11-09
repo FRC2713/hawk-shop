@@ -1,3 +1,5 @@
+import { ErrorMessage } from "./ErrorDisplay";
+import type { ActionResponse } from "~/onshape_connector/utils/types";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -51,7 +53,7 @@ export function PartDueDate({ card }: PartDueDateProps) {
 
   const isSubmitting = updateDueDate.isPending;
   // A rejection reads the same as a rejected update to the user.
-  const result =
+  const result: ActionResponse | null =
     updateDueDate.data ??
     (updateDueDate.error
       ? { success: false, error: "Failed to update due date" }
@@ -166,7 +168,11 @@ export function PartDueDate({ card }: PartDueDateProps) {
         </PopoverContent>
       </Popover>
       {result && !result.success && result.error && (
-        <p className="text-destructive text-xs">{result.error}</p>
+        <ErrorMessage
+          error={result.error}
+          errorId={result.errorId}
+          cardId={card.id}
+        />
       )}
     </div>
   );

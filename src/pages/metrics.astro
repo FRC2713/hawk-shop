@@ -1,0 +1,224 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { getMetrics, parseMetricsRange } from "../server/kanbanApi/metrics";
+let range = parseMetricsRange(new URLSearchParams());
+let error = "";
+try {
+  range = parseMetricsRange(Astro.url.searchParams);
+} catch (failure) {
+  error =
+    failure instanceof Error ? failure.message : "Choose a valid date range.";
+  Astro.response.status = 400;
+}
+const metrics = error ? null : await getMetrics(range);
+function duration(ms: number | null) {
+  if (ms === null) return "No data";
+  if (ms < 60000) return "<1 min";
+  if (ms < 3600000) return `${(ms / 60000).toFixed(1)} min`;
+  if (ms < 86400000) return `${(ms / 3600000).toFixed(1)} h`;
+  return `${(ms / 86400000).toFixed(1)} d`;
+}
+---
+
+<AppLayout title="Shop metrics">
+  <main class="space-y-6">
+    <header class="space-y-2">
+      <h1 class="text-2xl">Shop metrics</h1>
+      <p class="text-muted-foreground text-sm">
+        Time and rework across the shop, from recorded status history.
+      </p>
+    </header>
+    <form
+      method="get"
+      class="bg-card flex flex-wrap items-end gap-4 rounded-lg border p-4"
+    >
+      <label class="grid gap-1 text-sm"
+        >Start date<input
+          class="bg-background rounded border p-2"
+          type="date"
+          name="start"
+          value={range.start}
+          required
+        /></label
+      >
+      <label class="grid gap-1 text-sm"
+        >End date<input
+          class="bg-background rounded border p-2"
+          type="date"
+          name="end"
+          value={range.end}
+          required
+        /></label
+      >
+      <button
+        class="bg-primary text-primary-foreground rounded px-4 py-2 text-sm font-semibold"
+        type="submit">Apply dates</button
+      >
+    </form>
+    {
+      error && (
+        <p role="alert" class="border-destructive border-l-4 p-4">
+          {error}
+        </p>
+      )
+    }
+    <p class="text-muted-foreground text-sm">
+      Dates use UTC. Completed status visits count when they end in the range;
+      ongoing visits are excluded. Cycle time and throughput count each card's
+      first recorded entry into the current last column. Cycle time requires a
+      recorded release. Earlier moves are never guessed.
+    </p>
+    {
+      metrics && (
+        <>
+          <section class="bg-card rounded-lg border p-4">
+            <h2>Release to done</h2>
+            <p class="brand-figures my-2 text-2xl">
+              {duration(metrics.cycle.median_ms)}
+            </p>
+            <p class="text-muted-foreground text-sm">
+              Median cycle time across {metrics.cycle.samples} cards with a
+              recorded release.
+            </p>
+          </section>
+          <section class="bg-card space-y-3 rounded-lg border p-4">
+            <h2>Time in each status</h2>
+            {metrics.statuses.length ? (
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <caption class="sr-only">
+                    Completed visits and backward moves by status
+                  </caption>
+                  <thead>
+                    <tr class="border-b">
+                      <th scope="col" class="p-2">
+                        Status
+                      </th>
+                      <th scope="col" class="p-2">
+                        Visits
+                      </th>
+                      <th scope="col" class="p-2">
+                        Median
+                      </th>
+                      <th scope="col" class="p-2">
+                        P90
+                      </th>
+                      <th scope="col" class="p-2">
+                        Slowest
+                      </th>
+                      <th scope="col" class="p-2">
+                        Backward moves
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.statuses.map((row) => (
+                      <tr class="border-b">
+                        <th scope="row" class="p-2 font-normal">
+                          {row.status}
+                        </th>
+                        <td class="brand-figures p-2">{row.samples}</td>
+                        <td class="brand-figures p-2 whitespace-nowrap">
+                          {duration(row.median_ms)}
+                        </td>
+                        <td class="brand-figures p-2 whitespace-nowrap">
+                          {duration(row.p90_ms)}
+                        </td>
+                        <td class="brand-figures p-2 whitespace-nowrap">
+                          {duration(row.max_ms)}
+                        </td>
+                        <td class="brand-figures p-2">{row.backward_moves}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p class="text-sm">
+                No completed status visits or backward moves in this range.
+              </p>
+            )}
+            <p class="text-muted-foreground text-xs">
+              P90 is the time within which 90% of completed visits finished.
+              Backward moves are grouped by the status left, using column order
+              at the time.
+            </p>
+          </section>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <section class="bg-card space-y-3 rounded-lg border p-4">
+              <h2>Cycle time by process</h2>
+              {metrics.processes.length ? (
+                <table class="w-full text-left text-sm">
+                  <thead>
+                    <tr class="border-b">
+                      <th scope="col" class="p-2">
+                        Process
+                      </th>
+                      <th scope="col" class="p-2">
+                        Cards
+                      </th>
+                      <th scope="col" class="p-2">
+                        Median
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.processes.map((row) => (
+                      <tr class="border-b">
+                        <th scope="row" class="p-2 font-normal">
+                          {row.process}
+                        </th>
+                        <td class="brand-figures p-2">{row.samples}</td>
+                        <td class="brand-figures p-2">
+                          {duration(row.median_ms)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p class="text-sm">
+                  No recorded release-to-done cycles in this range.
+                </p>
+              )}
+              <p class="text-muted-foreground text-xs">
+                Uses current processes. Deleted cards and cards without
+                processes are unknown. A card with several processes appears in
+                each process.
+              </p>
+            </section>
+            <section class="bg-card space-y-3 rounded-lg border p-4">
+              <h2>Weekly throughput</h2>
+              {metrics.weeks.length ? (
+                <table class="w-full text-left text-sm">
+                  <thead>
+                    <tr class="border-b">
+                      <th scope="col" class="p-2">
+                        Week of Monday
+                      </th>
+                      <th scope="col" class="p-2">
+                        Cards done
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.weeks.map((row) => (
+                      <tr class="border-b">
+                        <th scope="row" class="brand-figures p-2 font-normal">
+                          {row.week_start}
+                        </th>
+                        <td class="brand-figures p-2">{row.cards_done}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p class="text-sm">No cards completed in this range.</p>
+              )}
+            </section>
+          </div>
+        </>
+      )
+    }
+  </main>
+</AppLayout>

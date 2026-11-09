@@ -36,6 +36,7 @@ export const queryKeys = {
   kanban: {
     config: () => ["kanban-config"] as const,
     cards: () => ["kanban-cards"] as const,
+    cardDetails: (id: string) => ["kanban-cards", id] as const,
     columns: () => ["kanban-columns"] as const,
   },
   onshape: {

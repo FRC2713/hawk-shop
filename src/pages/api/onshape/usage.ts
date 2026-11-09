@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { summarizeOnshapeUsage } from "~/lib/onshapeApi/cache";
@@ -32,7 +33,10 @@ export const GET: APIRoute = async () => {
       webhooks: onshapeWebhookStatus(),
     });
   } catch (error) {
-    console.error("[ONSHAPE USAGE] read failed:", error);
-    return Response.json({ error: "Failed to read usage" }, { status: 500 });
+    const errorId = logServerError("ONSHAPE USAGE", error);
+    return Response.json(
+      { error: "Failed to read usage", errorId },
+      { status: 500 }
+    );
   }
 };

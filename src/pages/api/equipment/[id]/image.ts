@@ -1,3 +1,4 @@
+import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import {
@@ -32,8 +33,12 @@ export const POST: APIRoute = async ({ request, params }) => {
     const imageUrl = await uploadEquipmentImage(file, id);
 
     if (!imageUrl) {
+      const errorId = logServerError(
+        "EQUIPMENT IMAGE",
+        new Error("Failed to upload image")
+      );
       return Response.json(
-        { error: "Failed to upload image" },
+        { error: "Failed to upload image", errorId },
         { status: 500 }
       );
     }
@@ -55,10 +60,10 @@ export const POST: APIRoute = async ({ request, params }) => {
 
     return Response.json({ imageUrl }, { status: 201 });
   } catch (error) {
-    console.error("[EQUIPMENT IMAGE] Error uploading image:", error);
+    const errorId = logServerError("EQUIPMENT IMAGE", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to upload image";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };
 export const DELETE: APIRoute = async ({ request, params }) => {
@@ -96,9 +101,9 @@ export const DELETE: APIRoute = async ({ request, params }) => {
 
     return Response.json({ success: true });
   } catch (error) {
-    console.error("[EQUIPMENT IMAGE] Error deleting image:", error);
+    const errorId = logServerError("EQUIPMENT IMAGE", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to delete image";
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };

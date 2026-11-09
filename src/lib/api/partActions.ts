@@ -1,4 +1,4 @@
-import { redirectToSignIn } from "./client";
+import { ApiError, redirectToSignIn } from "./client";
 import type { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./keys";
 import type { ActionResponse } from "~/onshape_connector/utils/types";
@@ -95,7 +95,12 @@ export async function moveCard(
 
   const result = await postAction(body);
   if (!result.success) {
-    throw new Error(result.error || "Failed to move card");
+    throw new ApiError(
+      result.error || "Failed to move card",
+      400,
+      "/api/mfg/parts/actions",
+      result.errorId
+    );
   }
   return result;
 }

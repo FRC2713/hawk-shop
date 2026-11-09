@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -29,29 +29,51 @@ before(async () => {
   const port = address.port;
   await new Promise<void>((resolve) => socket.close(() => resolve()));
   origin = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, ["dist/server/entry.mjs"], {
-    env: {
-      ...process.env,
-      NODE_ENV: "production",
-      HOST: "127.0.0.1",
-      PORT: String(port),
-      DATA_DIR: data,
-      APP_URL: origin,
-      HAWK_SUITE_TRUST_PROXY: "true",
-      HAWK_SUITE_TEAM_ID: "TTEAM",
-      HAWK_SUITE_ISSUER: "https://suite.example/",
-      SLACK_BOT_TOKEN: "",
-      SLACK_WORKSPACE_ID: "",
-      ONSHAPE_ACCESS_KEY: "",
-      ONSHAPE_SECRET_KEY: "",
-      ONSHAPE_REMAINING_WARN_AT: "",
-      ONSHAPE_WEBHOOK_SECRET: "runtime-webhook-secret",
-      ONSHAPE_WEBHOOK_BASE_URL: "https://shop.example.org",
-      DATABASE_PATH: "",
-      UPLOADS_DIR: "",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const transport = join(data, "slack-transport.mjs");
+  await writeFile(
+    transport,
+    `
+    import {appendFileSync} from "node:fs";
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url === "https://slack.com/api/auth.test")
+        return Response.json({ok:true,team_id:"TTEAM",bot_id:"BFIXTURE"});
+      if (url === "https://slack.com/api/chat.postMessage") {
+        const body = JSON.parse(init.body);
+        appendFileSync(process.env.DATA_DIR + "/slack-posts.jsonl", JSON.stringify(body) + "\\n");
+        return Response.json({ok:true,channel:body.channel,ts:"123"});
+      }
+      throw Error("Unexpected external request");
+    };
+  `
+  );
+  server = spawn(
+    process.execPath,
+    ["--import", transport, "dist/server/entry.mjs"],
+    {
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        HOST: "127.0.0.1",
+        PORT: String(port),
+        DATA_DIR: data,
+        APP_URL: origin,
+        HAWK_SUITE_TRUST_PROXY: "true",
+        HAWK_SUITE_TEAM_ID: "TTEAM",
+        HAWK_SUITE_ISSUER: "https://suite.example/",
+        SLACK_BOT_TOKEN: "fixture",
+        SLACK_WORKSPACE_ID: "TTEAM",
+        ONSHAPE_ACCESS_KEY: "",
+        ONSHAPE_SECRET_KEY: "",
+        ONSHAPE_REMAINING_WARN_AT: "",
+        ONSHAPE_WEBHOOK_SECRET: "runtime-webhook-secret",
+        ONSHAPE_WEBHOOK_BASE_URL: "https://shop.example.org",
+        DATABASE_PATH: "",
+        UPLOADS_DIR: "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  );
   server.stdout?.on("data", (chunk) => {
     output += chunk;
   });
@@ -553,6 +575,279 @@ test(
     }
   }
 );
+
+test("header report dialog preserves failed text and confirms an accepted report", async () => {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ extraHTTPHeaders: identity });
+  const page = await context.newPage();
+  const database = new Database(join(data, "hawk-shop.db"));
+  try {
+    await page.goto(origin + "/?cardId=header-card-context");
+    await page.getByLabel("Account: Shop Member").click();
+    await expect(
+      page.getByRole("button", { name: "Report a problem", exact: true })
+    ).toHaveCount(0);
+    database
+      .prepare(
+        "INSERT INTO slack_config (id, enabled, reports_enabled, reports_channel_id, generation, updated_at) VALUES ('default',0,1,'CREPORTS',0,?) ON CONFLICT(id) DO UPDATE SET reports_enabled=1,reports_channel_id='CREPORTS'"
+      )
+      .run(new Date().toISOString());
+    await page.reload();
+    await page.getByLabel("Account: Shop Member").click();
+    await page
+      .getByRole("button", { name: "Report a problem", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByLabel("What went wrong?").fill("The board is stuck");
+    await page.route("**/api/reports", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Please try again." }),
+      })
+    );
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText("Please try again.");
+    await expect(page.getByLabel("What went wrong?")).toHaveValue(
+      "The board is stuck"
+    );
+    await page.unroute("**/api/reports");
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText(
+      /Report ID: [a-f0-9-]{36}/
+    );
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("The board is stuck");
+    assert.ok(
+      (await readFile(join(data, "slack-posts.jsonl"), "utf8")).includes(
+        "header-card-context"
+      )
+    );
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent("hawk-shop:report", {
+          detail: {
+            context: {
+              error_id: "error-fixture",
+              error_message: "Move failed",
+              card_id: "card-fixture",
+            },
+            message: "The move failed",
+          },
+        })
+      )
+    );
+    await expect(page.getByLabel("What went wrong?")).toHaveValue(
+      "The move failed"
+    );
+    await expect(page.getByLabel("What went wrong?")).toBeFocused();
+    const box = await page.getByRole("dialog").boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390);
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText(
+      /Report ID: [a-f0-9-]{36}/
+    );
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("error-fixture");
+  } finally {
+    database
+      .prepare("UPDATE slack_config SET reports_enabled=0 WHERE id='default'")
+      .run();
+    database.close();
+    await browser.close();
+  }
+});
+
+test(
+  "card details display release and live status history in desktop light and mobile dark themes",
+  { timeout: 60000 },
+  async () => {
+    await json("/api/kanban/config", "PUT", {
+      columns: [
+        { id: "backlog", title: "Backlog", position: 0 },
+        { id: "in-progress", title: "In Progress", position: 1 },
+        { id: "review", title: "Review", position: 2 },
+        { id: "done", title: "Done", position: 3 },
+      ],
+    });
+    await json("/api/kanban/cards", "POST", {
+      id: "history-browser",
+      title: "History fixture",
+    });
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const context = await browser.newContext({ extraHTTPHeaders: identity });
+      const page = await context.newPage();
+      for (const [width, scheme] of [
+        [1280, "light"],
+        [390, "dark"],
+      ] as const) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.goto(origin + "/kanban?cardId=history-browser");
+        const history = page.getByRole("region", { name: "Status history" });
+        await expect(history).toBeVisible();
+        await expect(
+          history.getByText("Released into Backlog", { exact: true })
+        ).toBeVisible();
+        await expect(
+          history.getByText("Shop Member", { exact: true }).first()
+        ).toBeVisible();
+        if (width === 1280) {
+          await json("/api/kanban/cards/history-browser", "PATCH", {
+            column_id: "in-progress",
+          });
+        }
+        await expect(
+          history.getByText("Backlog → In Progress", { exact: true })
+        ).toBeVisible();
+        await expect(history.locator("time")).toHaveCount(2);
+        assert.ok(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth
+          )
+        );
+      }
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+  }
+);
+
+test("metrics render on the server for members and validate the date range", async () => {
+  const response = await call("/metrics?start=2026-01-01&end=2026-01-31");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  for (const text of [
+    "Shop metrics",
+    "Time in each status",
+    "Weekly throughput",
+    'name="start"',
+    'value="2026-01-01"',
+  ])
+    assert.ok(html.includes(text), text);
+  assert.equal((await call("/metrics?start=2026-02-30")).status, 400);
+  assert.equal((await fetch(origin + "/api/metrics")).status, 401);
+  const overview = await (await call("/")).text();
+  assert.ok(overview.includes('href="/metrics"'));
+});
+
+test("error displays and workflow boundaries open reports with their error references", async () => {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ extraHTTPHeaders: identity });
+  const page = await context.newPage();
+  const database = new Database(join(data, "hawk-shop.db"));
+  try {
+    database
+      .prepare(
+        "INSERT INTO slack_config (id, enabled, reports_enabled, reports_channel_id, generation, updated_at) VALUES ('default',0,1,'CREPORTS',0,?) ON CONFLICT(id) DO UPDATE SET reports_enabled=1,reports_channel_id='CREPORTS'"
+      )
+      .run(new Date().toISOString());
+    await page.route("**/api/equipment", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Fixture equipment failure",
+          errorId: "abcdef123456",
+        }),
+      })
+    );
+    await page.goto(origin + "/equipment");
+    await expect(page.getByText("Error ID:")).toContainText("abcdef123456", {
+      timeout: 15000,
+    });
+    await page
+      .getByRole("button", { name: "Report this", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByLabel("What went wrong?").fill("The equipment page failed");
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText("Report ID:");
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("abcdef123456");
+    const posts = await readFile(join(data, "slack-posts.jsonl"), "utf8");
+    assert.ok(posts.includes("Fixture equipment failure"));
+    await page.unroute("**/api/equipment");
+    await json("/api/kanban/cards", "POST", {
+      id: "report-selected-card",
+      title: "Report selected card",
+    });
+    await page.goto(origin + "/kanban?cardId=report-selected-card");
+    await page
+      .getByRole("button", {
+        name: "Report a problem with this card",
+        exact: true,
+      })
+      .click();
+    await expect(page.getByRole("dialog").last()).toBeVisible();
+    await page.getByLabel("What went wrong?").fill("This card is stuck");
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText("Report ID:");
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("report-selected-card");
+    // An invalid equipment shape causes a render failure caught by the island boundary.
+    await page.route("**/api/equipment", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ equipment: { invalid: true } }),
+      })
+    );
+    await page.goto(origin + "/equipment");
+    await expect(
+      page.getByRole("heading", { name: "Unable to display this workflow" })
+    ).toBeVisible();
+    await expect(page.getByText("Error ID:")).toContainText("client-");
+    await page
+      .getByRole("button", { name: "Report this", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+  } finally {
+    database
+      .prepare("UPDATE slack_config SET reports_enabled=0 WHERE id='default'")
+      .run();
+    database.close();
+    await browser.close();
+  }
+});
 
 test(
   "board search restores q, filters with processes, counts matches and supports dragging",

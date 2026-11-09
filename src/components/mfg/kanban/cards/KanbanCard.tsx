@@ -1,3 +1,4 @@
+import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useState, useEffect, useMemo, memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -150,7 +151,11 @@ export const KanbanCard = memo(function KanbanCard({
     },
     onError: (error) => {
       toast.error("Failed to delete card", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: (
+          <ErrorMessage
+            error={error instanceof Error ? error : "Unknown error"}
+          />
+        ),
       });
     },
   });

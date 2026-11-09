@@ -1,3 +1,5 @@
+import "virtual:hawk-shop/server-only";
+import { logServerError } from "~/server/errors";
 import type { ActionResponse } from "./types";
 
 /**
@@ -71,6 +73,7 @@ export function createErrorResponse(
   const response: ActionResponse = {
     success: false,
     error: status ? `${message} (Status: ${status})` : message,
+    errorId: logServerError("PART ACTION", error),
   };
 
   if (cookie) {

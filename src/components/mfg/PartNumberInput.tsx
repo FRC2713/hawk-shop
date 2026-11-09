@@ -1,3 +1,5 @@
+import { ErrorMessage } from "./ErrorDisplay";
+import type { ActionResponse } from "~/onshape_connector/utils/types";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "~/components/ui/button";
@@ -31,7 +33,7 @@ export function PartNumberInput({ part, queryParams }: PartNumberInputProps) {
   const isSubmitting = updatePartNumber.isPending;
   // A rejection (network, or a non-JSON response) reads the same as a failed
   // update to the user, which is what this component showed before.
-  const result =
+  const result: ActionResponse | null =
     updatePartNumber.data ??
     (updatePartNumber.error
       ? { success: false, error: "Failed to update part number" }
@@ -94,7 +96,7 @@ export function PartNumberInput({ part, queryParams }: PartNumberInputProps) {
         </Button>
       </form>
       {result && !result.success && result.error && (
-        <p className="text-destructive text-xs">Error: {result.error}</p>
+        <ErrorMessage error={result.error} errorId={result.errorId} />
       )}
       {result?.success && (
         <p className="text-xs text-green-600 dark:text-green-400">
