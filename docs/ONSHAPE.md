@@ -166,6 +166,16 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
   - Source: Onshape OpenAPI spec, `getPartsWMVE` (`src/lib/onshapeApi/generated/types.gen.ts`)
   - Relied on by: `fetchPartsFromOnshape` (asks for thumbnails at every `wvm`)
 
+- **Each part in the parts list carries a `microversionId`.**
+  - Label: documented
+  - Source: Onshape OpenAPI spec, `BTPartMetadataInfo.microversionId` (`src/lib/onshapeApi/generated/types.gen.ts`)
+  - Relied on by: `syncWorkspaceCardMicroversions`, the release action (`onshape_microversion_id`), `partCacheKey`
+
+- **A part's `microversionId` changes when that part changes and only then;** edits to other parts in the same Part Studio leave it alone.
+  - Label: unverified
+  - Source: #48 and FRCDesignApp's microversion-keyed caching (seen with OAuth)
+  - Relied on by: `partCacheKey`, the thumbnail route's microversion-keyed rows. If it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, cards would keep the old picture.
+
 - **The parts list is either a bare array or `{ parts: [...] }`.**
   - Label: unverified
   - Source: defensive handling in the hand-written `OnshapeClient.getParts`
@@ -214,6 +224,11 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
   - Label: unverified
   - Source: assumption in the thumbnail route
   - Relied on by: `/api/onshape/thumbnail`, `deleteCardImage` (leaves `thumbnails/` alone because cards share them)
+
+- **A workspace thumbnail URL stays the same when the part's geometry changes,** so caching by URL alone serves the old shape after an edit. That is why thumbnails are now keyed by the part's microversion when the caller knows it.
+  - Label: unverified
+  - Source: #48 problem statement; follows from the URL naming the workspace, not a microversion
+  - Relied on by: `/api/onshape/thumbnail` (`findStoredThumbnail`)
 
 - **A thumbnail that is still rendering answers 406 to `Accept: image/*` and 404 to `*/*`.** Our signer sends `Accept: application/json` unless the caller sets one, which thumbnail fetches don't.
   - Label: unverified

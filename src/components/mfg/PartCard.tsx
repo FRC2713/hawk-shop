@@ -123,7 +123,7 @@ export function PartCard({
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
-        <PartCardThumbnail part={part} />
+        <PartCardThumbnail part={part} scope={queryParams} />
         {part.partNumber ? (
           <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
             <CollapsibleTrigger className="w-full">

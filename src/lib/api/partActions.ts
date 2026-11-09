@@ -53,6 +53,8 @@ export interface AddCardInput {
   /** ISO `yyyy-MM-dd`; omitted means no due date. */
   dueDate?: string;
   onshapePart?: OnshapePartRef;
+  /** The part's microversion from the parts read being released from. */
+  microversionId?: string;
   rawThumbnailUrl?: string;
 }
 
@@ -68,6 +70,9 @@ export function addCard(input: AddCardInput): Promise<ActionResponse> {
     for (const [key, value] of Object.entries(input.onshapePart)) {
       body.append(key, value);
     }
+  }
+  if (input.microversionId) {
+    body.append("microversionId", input.microversionId);
   }
   if (input.rawThumbnailUrl) {
     body.append("rawThumbnailUrl", input.rawThumbnailUrl);

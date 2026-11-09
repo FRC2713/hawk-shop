@@ -82,7 +82,7 @@ Preserve the API's existing JSON payloads so equipment, manufacturing, and conne
 
 ### Thumbnail caching
 
-`/api/onshape/thumbnail?cardId=…` resolves a card's `image_url`, checks `part_thumbnails` by `source_url`, and on a miss fetches from Onshape, writes it under `thumbnails/<hash>.png`, and redirects to `/api/files/…`. The path is derived from a hash of the source URL, so **the same part image is shared across cards** — which is why `deleteCardImage` only removes `card-images/` entries and leaves `thumbnails/` alone.
+`/api/onshape/thumbnail?cardId=…` resolves a card's `image_url`, checks `part_thumbnails`, and on a miss fetches from Onshape, writes it under `thumbnails/<hash>.png`, and redirects to `/api/files/…`. When the card (or the connector's `?url=` request) names the part and its microversion, the row is keyed by `partCacheKey` (document, element, part, microversion), so an unchanged part never costs a second call and an edited one gets a new image. Cards save `onshape_microversion_id` at release; a later workspace parts read moves them to the part's new microversion (`syncWorkspaceCardMicroversions`). Without a microversion the lookup falls back to `source_url`, and a legacy row (null `microversion_id`) is adopted once for the first microversion that asks. The path is derived from a hash of the key, so **the same part image is shared across cards** — which is why `deleteCardImage` only removes `card-images/` entries and leaves `thumbnails/` alone.
 
 Stored `image_url` values may be legacy proxy URLs (`/api/onshape/thumbnail?url=…`) that get unwrapped.
 

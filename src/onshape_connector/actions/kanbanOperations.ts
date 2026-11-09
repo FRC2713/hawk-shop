@@ -16,6 +16,7 @@ const addCardSchema = z.object({
   instanceId: z.string().optional(),
   elementId: z.string().optional(),
   partId: z.string().optional(),
+  microversionId: z.string().optional(),
   rawThumbnailUrl: z.string().optional(),
   processIds: z.array(z.string()).min(1, "At least one process is required"),
   quantityPerRobot: z
@@ -98,6 +99,7 @@ export async function handleAddKanbanCard(
       "instanceId",
       "elementId",
       "partId",
+      "microversionId",
       "rawThumbnailUrl",
       "processIds",
       "quantityPerRobot",
@@ -183,6 +185,8 @@ export async function handleAddKanbanCard(
         onshapeElementId: data.elementId,
         onshapePartId: data.partId,
         onshapeVersionId: versionId,
+        // From the parts read the connector already did: no extra call.
+        onshapeMicroversionId: data.microversionId || undefined,
       },
       actor
     );
