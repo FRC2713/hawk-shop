@@ -21,7 +21,7 @@ import "virtual:hawk-shop/server-only";
  * rather than breaking.
  */
 
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { onshapeApiCache, onshapeApiUsage } from "~/server/db/schema";
 
@@ -270,4 +270,31 @@ export async function withOnshapeCache<T>({
   } finally {
     if (inflight.get(key) === request) inflight.delete(key);
   }
+}
+
+/**
+ * Forget every **workspace** (`wvm=w`) read of one document, durable rows and
+ * in-flight requests alike, so the next read goes upstream once.
+ *
+ * Relies on the key layout `cacheKey(label, documentId, wvm, ...)`. Version and
+ * microversion entries are immutable and stay, as do keys of any other shape.
+ * Called when an Onshape webhook reports that the document changed.
+ */
+export function invalidateOnshapeCacheForDocument(documentId: string): void {
+  const isWorkspaceRead = (key: string) => {
+    const [, keyDocumentId, wvm] = key.split("::");
+    return keyDocumentId === documentId && wvm === "w";
+  };
+  for (const key of [...inflight.keys()])
+    if (isWorkspaceRead(key)) inflight.delete(key);
+  const keys = db
+    .select({ cache_key: onshapeApiCache.cache_key })
+    .from(onshapeApiCache)
+    .all()
+    .map((row) => row.cache_key)
+    .filter(isWorkspaceRead);
+  if (keys.length > 0)
+    db.delete(onshapeApiCache)
+      .where(inArray(onshapeApiCache.cache_key, keys))
+      .run();
 }

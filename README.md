@@ -27,6 +27,8 @@ The default address is `http://localhost:3000`. Without Suite configuration, the
 
 For CAD access, create an [Onshape API key pair](https://dev-portal.onshape.com/keys) and set `ONSHAPE_ACCESS_KEY` and `ONSHAPE_SECRET_KEY` on the server. Every CAD request uses that Onshape account, so give it access to the robot documents only. `/onshape` shows whether the key pair is configured. An embedded Onshape entry offers a top-level continuation for Suite sign-in while preserving its Part Studio parameters.
 
+Onshape webhooks are optional. With `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` set, `POST /api/onshape/webhook` accepts Onshape change notifications and clears that document's cached workspace reads. It is the only route that skips Suite identity, so the gateway must route it to the app without `authorize`. See [docs/ONSHAPE.md](docs/ONSHAPE.md#webhooks) for the Caddy route.
+
 ## Configuration
 
 | Variable                                    | Default                     | Purpose                                                                |
@@ -39,6 +41,8 @@ For CAD access, create an [Onshape API key pair](https://dev-portal.onshape.com/
 | `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY` | unset                       | Optional Onshape API key pair for CAD import and part-number writes    |
 | `ONSHAPE_BASE_URL`                          | `https://cad.onshape.com`   | Onshape stack origin; enterprise stacks use their own subdomain        |
 | `ONSHAPE_CACHE_TTL_SECONDS`                 | `300`                       | Editable workspace cache TTL; immutable part versions do not expire    |
+| `ONSHAPE_WEBHOOK_SECRET`                    | unset                       | Optional shared secret for Onshape webhook deliveries                  |
+| `ONSHAPE_WEBHOOK_BASE_URL`                  | unset                       | Public origin Onshape can reach; webhooks need it and the secret       |
 | `DATA_DIR`                                  | `./data`, `/data` in Docker | Database and uploads root                                              |
 | `DATABASE_PATH`                             | `$DATA_DIR/hawk-shop.db`    | SQLite path override                                                   |
 | `UPLOADS_DIR`                               | `$DATA_DIR/uploads`         | Upload path override                                                   |

@@ -57,6 +57,8 @@ better-sqlite3 is external in `astro.config.mjs`. The Node image includes produc
 
 `src/middleware.ts` gates every page, API, upload, and event stream on Hawk Suite membership. `/signin`, static assets, and GET/HEAD health checks are public. An unauthenticated Onshape iframe receives only a top-level continuation with no shop data.
 
+`POST /api/onshape/webhook` (exact path and method) is the one data route that skips Suite identity, because Onshape can't carry it. It is enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are set, checks the secret from its query string in constant time, answers empty bodies (404 for disabled or wrong secret), and does nothing but `invalidateOnshapeCacheForDocument`. Its configuration and callback URL live in `src/server/onshape-webhook.ts`. The gateway must route it without `authorize`; see `docs/ONSHAPE.md#webhooks`. Don't widen the exemption or return shop data from it.
+
 `src/server/suite-identity.ts` follows Hawk Eye's identity-header contract. Enable `HAWK_SUITE_TRUST_PROXY=true` only on an isolated gateway network; configure `HAWK_SUITE_TEAM_ID` and `HAWK_SUITE_ISSUER`. Caddy strips browser identity headers before authorization and injects the approved workspace, Slack user, matching subject, and exact `suite/member` role. Header trust grants nothing by default. Never expose a trusted app port directly.
 
 `requireAuth()` reads the verified request identity; Onshape credentials never grant Shop access. Same-origin checks protect every mutation, including multipart uploads. Use `APP_URL` for the browser-facing origin when TLS terminates at the gateway.
