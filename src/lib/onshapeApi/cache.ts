@@ -21,7 +21,7 @@ import "virtual:hawk-shop/server-only";
  * rather than breaking.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { onshapeApiCache, onshapeApiUsage } from "~/server/db/schema";
 
@@ -168,6 +168,34 @@ export function recordOnshapeUsage(label: string, kind: "call" | "hit"): void {
   } catch (error) {
     console.error("[ONSHAPE USAGE] tally failed:", error);
   }
+}
+
+/** The per-day tally, newest first, with totals and the cache hit rate. */
+export function summarizeOnshapeUsage() {
+  const byDay = db
+    .select()
+    .from(onshapeApiUsage)
+    .orderBy(desc(onshapeApiUsage.day))
+    .all();
+  const totals = byDay.reduce(
+    (acc, row) => {
+      acc.calls += row.calls;
+      acc.hits += row.hits;
+      return acc;
+    },
+    { calls: 0, hits: 0 }
+  );
+  const attempted = totals.calls + totals.hits;
+  return {
+    totals: {
+      ...totals,
+      attempted,
+      // Share of would-be Onshape calls this cache absorbed.
+      hitRate:
+        attempted === 0 ? 0 : Math.round((totals.hits / attempted) * 1000) / 10,
+    },
+    byDay,
+  };
 }
 
 /**
