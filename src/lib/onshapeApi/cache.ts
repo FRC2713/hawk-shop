@@ -24,27 +24,30 @@ import "virtual:hawk-shop/server-only";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { onshapeApiCache, onshapeApiUsage } from "~/server/db/schema";
+import { onshapeWebhookSettings } from "~/server/onshape-webhook";
 
 /** Pass as `ttlMs` for a response whose upstream can never change. */
 export const NEVER_EXPIRES = null;
 
 const DEFAULT_WORKSPACE_TTL_SECONDS = 300;
+const WEBHOOK_WORKSPACE_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * TTL for reads against a **workspace** (`wvm=w`), the one Part Studio scope
  * that changes under you as students edit CAD.
  *
- * Five minutes is the default because the connector is used in bursts — a
- * student opens it, releases a few parts, closes it — and within one such burst
- * the part list is not moving. Raise it (`ONSHAPE_CACHE_TTL_SECONDS`) when the
- * allocation is tight; lower it if the team is iterating on CAD and releasing
- * in the same sitting.
+ * With configured webhooks, document changes invalidate the cache and a
+ * 24-hour TTL is the safety net. Otherwise it expires after five minutes.
+ * A finite, positive `ONSHAPE_CACHE_TTL_SECONDS` overrides either default.
  */
 export function workspaceTtlMs(): number {
   const raw = Number(process.env.ONSHAPE_CACHE_TTL_SECONDS);
-  const seconds =
-    Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_WORKSPACE_TTL_SECONDS;
-  return seconds * 1000;
+  if (Number.isFinite(raw) && raw > 0) return raw * 1000;
+  return (
+    (onshapeWebhookSettings()
+      ? WEBHOOK_WORKSPACE_TTL_SECONDS
+      : DEFAULT_WORKSPACE_TTL_SECONDS) * 1000
+  );
 }
 
 /**

@@ -261,6 +261,14 @@ Not Onshape behavior, but often mistaken for it: card `image_url` values written
 
 Hawk Shop registers one webhook per document whose workspace it reads, and keeps it registered. `POST /api/onshape/webhook` clears a document's cached workspace (`wvm=w`) reads when Onshape reports a change, so the next connector read sees the edit instead of waiting out `ONSHAPE_CACHE_TTL_SECONDS`.
 
+Workspace cache policy (`workspaceTtlMs`, covered by mocked route reads in `tests/onshape-workspace-ttl.test.ts`):
+
+- The default is 86,400 seconds (24 hours) only when `onshapeWebhookSettings()` returns configured settings: a nonblank secret and an HTTP(S) base URL. Missing, blank or invalid settings keep the 300-second (five-minute) default.
+- A finite, positive `ONSHAPE_CACHE_TTL_SECONDS` overrides either default, including fractional seconds. Unset, blank, nonnumeric, zero, negative or non-finite values use the applicable default. Leave the example override commented out to use automatic defaults.
+- Version and microversion parts reads still never expire. Webhook invalidation still clears workspace entries immediately; the TTL limits staleness if a delivery is missed. Persisted entries keep the expiry written when fetched, so configuration changes apply on the next cache fill.
+
+The 24-hour default is a Hawk Shop policy authorized for #59, not an observation of Onshape reliability. Production delivery after CAD edits and re-registration of dropped webhooks remain unverified. Configuration alone selects the default; it does not prove the callback is reachable or deliveries are healthy. Operators can set an explicit shorter TTL while assessing `/onshape` webhook state and the usage tally.
+
 How the receiver behaves (Hawk Shop's own contract, covered by `tests/onshape-webhook.test.ts` and `tests/runtime.test.ts`):
 
 - Enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are both set (`onshapeWebhookSettings`). Otherwise every request gets 404.
