@@ -42,6 +42,15 @@ function resolveImageUrl(imageUrl: string): string {
   return trimmed;
 }
 
+/**
+ * A same-origin relative redirect. The app sits behind a TLS-terminating
+ * gateway, so request.url's scheme is http; a relative Location keeps the
+ * browser on its own origin.
+ */
+function redirectTo(path: string): Response {
+  return new Response(null, { status: 307, headers: { Location: path } });
+}
+
 /** The part and microversion a request names, when it names all four. */
 function partFrom(fields: {
   documentId?: string | null;
@@ -254,10 +263,7 @@ export const GET: APIRoute = async ({ request }) => {
 
   // Already points at a locally stored file — redirect straight to it.
   if (storagePathFromUrl(imageUrl)) {
-    return Response.redirect(
-      new URL(imageUrl, requestUrl.origin).toString(),
-      307
-    );
+    return redirectTo(imageUrl);
   }
 
   let cachedPath: string | null = null;
@@ -270,13 +276,7 @@ export const GET: APIRoute = async ({ request }) => {
 
   if (cachedPath) {
     recordOnshapeUsage("thumbnail", "hit");
-    return Response.redirect(
-      new URL(
-        publicUrlForStoragePath(cachedPath),
-        requestUrl.origin
-      ).toString(),
-      307
-    );
+    return redirectTo(publicUrlForStoragePath(cachedPath));
   }
 
   // Cache miss — fetch from Onshape. Only ever from Onshape: this request
@@ -367,8 +367,5 @@ export const GET: APIRoute = async ({ request }) => {
     console.error("[THUMBNAIL] part_thumbnails upsert failed:", error);
   }
 
-  return Response.redirect(
-    new URL(storedUrl, requestUrl.origin).toString(),
-    307
-  );
+  return redirectTo(storedUrl);
 };
