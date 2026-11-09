@@ -2,7 +2,7 @@ import "virtual:hawk-shop/server-only";
 
 import { captureSlackTransition } from "~/lib/slack/queue";
 import type { SessionActor } from "~/lib/sessionActor";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import {
   DEFAULT_KANBAN_COLUMNS,
@@ -123,6 +123,8 @@ export interface CreateCardInput {
   onshapeElementId?: string;
   onshapePartId?: string;
   onshapeVersionId?: string;
+  /** The part's microversion from the parts read the release came from. */
+  onshapeMicroversionId?: string;
 }
 
 /**
@@ -166,6 +168,7 @@ export async function createCard(
         onshape_element_id: cardData.onshapeElementId ?? null,
         onshape_part_id: cardData.onshapePartId ?? null,
         onshape_version_id: cardData.onshapeVersionId ?? null,
+        onshape_microversion_id: cardData.onshapeMicroversionId ?? null,
       })
       .returning();
     card = inserted;
@@ -312,5 +315,56 @@ export async function setCardProcesses(
   } catch (error) {
     console.error("[KANBAN CARDS] Error setting card processes:", error);
     throw error;
+  }
+}
+
+/**
+ * Move workspace cards to the microversions a fresh parts read reports.
+ *
+ * A card released from a workspace keeps showing that workspace's part, so
+ * when the designer edits it the card should pick up the new picture. Its
+ * thumbnail is cached under `onshape_microversion_id`, so changing that is all
+ * it takes; the next thumbnail request fetches the new image once. The parts
+ * read was already happening in the connector, so this costs no Onshape call.
+ *
+ * Cards with no recorded microversion (released before microversions were
+ * saved) are left alone so upgrading refetches nothing.
+ */
+export function syncWorkspaceCardMicroversions(
+  scope: { documentId: string; workspaceId: string; elementId: string },
+  parts: { partId?: string; microversionId?: string }[]
+): void {
+  const changedIds: string[] = [];
+  try {
+    db.transaction((tx) => {
+      for (const part of parts) {
+        if (!part.partId || !part.microversionId) continue;
+        const changed = tx
+          .update(kanbanCards)
+          .set({ onshape_microversion_id: part.microversionId })
+          .where(
+            and(
+              eq(kanbanCards.onshape_document_id, scope.documentId),
+              eq(kanbanCards.onshape_instance_type, "w"),
+              eq(kanbanCards.onshape_instance_id, scope.workspaceId),
+              eq(kanbanCards.onshape_element_id, scope.elementId),
+              eq(kanbanCards.onshape_part_id, part.partId),
+              isNotNull(kanbanCards.onshape_microversion_id),
+              ne(kanbanCards.onshape_microversion_id, part.microversionId)
+            )
+          )
+          .returning({ id: kanbanCards.id })
+          .all();
+        changedIds.push(...changed.map((row) => row.id));
+      }
+    });
+  } catch (error) {
+    // A failed refresh leaves an older picture on the card; never fail the
+    // parts read over it.
+    console.error("[KANBAN CARDS] Microversion sync failed:", error);
+    return;
+  }
+  for (const id of changedIds) {
+    publishKanbanEvent({ table: "kanban_cards", action: "update", id });
   }
 }

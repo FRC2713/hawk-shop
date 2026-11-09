@@ -11,6 +11,31 @@ export interface OnshapePartsScope {
   elementId: string;
 }
 
+/**
+ * `<img>` src for a part thumbnail the connector has from a parts read.
+ *
+ * With the part's document, element and microversion the server caches the
+ * image under that microversion, so an unchanged part never costs a second
+ * Onshape call and an edited one gets a fresh picture.
+ */
+export function onshapeThumbnailSrc(
+  href: string,
+  part?: {
+    documentId?: string;
+    elementId?: string;
+    partId?: string;
+    microversionId?: string;
+  }
+): string {
+  return `/api/onshape/thumbnail?${searchParams({
+    url: href,
+    documentId: part?.documentId,
+    elementId: part?.elementId,
+    partId: part?.partId,
+    microversionId: part?.microversionId,
+  })}`;
+}
+
 /** Only the field the UI actually reads off `/api/onshape/version`. */
 export interface OnshapeVersion {
   name?: string;

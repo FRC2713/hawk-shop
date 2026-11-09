@@ -104,8 +104,19 @@ export const KanbanCard = memo(function KanbanCard({
   const imageUrl = useMemo(() => {
     if (hideImages) return undefined;
     if (!card.image_url && !card.onshape_document_id) return undefined;
-    return `/api/onshape/thumbnail?cardId=${card.id}`;
-  }, [card.id, card.image_url, card.onshape_document_id, hideImages]);
+    // The microversion is in the src so an edited part's new picture replaces
+    // the one the browser already showed.
+    const version = card.onshape_microversion_id
+      ? `&microversionId=${encodeURIComponent(card.onshape_microversion_id)}`
+      : "";
+    return `/api/onshape/thumbnail?cardId=${card.id}${version}`;
+  }, [
+    card.id,
+    card.image_url,
+    card.onshape_document_id,
+    card.onshape_microversion_id,
+    hideImages,
+  ]);
 
   // Reset error state when imageUrl changes
   useEffect(() => {

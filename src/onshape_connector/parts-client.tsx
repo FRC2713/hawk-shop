@@ -310,6 +310,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
                 partId: eligiblePart.partId,
               }
             : undefined,
+          microversionId: eligiblePart.part.microversionId,
           rawThumbnailUrl: eligiblePart.thumbnailUrl,
         });
         results.push({

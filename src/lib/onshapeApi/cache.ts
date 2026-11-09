@@ -83,6 +83,33 @@ export function cacheKey(label: string, ...parts: (string | number)[]): string {
   return [label, ...parts].join("::");
 }
 
+/** What identifies one part's state in Onshape: it changes only when the part does. */
+export interface OnshapePartMicroversion {
+  documentId: string;
+  elementId: string;
+  partId: string;
+  microversionId: string;
+}
+
+/**
+ * Key for data derived from one part at one microversion, such as its
+ * thumbnail. A part's microversion changes only when the part does, so data
+ * under this key never goes stale and needs no TTL, and an edit moves the
+ * part to a new key instead of serving the old answer.
+ */
+export function partCacheKey(
+  label: string,
+  part: OnshapePartMicroversion
+): string {
+  return cacheKey(
+    label,
+    part.documentId,
+    part.elementId,
+    part.partId,
+    part.microversionId
+  );
+}
+
 /** Drop the durable entry and detach reads that started before the edit. */
 export function invalidateOnshapeCache(key: string): void {
   inflight.delete(key);
