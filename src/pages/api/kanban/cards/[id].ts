@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/requireAuth";
 import {
   deleteCard,
   getCards,
+  getCardStatusHistory,
   updateCard,
   setCardProcesses,
 } from "~/server/kanbanApi/cards";
@@ -28,7 +29,9 @@ export const GET: APIRoute = async ({ params }) => {
       return Response.json({ error: "Card not found" }, { status: 404 });
     }
 
-    return Response.json({ card });
+    return Response.json({
+      card: { ...card, status_history: await getCardStatusHistory(id) },
+    });
   } catch (error) {
     console.error("[KANBAN CARD] Error loading card:", error);
     return Response.json({ error: "Failed to load card" }, { status: 500 });

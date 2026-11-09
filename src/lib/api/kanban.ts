@@ -1,5 +1,9 @@
 import { queryOptions } from "@tanstack/react-query";
-import type { KanbanCardRow, ProcessRow } from "~/server/db/types";
+import type {
+  KanbanCardRow,
+  ProcessRow,
+  StatusHistoryRow,
+} from "~/server/db/types";
 import type {
   KanbanColumn,
   KanbanConfig,
@@ -49,6 +53,21 @@ export function kanbanCardsQuery() {
       return cards;
     },
     staleTime: 30 * 1000,
+  });
+}
+
+/** Card details include permanent history without loading it for the whole board. */
+export function kanbanCardDetailsQuery(id: string) {
+  return queryOptions({
+    queryKey: queryKeys.kanban.cardDetails(id),
+    queryFn: async () => {
+      const { card } = await apiFetch<{
+        card: KanbanCardWithProcesses & { status_history: StatusHistoryRow[] };
+      }>(`/api/kanban/cards/${encodeURIComponent(id)}`, {
+        fallbackError: "Failed to load status history",
+      });
+      return card;
+    },
   });
 }
 
