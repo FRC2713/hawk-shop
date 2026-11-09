@@ -46,7 +46,7 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Running out returns 402 Payment Required, not 429.** It is not a window to wait out: requests stay rejected until the allocation resets.
   - Label: documented
   - Source: [API Limits](https://onshape-public.github.io/docs/auth/limits/), [Response Codes](https://onshape-public.github.io/docs/api-adv/errors/)
-  - Relied on by: `onshapeFetch` callers' error handling; the remaining-calls capture planned in #52
+  - Relied on by: `assertOnshapeAllocation` and `onshapeErrorResponse` in `auth.ts` (every route answers a 402 as "Onshape API allocation used up"); `recordOnshapeRemaining`, which records a 402 even without the header
 
 - **Only 2xx and 3xx responses count.** API-key calls that return 4xx or 5xx are not charged.
   - Label: documented
@@ -83,17 +83,17 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Every response carries `X-Rate-Limit-Remaining`, the number of calls left to that endpoint in the current window.** Onshape describes it as a per-endpoint, per-window count, not the annual allocation.
   - Label: documented
   - Source: [Response Codes](https://onshape-public.github.io/docs/api-adv/errors/), the 429 section
-  - Relied on by: the remaining-calls capture planned in #52
+  - Relied on by: `onshapeFetch`, which hands each final (non-3xx) response to `recordOnshapeRemaining`; `endpointFamily`, which keys the stored value per endpoint
 
 - **With our API key, `GET /api/v6/users/sessioninfo` returned `x-rate-limit-remaining: 3000`.**
   - Label: observed
   - Source: observed 2026-11-09 13:55 UTC: one approved call with the team's API key (Basic auth, `access:secret`), HTTP 200
-  - Relied on by: the `/onshape` page wording and `/api/onshape/usage` `remaining` (#52)
+  - Relied on by: the `/onshape` page wording and `/api/onshape/usage` `remaining`
 
 - **The header is not the annual allocation remaining.** On the same day the portal showed the company with 655 requests left (9,345 / 10,000) and the personal account with 2,500 left. The header's 3000 matches neither.
   - Label: observed
   - Source: observed 2026-11-09, the `sessioninfo` call above compared with the developer portal's "Annual API limits" overview
-  - Relied on by: the `/onshape` page wording and `/api/onshape/usage` `remaining` (#52)
+  - Relied on by: the `/onshape` page wording and `/api/onshape/usage` `remaining`
 
 - **What the header does count is not settled.** It matches FRCDesignApp's figure of about 3,000 for one endpoint group (about 9,000 for the others, under OAuth), which points to a per-endpoint or per-window bucket, as the Response Codes page describes. Whether it goes down by one per call, whether endpoints share it, and when it resets have not been seen.
   - Label: unverified
@@ -103,12 +103,12 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 
   So:
   - The UI says "Onshape reports N calls remaining" and never presents it as annual ("left this year", "of 10,000"). The yearly number comes only from the developer portal.
-  - Store the value per usage label (`parts`, `version`, `thumbnail`, `metadata`), not as one global number, since different endpoints may report different buckets.
+  - Store the value per endpoint family (`endpointFamily`: `parts`, `documents`, `thumbnails`, `metadata`, …), not as one global number, since different endpoints may report different buckets.
 
 - **`X-Rate-Limit-Remaining` is the only rate-limit header.** Nothing names the limit or when it resets.
   - Label: unverified
   - Source: FRCDesignApp ONSHAPE.md (seen with OAuth)
-  - Relied on by: #52, which reads only this header
+  - Relied on by: `recordOnshapeRemaining`, which reads only this header
 
 ## Authentication and signing
 

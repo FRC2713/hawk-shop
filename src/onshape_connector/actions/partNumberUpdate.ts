@@ -9,7 +9,10 @@ import {
   invalidateOnshapeCache,
   recordOnshapeUsage,
 } from "~/lib/onshapeApi/cache";
-import { isOnshapeConfigured } from "~/lib/onshapeApi/auth";
+import {
+  assertOnshapeAllocation,
+  isOnshapeConfigured,
+} from "~/lib/onshapeApi/auth";
 import { createErrorResponse } from "../utils/errorHandling";
 import type { ActionResponse } from "../utils/types";
 
@@ -40,6 +43,8 @@ function upstreamFailure(
   message: string
 ): ActionResponse | null {
   if (result.error === undefined && result.response.ok) return null;
+  // Throws to the action's outer catch, which keeps the { success: false } shape.
+  assertOnshapeAllocation(result.response);
   return createErrorResponse(
     {
       error:
