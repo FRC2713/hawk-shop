@@ -57,11 +57,13 @@ better-sqlite3 is external in `astro.config.mjs`. The Node image includes produc
 
 `src/middleware.ts` gates every page, API, upload, and event stream on Hawk Suite membership. `/signin`, static assets, and GET/HEAD health checks are public. An unauthenticated Onshape iframe receives only a top-level continuation with no shop data.
 
+`POST /api/onshape/webhook` (exact path and method) is the one data route that skips Suite identity, because Onshape can't carry it. It is enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are set, checks the secret from its query string in constant time, answers empty bodies (404 for disabled or wrong secret), and does nothing but `invalidateOnshapeCacheForDocument` and stamping that document's `last_event_at`. Its configuration and callback URL live in `src/server/onshape-webhook.ts`. The gateway must route it without `authorize`; see `docs/ONSHAPE.md#webhooks`. Don't widen the exemption or return shop data from it.
+
 `src/server/suite-identity.ts` follows Hawk Eye's identity-header contract. Enable `HAWK_SUITE_TRUST_PROXY=true` only on an isolated gateway network; configure `HAWK_SUITE_TEAM_ID` and `HAWK_SUITE_ISSUER`. Caddy strips browser identity headers before authorization and injects the approved workspace, Slack user, matching subject, and exact `suite/member` role. Header trust grants nothing by default. Never expose a trusted app port directly.
 
 `requireAuth()` reads the verified request identity; Onshape credentials never grant Shop access. Same-origin checks protect every mutation, including multipart uploads. Use `APP_URL` for the browser-facing origin when TLS terminates at the gateway.
 
-Onshape access uses one server-side API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE_SECRET_KEY`, optional `ONSHAPE_BASE_URL`). There is no per-user Onshape connection: every CAD read and write runs as the key's Onshape account. `onshapeFetch` in `src/lib/onshapeApi/auth.ts` is the only transport; it HMAC-signs each request, refuses non-Onshape hosts, and re-signs bounded redirects. Route every Onshape call through it. A missing key pair returns 409, independently of Suite's 401. `/onshape` shows whether the key is configured. `/auth/logout` sends the browser to Suite sign-out. Redirect destinations pass through `safeRedirectPath`.
+Onshape access uses one server-side API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE_SECRET_KEY`, optional `ONSHAPE_BASE_URL`). There is no per-user Onshape connection: every CAD read and write runs as the key's Onshape account. `onshapeFetch` in `src/lib/onshapeApi/auth.ts` is the only transport; it HMAC-signs each request, refuses non-Onshape hosts, and re-signs bounded redirects (signing and redirect rules: docs/ONSHAPE.md#authentication-and-signing). Route every Onshape call through it. A missing key pair returns 409, independently of Suite's 401. `/onshape` shows whether the key is configured. `/auth/logout` sends the browser to Suite sign-out. Redirect destinations pass through `safeRedirectPath`.
 
 `src/server/request-context.ts` uses AsyncLocalStorage so server helpers such as `requireAuth()` and `getSessionActor()` read the current request's verified identity.
 
@@ -80,7 +82,7 @@ Preserve the API's existing JSON payloads so equipment, manufacturing, and conne
 
 ### Thumbnail caching
 
-`/api/onshape/thumbnail?cardId=…` resolves a card's `image_url`, checks `part_thumbnails` by `source_url`, and on a miss fetches from Onshape, writes it under `thumbnails/<hash>.png`, and redirects to `/api/files/…`. The path is derived from a hash of the source URL, so **the same part image is shared across cards** — which is why `deleteCardImage` only removes `card-images/` entries and leaves `thumbnails/` alone.
+`/api/onshape/thumbnail?cardId=…` resolves a card's `image_url`, checks `part_thumbnails`, and on a miss fetches from Onshape, writes it under `thumbnails/<hash>.png`, and redirects to `/api/files/…`. When the card (or the connector's `?url=` request) names the part and its microversion, the row is keyed by `partRowKey` (document, element, part, microversion), so an unchanged part never costs a second call and an edited one gets a new image. A `?url=` request's ids are used only when the thumbnail URL's path names that document, element and part; otherwise it falls back to `source_url`. Cards save `onshape_microversion_id` at release; a later workspace parts read moves them to the part's new microversion (`syncWorkspaceCardMicroversions`). Without a microversion the lookup falls back to `source_url`, and a legacy row (null `microversion_id`) is adopted once for the first microversion that asks. The path is derived from a hash of the key, so **the same part image is shared across cards** — which is why `deleteCardImage` only removes `card-images/` entries and leaves `thumbnails/` alone.
 
 Stored `image_url` values may be legacy proxy URLs (`/api/onshape/thumbnail?url=…`) that get unwrapped.
 
@@ -88,20 +90,24 @@ The route also serves `?url=<absolute Onshape URL>` for the connector, which has
 
 ### Onshape API calls are a hard annual budget
 
-Onshape bills an **annual, company-wide** API allocation — a team on EDU Enterprise gets 10,000 calls for the entire year, flat, and adding users does not raise it. Overrunning it returns **402**, not 429. This is not a rate limit you wait out; every avoided call is permanent savings, which inverts the usual caching trade-off: staleness is cheap, a miss is not.
+Onshape gives the team a fixed **yearly** API allocation (10,000 requests company-wide), and running out returns **402** until it resets, not a 429 you wait out. Every avoided call is permanent savings, which inverts the usual caching trade-off: staleness is cheap, a miss is not. The Onshape facts behind this, each labeled documented, observed or unverified, are in [docs/ONSHAPE.md](docs/ONSHAPE.md); read it before changing any Onshape call, and update it in the same PR as code that relies on new Onshape behavior.
 
 `src/lib/onshapeApi/cache.ts` is the chokepoint. Two layers:
 
 - **SQLite** (`onshape_api_cache`), not memory, so a `docker compose up` does not re-buy every response the team already paid for.
 - **In-process single-flight**, so ten browsers opening the board at once produce one upstream call. The SQLite layer cannot do this alone — none of the ten has written a row yet.
 
-`ttlMs: null` means never expires, and that is the right answer whenever the upstream is frozen: parts at `wvm=v` or `wvm=m` are immutable, so `partsTtlMs()` returns null for them and `ONSHAPE_CACHE_TTL_SECONDS` (default 300) only governs `wvm=w`. A throwing fetcher is never cached and never counted — Onshape excludes 4xx/5xx from the allocation, and caching an auth failure would poison the entry for the whole TTL.
+`ttlMs: null` means never expires, and that is the right answer whenever the upstream is frozen: parts at `wvm=v` or `wvm=m` are immutable, so `partsTtlMs()` returns null for them and `ONSHAPE_CACHE_TTL_SECONDS` (default 300) only governs `wvm=w`. A throwing fetcher is never cached and never counted: Onshape doesn't charge 4xx/5xx, and caching an auth failure would poison the entry for the whole TTL.
 
 **The Onshape key is not an auth boundary.** The server holds it for every caller, and a cache hit needs no upstream call at all. `api/onshape/parts`, `api/onshape/version`, `api/onshape/thumbnail` and `api/onshape/usage` all call `requireAuth()` explicitly; a new cached route that skips it answers any caller on the LAN.
 
-`recordOnshapeUsage` tallies `calls` (left the building) vs `hits` (absorbed here) per day in `onshape_api_usage`, readable at `/api/onshape/usage`. Onshape's own page reports one yearly number with no endpoint breakdown, which is not enough to find out what is spending the allocation.
+`recordOnshapeUsage` tallies `calls` (left the building) vs `hits` (absorbed here) per day in `onshape_api_usage`, readable at `/api/onshape/usage`. Onshape's developer portal shows only a yearly total, which is not enough to find out what is spending the allocation. The `x-rate-limit-remaining` response header is **not** the yearly remaining count (see docs/ONSHAPE.md#remaining-calls-header), so never label it as one.
 
-Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release.
+`onshapeFetch` also saves the final response's `x-rate-limit-remaining` header in `onshape_api_remaining`, one row per `endpointFamily`; it is not the yearly allocation. `/onshape` warns below `ONSHAPE_REMAINING_WARN_AT` (default 1000) and shows a 402 as "allocation used up". Callers turning a non-OK Onshape response into an error call `assertOnshapeAllocation` first, so a 402 reads the same on every path.
+
+Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release and webhook management.
+
+`src/lib/onshapeApi/webhooks.ts` keeps one Onshape webhook per document whose workspace is read (`onshape_webhooks` table). A workspace parts read calls `ensureOnshapeWebhook` without awaiting it, and `src/server/startup.ts` runs `recheckOnshapeWebhooks` after boot and then daily to re-register webhooks Onshape dropped. These calls can't be cached. They go through `onshapeFetch`, are tallied as `webhook-register`, `webhook-list` and `webhook-delete`, and never run while webhooks are disabled. Registration must never block or fail a parts read.
 
 ### Routing layout
 

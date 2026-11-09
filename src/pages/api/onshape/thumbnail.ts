@@ -4,11 +4,8 @@ import { requireAuth } from "~/lib/requireAuth";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { kanbanCards, partThumbnails } from "~/server/db/schema";
-import {
-  partCacheKey,
-  recordOnshapeUsage,
-  type OnshapePartMicroversion,
-} from "~/lib/onshapeApi/cache";
+import { recordOnshapeUsage } from "~/lib/onshapeApi/cache";
+import type { OnshapePartMicroversion } from "~/lib/api/onshape";
 import {
   publicUrlForStoragePath,
   saveFile,
@@ -57,8 +54,45 @@ function partFrom(fields: {
   return { documentId, elementId, partId, microversionId };
 }
 
-/** The `part_thumbnails` primary key for a microversion-keyed row. */
-function partRowKey(part: OnshapePartMicroversion) {
+/**
+ * Does this Onshape thumbnail URL show this part? Its path names the document,
+ * element and part (`/thumbnails/d/<doc>/w/<ws>/e/<element>/p/<part>`), so a
+ * `?url=` request can only key its image under the part the URL is for.
+ */
+function urlShowsPart(
+  imageUrl: string,
+  part: OnshapePartMicroversion
+): boolean {
+  let segments: string[];
+  try {
+    segments = new URL(imageUrl).pathname.split("/").map(decodeURIComponent);
+  } catch {
+    return false;
+  }
+  const after = (marker: string) => {
+    const index = segments.indexOf(marker);
+    return index === -1 ? undefined : segments[index + 1];
+  };
+  return (
+    after("d") === part.documentId &&
+    after("e") === part.elementId &&
+    after("p") === part.partId
+  );
+}
+
+type PartThumbnailKey = {
+  document_id: string;
+  instance_type: string;
+  instance_id: string;
+  element_id: string;
+  part_id: string;
+};
+
+/**
+ * The `part_thumbnails` primary key for a microversion-keyed row. This is the
+ * one definition of a part thumbnail's key; the stored file's name hashes it.
+ */
+function partRowKey(part: OnshapePartMicroversion): PartThumbnailKey {
   return {
     document_id: part.documentId,
     instance_type: "m",
@@ -66,6 +100,33 @@ function partRowKey(part: OnshapePartMicroversion) {
     element_id: part.elementId,
     part_id: part.partId,
   };
+}
+
+/** Where a fetched image is stored: one file per row key or source URL. */
+function thumbnailStoragePath(key: PartThumbnailKey | null, imageUrl: string) {
+  const name = key
+    ? // Same string the files were first named by, so existing paths hold.
+      [
+        "thumbnail",
+        key.document_id,
+        key.element_id,
+        key.part_id,
+        key.instance_id,
+      ].join("::")
+    : imageUrl;
+  const hash = createHash("sha256").update(name).digest("hex").slice(0, 32);
+  return { hash, path: `thumbnails/${hash}.png` };
+}
+
+/** Matches the one `part_thumbnails` row with this primary key. */
+function rowIs(key: PartThumbnailKey) {
+  return and(
+    eq(partThumbnails.document_id, key.document_id),
+    eq(partThumbnails.instance_type, key.instance_type),
+    eq(partThumbnails.instance_id, key.instance_id),
+    eq(partThumbnails.element_id, key.element_id),
+    eq(partThumbnails.part_id, key.part_id)
+  );
 }
 
 /**
@@ -100,15 +161,7 @@ function findStoredThumbnail(
     const current = tx
       .select({ storage_path: partThumbnails.storage_path })
       .from(partThumbnails)
-      .where(
-        and(
-          eq(partThumbnails.document_id, key.document_id),
-          eq(partThumbnails.instance_type, key.instance_type),
-          eq(partThumbnails.instance_id, key.instance_id),
-          eq(partThumbnails.element_id, key.element_id),
-          eq(partThumbnails.part_id, key.part_id)
-        )
-      )
+      .where(rowIs(key))
       .get();
     if (current) return current.storage_path;
 
@@ -128,15 +181,7 @@ function findStoredThumbnail(
     // Claim it, so the part's next microversion can't adopt the same old image.
     tx.update(partThumbnails)
       .set({ microversion_id: part.microversionId })
-      .where(
-        and(
-          eq(partThumbnails.document_id, legacy.document_id),
-          eq(partThumbnails.instance_type, legacy.instance_type),
-          eq(partThumbnails.instance_id, legacy.instance_id),
-          eq(partThumbnails.element_id, legacy.element_id),
-          eq(partThumbnails.part_id, legacy.part_id)
-        )
-      )
+      .where(rowIs(legacy))
       .run();
     tx.insert(partThumbnails)
       .values({
@@ -222,6 +267,9 @@ export const GET: APIRoute = async ({ request }) => {
       partId: params.get("partId"),
       microversionId: params.get("microversionId"),
     });
+    // The ids come from the caller. Key by them only when the URL is that
+    // part's own thumbnail; otherwise one part could overwrite another's row.
+    if (part && !urlShowsPart(resolveImageUrl(rawImageUrl), part)) part = null;
   }
 
   // Normalize: if the stored value is our proxy URL, use the real Onshape
@@ -289,13 +337,13 @@ export const GET: APIRoute = async ({ request }) => {
   const buffer = Buffer.from(await response.arrayBuffer());
   const contentType = response.headers.get("Content-Type") || "image/png";
 
-  // Derive the path from the cache key so the same image is not duplicated
+  // Derive the path from the row key so the same image is not duplicated
   // per card.
-  const keyHash = createHash("sha256")
-    .update(part ? partCacheKey("thumbnail", part) : imageUrl)
-    .digest("hex")
-    .slice(0, 32);
-  const storagePath = `thumbnails/${keyHash}.png`;
+  const partKey = part ? partRowKey(part) : null;
+  const { hash: keyHash, path: storagePath } = thumbnailStoragePath(
+    partKey,
+    imageUrl
+  );
 
   const storedUrl = await saveFile(storagePath, buffer);
 
@@ -311,15 +359,13 @@ export const GET: APIRoute = async ({ request }) => {
 
   // Without a microversion the row gets a synthetic key (the table requires
   // all five key columns) and is found by source_url.
-  const rowKey = part
-    ? partRowKey(part)
-    : {
-        document_id: `cache_${keyHash}`,
-        instance_type: "c",
-        instance_id: "0",
-        element_id: "0",
-        part_id: "0",
-      };
+  const rowKey = partKey ?? {
+    document_id: `cache_${keyHash}`,
+    instance_type: "c",
+    instance_id: "0",
+    element_id: "0",
+    part_id: "0",
+  };
   try {
     await db
       .insert(partThumbnails)

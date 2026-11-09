@@ -242,6 +242,23 @@ test("a check deletes strays pointing here and replaces webhooks with an old sec
   assert.equal(replacement?.url, CALLBACK);
 });
 
+test("a check leaves alone a webhook whose stored URL differs only in form", async (t) => {
+  const { state } = fakeOnshape(t);
+  await readParts("normalised");
+  const [hook] = state.hooks.filter((entry) =>
+    entry.filter.includes("'normalised'")
+  );
+  // Same callback as Onshape might store it: host case, default port, trailing slash.
+  hook.url = `https://SHOP.example.org:443/api/onshape/webhook/?secret=${SECRET}`;
+  const registeredBefore = state.registered.length;
+  const stop = startOnshapeWebhookChecks(() => () => {});
+  await onshapeWebhookWork();
+  stop();
+  assert.equal(state.listed, 1);
+  assert.equal(state.registered.length, registeredBefore);
+  assert.deepEqual(state.deleted, []);
+});
+
 test("registration, listing and deletion are tallied under their own labels", async (t) => {
   const before = await readUsage();
   const { state } = fakeOnshape(t);
