@@ -60,6 +60,8 @@ npm run start
 
 The checks cover Astro and TypeScript, formatting, the production build, Suite access control, manufacturing and equipment API behavior, uploads, live updates, and browser interactions. Tests do not call live Onshape endpoints.
 
+`npm run check:migrations` runs the migration guard and its failure self-tests alone. It applies the real Drizzle journal to disposable empty and seeded databases, checking row counts, retained column values by primary key, temporary tables, foreign keys, and integrity. New tables need rows in `tests/migration-fixtures.ts` using their initial schema. Intentional row or value changes need a migration tag and reason in `scripts/migration-allowlist.ts`; explicit table drops permit only the named table to disappear. The guard also runs as named tests in `npm test`.
+
 The file map and conventions are in [AGENTS.md](AGENTS.md). Before changing UI, read [docs/BRANDING.md](docs/BRANDING.md). Run `npm run generate:onshape-client` only when intentionally refreshing the generated client from Onshape's live specification.
 
 ## Data and upgrades
