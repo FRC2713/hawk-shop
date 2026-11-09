@@ -1,8 +1,10 @@
-import { GripVertical } from "lucide-react";
+import { AlertTriangle, GripVertical } from "lucide-react";
+import { Badge } from "~/components/ui/badge";
 import { Checkbox } from "~/components/ui/checkbox";
 
 interface KanbanCardHeaderProps {
   title: string;
+  warningCount?: number;
   attributes: React.HTMLAttributes<HTMLDivElement>;
   listeners?: Record<string, Function>;
   isSelected?: boolean;
@@ -11,6 +13,7 @@ interface KanbanCardHeaderProps {
 
 export function KanbanCardHeader({
   title,
+  warningCount = 0,
   attributes,
   listeners,
   isSelected = false,
@@ -62,6 +65,15 @@ export function KanbanCardHeader({
       <h3 className="line-clamp-2 flex-1 text-xs leading-tight font-semibold hover:underline sm:text-sm">
         {title}
       </h3>
+      {warningCount > 0 && (
+        <Badge
+          variant="outline"
+          className="border-border bg-muted text-foreground shrink-0 gap-1 text-xs"
+        >
+          <AlertTriangle className="size-3" aria-hidden="true" />
+          Warnings ({warningCount})
+        </Badge>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   text,
 } from "drizzle-orm/sqlite-core";
 
+import type { ReleaseIssue } from "~/onshape_connector/utils/partEligibility";
 import type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
 
 /**
@@ -63,6 +64,9 @@ export const kanbanCards = sqliteTable(
     machine: text("machine"),
     due_date: text("due_date"),
     content: text("content"),
+    release_issues: text("release_issues", { mode: "json" }).$type<
+      ReleaseIssue[]
+    >(),
     created_by: text("created_by"),
     quantity_per_robot: integer("quantity_per_robot"),
     quantity_to_make: integer("quantity_to_make"),

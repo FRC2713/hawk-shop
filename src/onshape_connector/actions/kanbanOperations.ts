@@ -4,7 +4,10 @@ import { createCard, updateCard, getCards } from "~/server/kanbanApi/cards";
 import { logger } from "~/lib/logger";
 import type { SessionActor } from "~/lib/sessionActor";
 import type { ActionResponse } from "../utils/types";
-import { checkPartForRelease } from "../utils/partEligibility";
+import {
+  checkPartForRelease,
+  type ReleaseIssue,
+} from "../utils/partEligibility";
 import { fetchPartsFromOnshape } from "../utils/partsQuery.server";
 import { getCardVersionId } from "../utils/versionUtils";
 import { extractVersionId } from "../utils/versionUtils";
@@ -153,6 +156,7 @@ export async function handleAddKanbanCard(
 
     // Local manufacturing cards have no CAD scope. A partial CAD scope must
     // never bypass the server's release checks.
+    let releaseIssues: ReleaseIssue[] = [];
     const hasCadScope = [
       data.documentId,
       data.instanceId,
@@ -201,6 +205,7 @@ export async function handleAddKanbanCard(
           success: false,
           error: errors.map((issue) => issue.message).join(" "),
         };
+      releaseIssues = issues.filter((issue) => issue.severity === "warning");
       // The cached part is authoritative, including its current part number.
       data.partNumber = part.partNumber!;
       data.microversionId = part.microversionId;
@@ -232,6 +237,7 @@ export async function handleAddKanbanCard(
     const card = await createCard(
       {
         title: data.partNumber,
+        releaseIssues,
         imageUrl,
         machine: "TBD",
         processIds: data.processIds,

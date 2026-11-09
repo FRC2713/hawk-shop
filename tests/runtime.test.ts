@@ -670,18 +670,126 @@ test(
 );
 
 test(
+  "release warning badges, full details and Has warnings combine with board search and processes",
+  { timeout: 60000 },
+  async () => {
+    const cards: { id: string; title: string }[] = [];
+    for (const [title, process] of [
+      ["Warning review bracket", "process-cnc-milling"],
+      ["Warning review plate", "process-3d-printing"],
+      ["Warning review clean", "process-cnc-milling"],
+    ]) {
+      cards.push(
+        (
+          await json("/api/kanban/cards", "POST", {
+            id: `warning-review-${cards.length}`,
+            title,
+            processIds: [process],
+          })
+        ).card
+      );
+    }
+    const warning = {
+      code: "missing-description",
+      severity: "warning",
+      message: "This part has no description.",
+      fix: "Add a description in Onshape so the shop knows what it is.",
+    };
+    // Seed historical release snapshots; persistence is covered at the action/read seam.
+    const database = new Database(join(data, "hawk-shop.db"));
+    try {
+      for (const card of cards.slice(0, 2))
+        database
+          .prepare("UPDATE kanban_cards SET release_issues = ? WHERE id = ?")
+          .run(JSON.stringify([warning]), card.id);
+    } finally {
+      database.close();
+    }
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({ extraHTTPHeaders: identity });
+      await page.goto(origin + "/kanban?q=warning+review");
+      const heading = (index: number) =>
+        page.getByRole("heading", { name: cards[index].title, exact: true });
+      await expect(heading(0)).toBeVisible();
+      await expect(heading(2)).toBeVisible();
+      await expect(
+        heading(0).locator("..").getByText("Warnings (1)", { exact: true })
+      ).toBeVisible();
+      await expect(
+        heading(2)
+          .locator("..")
+          .getByText(/Warnings/)
+      ).toHaveCount(0);
+      await heading(0).click();
+      const details = page.getByRole("dialog");
+      await expect(
+        details.getByRole("heading", { name: "Release warnings" })
+      ).toBeVisible();
+      await expect(
+        details.getByText(warning.message, { exact: true })
+      ).toBeVisible();
+      await expect(
+        details.getByText(warning.fix, { exact: true })
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      await page
+        .getByRole("button", { name: "Has warnings", exact: true })
+        .click();
+      await expect(heading(0)).toBeVisible();
+      await expect(heading(1)).toBeVisible();
+      await expect(heading(2)).toHaveCount(0);
+      await page.getByRole("button", { name: "Filter by Process" }).click();
+      await page
+        .getByRole("menuitemcheckbox", { name: "CNC Milling", exact: true })
+        .click();
+      await page.keyboard.press("Escape");
+      await expect(heading(0)).toBeVisible();
+      await expect(heading(1)).toHaveCount(0);
+      await page.getByRole("textbox", { name: "Search board" }).fill("plate");
+      await expect(heading(0)).toHaveCount(0);
+      await expect(heading(1)).toHaveCount(0);
+      await page.getByRole("button", { name: "Processes (1)" }).click();
+      await page
+        .getByRole("menuitem", { name: "Show all", exact: true })
+        .click();
+      await expect(heading(1)).toBeVisible();
+      await page
+        .getByRole("textbox", { name: "Search board" })
+        .fill("warning review");
+      await page
+        .getByRole("button", { name: "Has warnings", exact: true })
+        .click();
+      await expect(heading(2)).toBeVisible();
+      await heading(2).click();
+      await expect(
+        page
+          .getByRole("dialog")
+          .getByRole("heading", { name: "Release warnings" })
+      ).toHaveCount(0);
+    } finally {
+      await browser.close();
+      for (const card of cards)
+        await call(`/api/kanban/cards/${card.id}`, { method: "DELETE" });
+    }
+  }
+);
+
+test(
   "Done search restores q and finds finished cards with shared fields and shortcuts",
   { timeout: 30000 },
   async () => {
     const config = await (await call("/api/kanban/config")).json();
     const first = (
       await json("/api/kanban/cards", "POST", {
+        id: "done-search-bracket",
         title: "2713-24-164 Finished bracket 0.5in",
         processIds: ["process-cnc-milling"],
       })
     ).card;
     const second = (
       await json("/api/kanban/cards", "POST", {
+        id: "done-search-plate",
         title: "2713-24-165 Finished plate",
       })
     ).card;

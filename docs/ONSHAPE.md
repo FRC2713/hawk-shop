@@ -412,5 +412,10 @@ only Suite identity. Partial CAD coordinates are rejected.
 
 Placeholder material names default to `Unknown`, `Default` and `Generic`,
 matched after trimming and ignoring case. Callers can replace or disable that
-list with `ReleaseCheckContext.placeholderMaterials`. Warnings are displayed
-before release but are not persisted by these checks.
+list with `ReleaseCheckContext.placeholderMaterials`. The add-card action saves
+only warning-level issues in the card's nullable `release_issues` JSON column.
+Clean releases and local manufacturing cards store null. These are snapshots
+of the server checks at release time: later workspace reads and card edits
+never recompute or replace them. The board shows a warning count, full messages
+and fixes in card details, and a "Has warnings" filter that combines with search
+and process filters.
