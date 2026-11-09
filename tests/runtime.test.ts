@@ -40,7 +40,7 @@ before(async () => {
         return Response.json({ok:true,team_id:"TTEAM",bot_id:"BFIXTURE"});
       if (url === "https://slack.com/api/chat.postMessage") {
         const body = JSON.parse(init.body);
-        appendFileSync(process.env.DATA_DIR + "/slack-posts.jsonl", JSON.stringify(body) + "\n");
+        appendFileSync(process.env.DATA_DIR + "/slack-posts.jsonl", JSON.stringify(body) + "\\n");
         return Response.json({ok:true,channel:body.channel,ts:"123"});
       }
       throw Error("Unexpected external request");
@@ -673,3 +673,60 @@ test("header report dialog preserves failed text and confirms an accepted report
     await browser.close();
   }
 });
+
+test(
+  "card details display release and live status history in desktop light and mobile dark themes",
+  { timeout: 60000 },
+  async () => {
+    await json("/api/kanban/config", "PUT", {
+      columns: [
+        { id: "backlog", title: "Backlog", position: 0 },
+        { id: "in-progress", title: "In Progress", position: 1 },
+        { id: "review", title: "Review", position: 2 },
+        { id: "done", title: "Done", position: 3 },
+      ],
+    });
+    await json("/api/kanban/cards", "POST", {
+      id: "history-browser",
+      title: "History fixture",
+    });
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const context = await browser.newContext({ extraHTTPHeaders: identity });
+      const page = await context.newPage();
+      for (const [width, scheme] of [
+        [1280, "light"],
+        [390, "dark"],
+      ] as const) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.goto(origin + "/kanban?cardId=history-browser");
+        const history = page.getByRole("region", { name: "Status history" });
+        await expect(history).toBeVisible();
+        await expect(
+          history.getByText("Released into Backlog", { exact: true })
+        ).toBeVisible();
+        await expect(
+          history.getByText("Shop Member", { exact: true }).first()
+        ).toBeVisible();
+        if (width === 1280) {
+          await json("/api/kanban/cards/history-browser", "PATCH", {
+            column_id: "in-progress",
+          });
+        }
+        await expect(
+          history.getByText("Backlog → In Progress", { exact: true })
+        ).toBeVisible();
+        await expect(history.locator("time")).toHaveCount(2);
+        assert.ok(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth
+          )
+        );
+      }
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+  }
+);
