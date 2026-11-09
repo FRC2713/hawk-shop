@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { summarizeOnshapeUsage } from "~/lib/onshapeApi/cache";
 import { readOnshapeRemaining } from "~/lib/onshapeApi/remaining";
+import { onshapeWebhookStatus } from "~/lib/onshapeApi/webhooks";
 
 /**
  * What the app has actually spent against the Onshape allocation.
@@ -28,6 +29,7 @@ export const GET: APIRoute = async () => {
       ...summarizeOnshapeUsage(),
       remaining: latest ?? null,
       remainingByLabel,
+      webhooks: onshapeWebhookStatus(),
     });
   } catch (error) {
     console.error("[ONSHAPE USAGE] read failed:", error);

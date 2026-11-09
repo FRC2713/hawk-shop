@@ -57,7 +57,7 @@ better-sqlite3 is external in `astro.config.mjs`. The Node image includes produc
 
 `src/middleware.ts` gates every page, API, upload, and event stream on Hawk Suite membership. `/signin`, static assets, and GET/HEAD health checks are public. An unauthenticated Onshape iframe receives only a top-level continuation with no shop data.
 
-`POST /api/onshape/webhook` (exact path and method) is the one data route that skips Suite identity, because Onshape can't carry it. It is enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are set, checks the secret from its query string in constant time, answers empty bodies (404 for disabled or wrong secret), and does nothing but `invalidateOnshapeCacheForDocument`. Its configuration and callback URL live in `src/server/onshape-webhook.ts`. The gateway must route it without `authorize`; see `docs/ONSHAPE.md#webhooks`. Don't widen the exemption or return shop data from it.
+`POST /api/onshape/webhook` (exact path and method) is the one data route that skips Suite identity, because Onshape can't carry it. It is enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are set, checks the secret from its query string in constant time, answers empty bodies (404 for disabled or wrong secret), and does nothing but `invalidateOnshapeCacheForDocument` and stamping that document's `last_event_at`. Its configuration and callback URL live in `src/server/onshape-webhook.ts`. The gateway must route it without `authorize`; see `docs/ONSHAPE.md#webhooks`. Don't widen the exemption or return shop data from it.
 
 `src/server/suite-identity.ts` follows Hawk Eye's identity-header contract. Enable `HAWK_SUITE_TRUST_PROXY=true` only on an isolated gateway network; configure `HAWK_SUITE_TEAM_ID` and `HAWK_SUITE_ISSUER`. Caddy strips browser identity headers before authorization and injects the approved workspace, Slack user, matching subject, and exact `suite/member` role. Header trust grants nothing by default. Never expose a trusted app port directly.
 
@@ -105,7 +105,9 @@ Onshape gives the team a fixed **yearly** API allocation (10,000 requests compan
 
 `onshapeFetch` also saves the final response's `x-rate-limit-remaining` header in `onshape_api_remaining`, one row per `endpointFamily`; it is not the yearly allocation. `/onshape` warns below `ONSHAPE_REMAINING_WARN_AT` (default 1000) and shows a 402 as "allocation used up". Callers turning a non-OK Onshape response into an error call `assertOnshapeAllocation` first, so a 402 reads the same on every path.
 
-Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release.
+Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release and webhook management.
+
+`src/lib/onshapeApi/webhooks.ts` keeps one Onshape webhook per document whose workspace is read (`onshape_webhooks` table). A workspace parts read calls `ensureOnshapeWebhook` without awaiting it, and `src/server/startup.ts` runs `recheckOnshapeWebhooks` after boot and then daily to re-register webhooks Onshape dropped. These calls can't be cached. They go through `onshapeFetch`, are tallied as `webhook-register`, `webhook-list` and `webhook-delete`, and never run while webhooks are disabled. Registration must never block or fail a parts read.
 
 ### Routing layout
 

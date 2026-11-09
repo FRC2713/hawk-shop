@@ -244,7 +244,7 @@ Not Onshape behavior, but often mistaken for it: card `image_url` values written
 
 ## Webhooks
 
-Hawk Shop can receive webhooks but doesn't register any yet (#58). `POST /api/onshape/webhook` clears a document's cached workspace (`wvm=w`) reads when Onshape reports a change, so the next connector read sees the edit instead of waiting out `ONSHAPE_CACHE_TTL_SECONDS`.
+Hawk Shop registers one webhook per document whose workspace it reads, and keeps it registered. `POST /api/onshape/webhook` clears a document's cached workspace (`wvm=w`) reads when Onshape reports a change, so the next connector read sees the edit instead of waiting out `ONSHAPE_CACHE_TTL_SECONDS`.
 
 How the receiver behaves (Hawk Shop's own contract, covered by `tests/onshape-webhook.test.ts` and `tests/runtime.test.ts`):
 
@@ -253,6 +253,21 @@ How the receiver behaves (Hawk Shop's own contract, covered by `tests/onshape-we
 - With the right secret every delivery gets an empty 200, even one it ignores, because a non-200 cancels a new registration. `onshape.model.lifecycle.changed`, `onshape.model.lifecycle.createversion` and `onshape.model.lifecycle.metadata` run `invalidateOnshapeCacheForDocument(documentId)` inline. It deletes that document's workspace rows and drops their in-flight reads. Version and microversion entries and other documents stay cached. Other events, including `webhook.register`, change nothing.
 - No debounce. Invalidation is idempotent, and single-flight collapses the reads that follow a burst into one upstream call.
 - The middleware exempts exactly `POST /api/onshape/webhook` from Suite identity and the same-origin check. A trailing slash, subpath, neighbouring path or other method still needs identity. The response carries no shop data.
+- Any authenticated delivery that names a `documentId` sets that document's `last_event_at`, pings included.
+
+How registration behaves (`src/lib/onshapeApi/webhooks.ts`, covered by `tests/onshape-webhook-registration.test.ts`):
+
+- After a successful **workspace** parts read, `ensureOnshapeWebhook(documentId)` registers a webhook if the `onshape_webhooks` table has no row for that document. It isn't awaited, so it never slows or fails the read. Later reads cost one SQLite lookup. A failed registration writes no row, so the next read tries again. Version and microversion reads register nothing: their cache entries never go stale.
+- The registration body is `{ events: ONSHAPE_DOCUMENT_CHANGE_EVENTS, filter: "{$DocumentId} = '<id>'", options: { collapseEvents: false }, url: <callback URL>, isTransient: false }`.
+- `startOnshapeWebhookChecks` runs `recheckOnshapeWebhooks` on boot (30 seconds after `src/server/startup.ts` loads, so the listener can answer Onshape's registration ping) and then every 24 hours. A check lists the key's webhooks (`GET /api/v6/webhooks`, following `next`) and then:
+  - registers again any tracked webhook that is missing, and replaces one whose URL carries an old secret or base URL (delete, then register);
+  - deletes listed webhooks that deliver to this app's webhook path but aren't tracked, such as duplicates left after a lost database;
+  - leaves webhooks that deliver anywhere else alone;
+  - sets `last_checked_at` on every row, only after the whole check succeeded.
+- With no tracked documents, a check makes no calls.
+- Calls are tallied as `webhook-register`, `webhook-list` and `webhook-delete` in `/api/onshape/usage`. They're never cached. Failures aren't counted, like every other call.
+- With webhooks disabled, nothing registers, lists or deletes.
+- `/onshape` and the `webhooks` field of `/api/onshape/usage` show `disabled`, or the registered document count, the latest `last_event_at` and the latest `last_checked_at`.
 
 **Gateway route.** The Suite gateway authorizes every Shop request, so Onshape's deliveries never reach the app until the gateway forwards this one path without `authorize`. In the Shop site block of the Suite Caddyfile (see `deploy/hawk-suite-auth.patch`), add this before the catch-all `handle`, after `import clear-suite-identity`:
 
@@ -271,7 +286,27 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
 - **Webhooks are registered with `POST /api/v6/webhooks`.** Onshape immediately sends a `webhook.register` notification, and if the endpoint doesn't answer 200 the registration is cancelled. HTTPS endpoints need a certificate from a recognized CA.
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/)
-  - Relied on by: the webhook route (answers 200 to every authenticated delivery); registration is #58
+  - Relied on by: the webhook route (answers 200 to every authenticated delivery); `ensureOnshapeWebhook`; the boot delay in `src/server/startup.ts`
+
+- **The registration response is the webhook as JSON, with its `id`.**
+  - Label: unverified
+  - Source: the webhook info shape in Onshape's API Explorer; not seen with our key
+  - Relied on by: `ensureOnshapeWebhook` (a response without `id` counts as a failed registration)
+
+- **`GET /api/v6/webhooks` with an API key lists the key owner's webhooks as `{ items: [{ id, url, … }], next }`, and `DELETE /api/v6/webhooks/{webhookid}` removes one.**
+  - Label: unverified
+  - Source: Onshape's API Explorer (Webhook endpoints); not called with our key. The listing may need a `company` or `user` query parameter for a key on a company account.
+  - Relied on by: `recheckOnshapeWebhooks`. If the listing omits `url`, a listed webhook is treated as healthy and strays aren't detected.
+
+- **The `filter` `{$DocumentId} = '<id>'` limits a webhook to one document.**
+  - Label: documented
+  - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/) (filter examples)
+  - Relied on by: `ensureOnshapeWebhook`
+
+- **Onshape drops webhooks without notice**, even non-transient ones.
+  - Label: unverified
+  - Source: FRCDesignApp's `ensureWebhook` re-registers for this reason (seen with OAuth)
+  - Relied on by: the daily `recheckOnshapeWebhooks`
 
 - **The endpoint must be one Onshape can call.** Hawk Shop sits behind the Suite gateway, so the webhook route needs a public path that bypasses Suite sign-in.
   - Label: documented
@@ -296,7 +331,7 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
 - **Webhooks are transient by default and are deleted after a period without events** unless registered with `isTransient: false`. Onshape keeps delivering until the endpoint errors or stops responding for a long time.
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/)
-  - Relied on by: nothing yet
+  - Relied on by: `ensureOnshapeWebhook` (registers with `isTransient: false`)
 
 - **`onshape.model.lifecycle.changed` fires on workspace edits and `onshape.model.lifecycle.createversion` when a version is cut.**
   - Label: documented
@@ -306,7 +341,7 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
 - **Whether webhook deliveries or registrations count against the allocation.**
   - Label: unverified
   - Source: not stated on the Webhooks page
-  - Relied on by: nothing yet
+  - Relied on by: nothing; registration, listing and deletion are tallied as calls in case they do
 
 - **Deliveries are not signed**, so a webhook URL needs its own secret token.
   - Label: unverified

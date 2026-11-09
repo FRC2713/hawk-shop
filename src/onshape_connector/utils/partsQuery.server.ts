@@ -6,6 +6,7 @@ import {
 } from "~/lib/onshapeApi/generated-wrapper";
 import { cacheKey, partsTtlMs, withOnshapeCache } from "~/lib/onshapeApi/cache";
 import { assertOnshapeAllocation } from "~/lib/onshapeApi/auth";
+import { ensureOnshapeWebhook } from "~/lib/onshapeApi/webhooks";
 import { syncWorkspaceCardMicroversions } from "~/server/kanbanApi/cards";
 import type { PartsPageSearchParams } from "./types";
 
@@ -50,6 +51,9 @@ export async function fetchPartsFromOnshape(
       },
       parts
     );
+    // Hear about the next edit to this document instead of waiting out the
+    // TTL. Not awaited: registration must never slow or fail a parts read.
+    void ensureOnshapeWebhook(queryParams.documentId);
   }
 
   return parts;

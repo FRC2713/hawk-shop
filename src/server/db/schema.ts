@@ -220,6 +220,19 @@ export const onshapeApiRemaining = sqliteTable("onshape_api_remaining", {
 });
 
 /**
+ * One Onshape webhook per document whose workspace the app reads (see
+ * `~/lib/onshapeApi/webhooks`). `webhook_id` is Onshape's id. A re-check that
+ * finds the webhook gone registers it again and replaces the id.
+ */
+export const onshapeWebhooks = sqliteTable("onshape_webhooks", {
+  document_id: text("document_id").primaryKey(),
+  webhook_id: text("webhook_id").notNull(),
+  registered_at: text("registered_at").notNull(),
+  last_event_at: text("last_event_at"),
+  last_checked_at: text("last_checked_at"),
+});
+
+/**
  * Processes seeded on first boot so a fresh self-hosted install is usable
  * immediately. Mirrors migration 007 of the Postgres-era schema.
  */
