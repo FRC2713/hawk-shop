@@ -1,11 +1,19 @@
 import "virtual:hawk-shop/server-only";
 import { createHmac, randomBytes } from "node:crypto";
+import { recordOnshapeRemaining } from "./remaining";
 
 export class OnshapeConfigurationError extends Error {
   constructor() {
     super(
       "Onshape API access is not configured. Set ONSHAPE_ACCESS_KEY and ONSHAPE_SECRET_KEY on the server."
     );
+  }
+}
+
+/** Onshape answered 402: the API allocation behind this call is used up. */
+export class OnshapeAllocationExhaustedError extends Error {
+  constructor() {
+    super("Onshape API allocation used up.");
   }
 }
 
@@ -109,6 +117,8 @@ export async function onshapeFetch(
     const response = await globalThis.fetch(
       new Request(request, { headers, redirect: "manual" })
     );
+    // Every response, errors included, may carry Onshape's remaining count.
+    recordOnshapeRemaining(url, response);
     if (response.status < 300 || response.status >= 400) return response;
     if (![307, 308].includes(response.status))
       throw new Error("Onshape returned an unsupported redirect.");

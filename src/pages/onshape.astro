@@ -1,7 +1,27 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
 import { isOnshapeConfigured, onshapeOrigin } from "../lib/onshapeApi/auth";
+import { summarizeOnshapeUsage } from "../lib/onshapeApi/cache";
+import {
+  readOnshapeRemaining,
+  remainingWarnAt,
+} from "../lib/onshapeApi/remaining";
 const configured = isOnshapeConfigured();
+const { totals, byDay } = summarizeOnshapeUsage();
+const remaining = readOnshapeRemaining();
+const [latest] = remaining;
+const warnAt = remainingWarnAt();
+const exhausted = remaining.filter((row) => row.lastStatus === 402);
+const low = remaining.filter(
+  (row) => row.value !== null && row.value < warnAt && row.lastStatus !== 402
+);
+const count = (value: number) => value.toLocaleString("en-US");
+const when = (iso: string) =>
+  new Date(iso).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }) + " UTC";
 ---
 
 <AppLayout title="Onshape API status"
@@ -14,6 +34,86 @@ const configured = isOnshapeConfigured();
           : "Onshape API access is not configured. Ask the deployment operator to set the server API key pair."
       }
     </p>
+    {
+      exhausted.length > 0 && (
+        <p
+          role="alert"
+          class="border-destructive text-destructive rounded-md border p-3 font-semibold"
+        >
+          Onshape API allocation used up. Onshape answered 402 for{" "}
+          {exhausted.map((row) => row.label).join(", ")} on{" "}
+          {when(exhausted[0].observedAt)}.
+        </p>
+      )
+    }
+
+    <section class="space-y-2" aria-labelledby="usage-heading">
+      <h2 id="usage-heading" class="text-xl">Hawk Shop usage</h2>
+      <p class="font-mono text-lg">
+        Calls sent to Onshape: {count(totals.calls)} · Served from cache: {
+          count(totals.hits)
+        } ({totals.hitRate}%)
+      </p>
+      {
+        byDay.length > 0 && (
+          <ul class="text-muted-foreground font-mono text-sm">
+            {byDay.slice(0, 7).map((row) => (
+              <li>
+                {row.day} {row.label}: {count(row.calls)} calls,{" "}
+                {count(row.hits)} cached
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </section>
+
+    <section class="space-y-2" aria-labelledby="remaining-heading">
+      <h2 id="remaining-heading" class="text-xl">Onshape's reported count</h2>
+      {
+        latest ? (
+          <>
+            <p>
+              {latest.value === null
+                ? `Onshape has not reported a remaining count for ${latest.label}.`
+                : `Onshape reports ${count(latest.value)} calls remaining`}
+              <span class="text-muted-foreground text-sm">
+                {" "}
+                ({latest.label}, observed {when(latest.observedAt)})
+              </span>
+            </p>
+            {low.length > 0 && (
+              <p
+                role="alert"
+                class="border-destructive rounded-md border p-3 font-semibold"
+              >
+                Onshape's reported count for{" "}
+                {low.map((row) => row.label).join(", ")} is below{" "}
+                {count(warnAt)}.
+              </p>
+            )}
+            {remaining.length > 1 && (
+              <ul class="text-muted-foreground font-mono text-sm">
+                {remaining.map((row) => (
+                  <li>
+                    {row.label}:{" "}
+                    {row.value === null ? "unknown" : count(row.value)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p>Onshape has not reported a remaining count yet.</p>
+        )
+      }
+      <p class="text-muted-foreground text-sm">
+        This count comes from Onshape's response header and appears to be per
+        endpoint. It is not the yearly allocation, which only Onshape's
+        developer portal shows.
+      </p>
+    </section>
+
     <p>
       CAD access uses the server's Onshape account. Shop sign-in and
       manufacturing submitters use Hawk Suite.

@@ -197,6 +197,19 @@ export const onshapeApiUsage = sqliteTable(
 );
 
 /**
+ * Latest `x-rate-limit-remaining` value Onshape sent, one row per endpoint
+ * family (`label`, derived from the request path). Onshape appears to keep a
+ * separate bucket per endpoint, so a single global number would mislead.
+ * `remaining` is null when only a 402 without the header has been seen.
+ */
+export const onshapeApiRemaining = sqliteTable("onshape_api_remaining", {
+  label: text("label").primaryKey(),
+  remaining: integer("remaining"),
+  observed_at: text("observed_at").notNull(),
+  last_status: integer("last_status").notNull(),
+});
+
+/**
  * Processes seeded on first boot so a fresh self-hosted install is usable
  * immediately. Mirrors migration 007 of the Postgres-era schema.
  */

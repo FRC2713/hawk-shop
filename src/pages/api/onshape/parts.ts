@@ -1,4 +1,7 @@
-import { OnshapeConfigurationError } from "~/lib/onshapeApi/auth";
+import {
+  OnshapeAllocationExhaustedError,
+  OnshapeConfigurationError,
+} from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { fetchPartsFromOnshape } from "~/onshape_connector/utils/partsQuery.server";
@@ -51,6 +54,8 @@ export const GET: APIRoute = async ({ request }) => {
 
     if (error instanceof OnshapeConfigurationError)
       return Response.json({ error: error.message }, { status: 409 });
+    if (error instanceof OnshapeAllocationExhaustedError)
+      return Response.json({ error: error.message }, { status: 402 });
     if (error instanceof Error) {
       if (error.message.includes("Not authenticated")) {
         errorMessage =

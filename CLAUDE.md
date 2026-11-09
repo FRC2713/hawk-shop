@@ -101,6 +101,8 @@ Onshape bills an **annual, company-wide** API allocation — a team on EDU Enter
 
 `recordOnshapeUsage` tallies `calls` (left the building) vs `hits` (absorbed here) per day in `onshape_api_usage`, readable at `/api/onshape/usage`. Onshape's own page reports one yearly number with no endpoint breakdown, which is not enough to find out what is spending the allocation.
 
+`onshapeFetch` also saves each response's `x-rate-limit-remaining` header in `onshape_api_remaining`, one row per endpoint family; it is not the yearly allocation. `/onshape` warns below `ONSHAPE_REMAINING_WARN_AT` (default 1000) and shows a 402 as "allocation used up".
+
 Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release.
 
 ### Routing layout

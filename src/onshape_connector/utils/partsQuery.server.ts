@@ -5,6 +5,7 @@ import {
   getPartsWmve,
 } from "~/lib/onshapeApi/generated-wrapper";
 import { cacheKey, partsTtlMs, withOnshapeCache } from "~/lib/onshapeApi/cache";
+import { OnshapeAllocationExhaustedError } from "~/lib/onshapeApi/auth";
 import type { PartsPageSearchParams } from "./types";
 
 /**
@@ -55,6 +56,9 @@ async function fetchPartsUncached(
       includePropertyDefaults: true,
     },
   });
+
+  if (response.response?.status === 402)
+    throw new OnshapeAllocationExhaustedError();
 
   // Check for errors in the response
   if ((response as any).error) {
