@@ -6,7 +6,7 @@ import { test } from "node:test";
 process.env.APP_URL = "http://localhost";
 process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), "hawk-shop-slack-"));
 const { endpoint, signIn, jsonRequest } = await import("./http-fixture");
-const { Route: config } = await import("../app/routes/api/slack/config");
+const config = await import("../src/pages/api/slack/config");
 test("Slack configuration requires a verified session", async () => {
   const response = await endpoint(config, "GET")(
     new Request("http://localhost/api/slack/config"),
@@ -163,8 +163,8 @@ test("admin saves one validated channel and enabled state durably", async () => 
 });
 
 test("channel discovery follows empty pages and test messages only target the saved validated channel", async () => {
-  const { Route: channels } = await import("../app/routes/api/slack/channels");
-  const { Route: sendTest } = await import("../app/routes/api/slack/test");
+  const channels = await import("../src/pages/api/slack/channels");
+  const sendTest = await import("../src/pages/api/slack/test");
   const cookie = await signIn();
   const original = fetch;
   controlSlack();
@@ -248,14 +248,22 @@ test("configuration survives a new server process using the same data volume", a
   const { spawnSync } = await import("node:child_process");
   const script = `
   import {endpoint} from './tests/http-fixture.ts';
-  import {Route} from './app/routes/api/slack/config.ts';
+  import * as Route from './src/pages/api/slack/config.ts';
   globalThis.fetch=async(input)=>Response.json(String(input).endsWith('auth.test')?{ok:true,team_id:'TRHR',bot_id:'B123'}:{ok:true,user:{id:'UALICE',team_id:'TRHR',deleted:false,is_bot:false,is_admin:true}});
   const response=await endpoint(Route,'GET')(new Request('http://localhost/api/slack/config',{headers:{Cookie:process.env.TEST_COOKIE}}),{});
   console.log(JSON.stringify({status:response.status,body:await response.json()}));
  `;
   const child = spawnSync(
     process.execPath,
-    ["--import", "tsx", "--input-type=module", "-e", script],
+    [
+      "--import",
+      "./tests/register-server-only.mjs",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "-e",
+      script,
+    ],
     {
       cwd: process.cwd(),
       env: { ...process.env, TEST_COOKIE: cookie },
@@ -308,8 +316,8 @@ test("missing deployment token, unmatched email, forged identity, and upstream o
 });
 
 test("workspace identity and channel membership are revalidated before configuration writes and tests", async () => {
-  const { Route: channels } = await import("../app/routes/api/slack/channels");
-  const { Route: sendTest } = await import("../app/routes/api/slack/test");
+  const channels = await import("../src/pages/api/slack/channels");
+  const sendTest = await import("../src/pages/api/slack/test");
   const cookie = await signIn();
   const original = fetch;
   controlSlack();
@@ -380,7 +388,7 @@ test("workspace identity and channel membership are revalidated before configura
 });
 
 test("channel discovery stops with a safe error when Slack returns excessive pagination", async () => {
-  const { Route: channels } = await import("../app/routes/api/slack/channels");
+  const channels = await import("../src/pages/api/slack/channels");
   const cookie = await signIn();
   const original = fetch;
   controlSlack();

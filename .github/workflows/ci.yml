@@ -13,18 +13,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       # Same pin as the Dockerfile, for the same reason: node:22 ships npm 10,
       # which resolves nitro's optional peer on lru-cache differently and calls
       # the committed lockfile out of sync. The lockfile is npm 11's.
       - run: npm install -g npm@11
       - run: npm ci
-      - run: npm test
       - run: npm run typecheck
       - run: npm run format:check
-      - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
       - run: npm run test:runtime
   container:
     if: github.event_name == 'pull_request'

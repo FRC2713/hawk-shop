@@ -8,8 +8,8 @@ const dataDir = await mkdtemp(join(tmpdir(), "hawk-cache-"));
 process.env.DATA_DIR = dataDir;
 after(() => rm(dataDir, { recursive: true, force: true }));
 const { handlePartNumberUpdate } =
-  await import("../app/onshape_connector/actions/partNumberUpdate");
-const { Route: partsRoute } = await import("../app/routes/api/onshape/parts");
+  await import("../src/onshape_connector/actions/partNumberUpdate");
+const partsRoute = await import("../src/pages/api/onshape/parts");
 const scope = {
   documentId: "doc",
   instanceType: "v",
@@ -159,7 +159,7 @@ test("a pre-edit read cannot be reused, restore stale parts, or delete a replace
 });
 
 test("usage counts successful metadata HTTP traffic including malformed data and excludes HTTP rejections", async (t) => {
-  const { Route: usage } = await import("../app/routes/api/onshape/usage");
+  const usage = await import("../src/pages/api/onshape/usage");
   async function calls() {
     const request = sessionRequest("editor");
     const response = await inRequest(request, () =>
@@ -232,7 +232,7 @@ test("accepted write with invalid JSON is confirmed by metadata and evicts stale
 });
 
 async function usageCalls() {
-  const { Route } = await import("../app/routes/api/onshape/usage");
+  const Route = await import("../src/pages/api/onshape/usage");
   const request = sessionRequest("editor");
   const response = await inRequest(request, () =>
     getHandler(Route)({ request })

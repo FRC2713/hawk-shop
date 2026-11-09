@@ -1,123 +1,67 @@
-# hawk-shop
+# Hawk Shop
 
-Self-hostable manufacturing workflow tool for an FRC team. Parts are pulled from
-an Onshape CAD Part Studio, released onto a kanban board, and tracked through
-manufacturing processes on shop equipment.
+Manufacturing workflow for Red Hawk Robotics. Release parts from an Onshape Part Studio, track them on a live kanban board, assign work, manage equipment and manufacturing processes, and review completed parts.
 
-This is a self-hosted port of [rhr-mfg](https://github.com/FRC2713/rhr-mfg):
-same app, but it runs as a single Docker container backed by SQLite instead of
-depending on Supabase.
+Shop uses Astro server-rendered pages and React islands, with Hawk Eye's typography, team marks, semantic colors, and system dark mode. SQLite and uploads live together under `DATA_DIR` in one container.
 
-## Features
+## Sign-in and CAD access
 
-- 🔗 Onshape integration — browse a Part Studio, release parts onto the board
-- 📦 Part management with cached thumbnails
-- 📊 Kanban board with configurable columns and live updates
-- 🏭 Equipment and manufacturing process tracking
-- 🔒 Onshape OAuth sign-in
-- 🐳 One container, one volume, no external services
+Sign in through Hawk Suite with the team's Slack workspace account. Onshape is an optional CAD connection, available from the account menu. It is required for importing CAD parts and writing part numbers. Local cards, equipment, processes, assignments, and the board work without connecting Onshape.
 
-## What differs from rhr-mfg
+The app accepts Suite identity headers only when `HAWK_SUITE_TRUST_PROXY=true`. Run it on an isolated network behind the Suite gateway, which must strip caller identity headers before authorization. Do not publish the trusted app port to an untrusted network. The standalone Compose file binds to loopback by default.
 
-|              | rhr-mfg                  | hawk-shop                                                      |
-| ------------ | ------------------------ | -------------------------------------------------------------- |
-| Database     | Supabase Postgres        | SQLite via Drizzle ORM                                         |
-| Migrations   | hand-applied SQL         | `drizzle-kit`, applied automatically on boot                   |
-| File storage | Supabase Storage buckets | local files under `DATA_DIR/uploads`, served by `/api/files/*` |
-| Live updates | Supabase Realtime        | server-sent events from `/api/kanban/events`                   |
-| Deployment   | Vercel                   | any Docker host                                                |
+The matching gateway and Compose changes are in [deploy/hawk-suite-auth.patch](deploy/hawk-suite-auth.patch). Apply and verify them in Hawk Suite before deploying this image. This repository does not enable or deploy that patch automatically. See [docs/architecture.md](docs/architecture.md) for the authentication contract and migration details.
 
-Everything durable lives under a single directory (`DATA_DIR`) — back up that
-one path and you have backed up the whole install.
+## Setup
 
-## Quick start (Docker)
-
-You need an Onshape OAuth application: create one at
-[dev-portal.onshape.com/oauthApps](https://dev-portal.onshape.com/oauthApps).
-Its redirect URL must exactly match `ONSHAPE_REDIRECT_URI` below.
+Use Node 24 or later and npm 11.
 
 ```bash
-git clone https://github.com/FRC2713/hawk-shop.git
-cd hawk-shop
-cp .env.example .env    # fill in ONSHAPE_CLIENT_ID / ONSHAPE_CLIENT_SECRET
-docker compose up -d
+npm ci
+cp .env.example .env
+# Configure the trusted Suite gateway, workspace, issuer, and public APP_URL.
+npm run dev
 ```
 
-The app comes up on http://localhost:3000. On first boot it creates the SQLite
-database, applies migrations, and seeds the default kanban columns and the stock
-process list.
+The default address is `http://localhost:3000`. Without Suite configuration, the sign-in page explains the missing setup and data endpoints fail closed. There is no development authentication bypass. Tests use disposable databases and synthetic gateway identities.
 
-To run it on your shop network, set `ONSHAPE_REDIRECT_URI` and `APP_URL` to the
-machine's address (e.g. `http://shop-box.local:3000`) and register that same
-redirect URL with your Onshape app.
-
-### Serving over HTTPS / embedding in Onshape
-
-To use hawk-shop as an embedded Onshape application, put it behind TLS and set
-`ONSHAPE_IFRAME_EMBED=true`. That switches the auth cookies to
-`SameSite=None; Secure`, which is required for third-party iframe contexts — and
-which browsers reject over plain HTTP, hence the flag. Leave it `false` for a
-normal LAN deployment.
+For CAD access, create an [Onshape API key pair](https://dev-portal.onshape.com/keys) and set `ONSHAPE_ACCESS_KEY` and `ONSHAPE_SECRET_KEY` on the server. Every CAD request uses that Onshape account, so give it access to the robot documents only. `/onshape` shows whether the key pair is configured. An embedded Onshape entry offers a top-level continuation for Suite sign-in while preserving its Part Studio parameters.
 
 ## Configuration
 
-| Variable                | Required | Default                                | Purpose                                                    |
-| ----------------------- | -------- | -------------------------------------- | ---------------------------------------------------------- |
-| `ONSHAPE_CLIENT_ID`     | yes      | —                                      | Onshape OAuth app client id                                |
-| `ONSHAPE_CLIENT_SECRET` | yes      | —                                      | Onshape OAuth app secret                                   |
-| `ONSHAPE_REDIRECT_URI`  | yes      | —                                      | Must match the app's registered redirect URL               |
-| `ONSHAPE_SCOPE`         | no       | `OAuth2Read OAuth2ReadPII OAuth2Write` | Requested OAuth scopes                                     |
-| `APP_URL`               | no       | `http://localhost:3000`                | Public origin; decides whether cookies get `Secure`        |
-| `ONSHAPE_IFRAME_EMBED`  | no       | `false`                                | `SameSite=None` cookies for iframe embedding (needs HTTPS) |
-| `COOKIE_SECURE`         | no       | derived from `APP_URL`                 | Override when TLS terminates upstream                      |
-| `DATA_DIR`              | no       | `./data` (`/data` in Docker)           | Root for the database and uploads                          |
-| `DATABASE_PATH`         | no       | `$DATA_DIR/hawk-shop.db`               | SQLite file location                                       |
-| `UPLOADS_DIR`           | no       | `$DATA_DIR/uploads`                    | Uploaded image location                                    |
+| Variable                                    | Default                     | Purpose                                                                |
+| ------------------------------------------- | --------------------------- | ---------------------------------------------------------------------- |
+| `HAWK_SUITE_TRUST_PROXY`                    | `false`                     | Enable only behind the isolated, trusted Suite gateway                 |
+| `HAWK_SUITE_TEAM_ID`                        | unset                       | Approved Slack workspace ID, required with proxy trust                 |
+| `HAWK_SUITE_ISSUER`                         | unset                       | Suite origin ending in `/`, required with proxy trust                  |
+| `APP_URL`                                   | `http://localhost:3000`     | Browser-facing origin for cookies, login return URLs, and write checks |
+| `HOST` / `PORT`                             | `127.0.0.1` / `3000`        | Server listener; container listens on `0.0.0.0`                        |
+| `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY` | unset                       | Optional Onshape API key pair for CAD import and part-number writes    |
+| `ONSHAPE_BASE_URL`                          | `https://cad.onshape.com`   | Onshape stack origin; enterprise stacks use their own subdomain        |
+| `ONSHAPE_CACHE_TTL_SECONDS`                 | `300`                       | Editable workspace cache TTL; immutable part versions do not expire    |
+| `DATA_DIR`                                  | `./data`, `/data` in Docker | Database and uploads root                                              |
+| `DATABASE_PATH`                             | `$DATA_DIR/hawk-shop.db`    | SQLite path override                                                   |
+| `UPLOADS_DIR`                               | `$DATA_DIR/uploads`         | Upload path override                                                   |
 
-## Local development
-
-```bash
-npm install
-cp .env.example .env     # fill in the Onshape credentials
-npm run dev              # http://localhost:3000
-```
-
-The dev server creates and migrates `./data/hawk-shop.db` on first request.
+## Development and verification
 
 ```bash
-npm run typecheck        # tsc — the main static check
-npm run format           # prettier
-npm run build            # production build
-npm run db:generate      # new migration from schema changes
-npm run db:migrate       # apply migrations without starting the server
-npm run db:studio        # drizzle studio against the local database
+npm run typecheck
+npm run format:check
+npm run build
+npx playwright install chromium
+npm test
+npm run start
 ```
 
-## Backup and restore
+The checks cover Astro and TypeScript, formatting, the production build, Suite access control, manufacturing and equipment API behavior, uploads, live updates, and browser interactions. Tests do not call live Onshape endpoints.
 
-Stop the container, copy the volume, start it again:
+The file map and conventions are in [AGENTS.md](AGENTS.md). Before changing UI, read [docs/BRANDING.md](docs/BRANDING.md). Run `npm run generate:onshape-client` only when intentionally refreshing the generated client from Onshape's live specification.
 
-```bash
-docker compose stop
-docker run --rm -v hawk-shop_hawk-shop-data:/data -v "$PWD":/backup busybox \
-  tar czf /backup/hawk-shop-backup.tar.gz -C /data .
-docker compose start
-```
+## Data and upgrades
 
-SQLite runs in WAL mode, so a copy taken while the app is running may miss the
-most recent writes — stop the container first for a consistent snapshot.
+Keep the existing volume when upgrading. The schema, timestamps, card IDs, column IDs, historical users, image paths, and ordered migration history are preserved. New submitters and assignees use verified Suite identities. No database reset is needed.
 
-## Schema changes
+Edit `src/server/db/schema.ts`, run `npm run db:generate`, and commit the new generated SQL. Never edit a shipped migration. The server applies migrations and seeds missing defaults on boot. `npm run db:migrate` applies migrations without starting the app.
 
-Edit `app/lib/db/schema.ts`, then:
-
-```bash
-npm run db:generate      # writes drizzle/NNNN_*.sql
-```
-
-Commit the generated SQL. Migrations are applied automatically the next time the
-app boots, so a `docker compose up` after an upgrade is all a deployment needs.
-
-## Slack integration
-
-Optional outbound channel notifications use one workspace bot. See [Slack setup](docs/slack-setup.md) for the app manifest, server environment variables, and administrator access. The user menu links to Slack integration settings.
+Back up the whole data directory. Stop the app before copying SQLite and its WAL files, or use SQLite's online backup API. Restore the database and uploads together.

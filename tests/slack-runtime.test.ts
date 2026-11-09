@@ -19,10 +19,9 @@ test(
     process.env.SLACK_BOT_TOKEN = "fixture-token";
     process.env.SLACK_WORKSPACE_ID = "TRHR";
     const { endpoint, signIn, jsonRequest } = await import("./http-fixture");
-    const { Route: cards } =
-      await import("../app/routes/api/kanban/cards.index");
-    const { Route: card } = await import("../app/routes/api/kanban/cards.$id");
-    const { Route: config } = await import("../app/routes/api/slack/config");
+    const cards = await import("../src/pages/api/kanban/cards/index");
+    const card = await import("../src/pages/api/kanban/cards/[id]");
+    const config = await import("../src/pages/api/slack/config");
     const owner = await signIn();
     const actor = await signIn("bob@example.com", "bob");
     globalThis.fetch = async (input, init) => {
@@ -111,7 +110,7 @@ test(
     assert.ok(address && typeof address !== "string");
     const port = address.port;
     await new Promise<void>((resolve) => reservation.close(() => resolve()));
-    const child = fork(path.resolve(".output/server/index.mjs"), [], {
+    const child = fork(path.resolve("dist/server/entry.mjs"), [], {
       env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
       execArgv: ["--import", preload],
       stdio: ["ignore", "pipe", "pipe", "ipc"],

@@ -7,12 +7,12 @@ volume="${name}-data"
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; docker volume rm "$volume" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 key=$(printf '%s' '{"type":"service_account","client_email":"fixture@example.invalid","private_key":"fixture"}' | base64 | tr -d '\n')
-args=(-e SLACK_SIGNING_SECRET=fixture -e SLACK_CLIENT_ID=fixture -e SLACK_CLIENT_SECRET=fixture
+args=(-e HAWK_SUITE_TRUST_PROXY=true -e HAWK_SUITE_TEAM_ID=TFIXTURE -e HAWK_SUITE_ISSUER=https://apps.fixture.example.org/
+      -e SLACK_SIGNING_SECRET=fixture -e SLACK_CLIENT_ID=fixture -e SLACK_CLIENT_SECRET=fixture
       -e SLACK_STATE_SECRET=fixture-state-secret -e PUBLIC_URL=https://fixture.example.org
       -e TOKEN_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-      -e "GOOGLE_SERVICE_ACCOUNT_KEY_BASE64=$key" -e ONSHAPE_CLIENT_ID=fixture
-      -e ONSHAPE_CLIENT_SECRET=fixture -e APP_URL=https://fixture.example.org
-      -e ONSHAPE_REDIRECT_URI=https://fixture.example.org/auth/onshape/callback)
+      -e "GOOGLE_SERVICE_ACCOUNT_KEY_BASE64=$key" -e ONSHAPE_ACCESS_KEY=fixture
+      -e ONSHAPE_SECRET_KEY=fixture -e APP_URL=https://fixture.example.org)
 
 wait_ready() {
   for _attempt in $(seq 1 60); do
@@ -41,4 +41,4 @@ docker exec "$name" node -e 'const D=require(process.argv[1]);const d=new D("/da
 docker rm -f "$name" >/dev/null
 docker run -d --name "$name" --network none -v "$volume:/data" "${args[@]}" "$IMAGE" >/dev/null
 wait_ready
-docker exec "$name" node -e 'const D=require(process.argv[1]);const d=new D("/data/hawk-shop.db",{readonly:true});if(d.prepare("SELECT value FROM deployment_smoke").get().value!=="retained")process.exit(1);if(d.pragma("integrity_check",{simple:true})!=="ok")process.exit(1);d.close()' "$module"
+docker exec "$name" node -e 'const D=require(process.argv[1]);const d=new D("/data/hawk-shop.db",{readonly:true});if(d.prepare("SELECT value FROM deployment_smoke").get().value!=="retained")process.exit(1);if(d.pragma("integrity_check",{simple:true})!=="ok")process.exit(1);d.close()' ./node_modules/better-sqlite3

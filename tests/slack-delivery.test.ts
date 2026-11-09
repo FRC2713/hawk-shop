@@ -8,9 +8,9 @@ process.env.APP_URL = "http://localhost";
 process.env.SLACK_BOT_TOKEN = "xoxb-fixture";
 process.env.SLACK_WORKSPACE_ID = "TRHR";
 const { endpoint, signIn, jsonRequest } = await import("./http-fixture");
-const { Route: cards } = await import("../app/routes/api/kanban/cards.index");
-const { Route: card } = await import("../app/routes/api/kanban/cards.$id");
-const { Route: config } = await import("../app/routes/api/slack/config");
+const cards = await import("../src/pages/api/kanban/cards/index");
+const card = await import("../src/pages/api/kanban/cards/[id]");
+const config = await import("../src/pages/api/slack/config");
 const posts: Array<Record<string, unknown>> = [];
 let now = Date.now();
 let cookie = "";
@@ -92,7 +92,7 @@ test("a trusted other person moving a card delivers the transition snapshot with
   });
   assert.equal(posts.length, 0);
   now = Date.now() + 10100;
-  const { runSlackDelivery } = await import("../app/lib/slack/worker");
+  const { runSlackDelivery } = await import("../src/lib/slack/worker");
   await runSlackDelivery({ now: () => now });
   assert.equal(posts.length, 1);
   assert.match(String(posts[0].text), /<@UALICE>/);
@@ -110,7 +110,7 @@ test("a trusted other person moving a card delivers the transition snapshot with
 
 test("Slack Retry-After is durable and shared with test posts across process restart", async () => {
   const { spawnSync } = await import("node:child_process");
-  const { postSlackMessage } = await import("../app/lib/slack/messages");
+  const { postSlackMessage } = await import("../src/lib/slack/messages");
   const originalNow = Date.now;
   now = originalNow() + 10000;
   Date.now = () => now;
@@ -122,11 +122,13 @@ test("Slack Retry-After is durable and shared with test posts across process res
       process.execPath,
       [
         "--import",
+        "./tests/register-server-only.mjs",
+        "--import",
         "tsx",
         "--input-type=module",
         "-e",
         `
-      import {postSlackMessage} from './app/lib/slack/messages.ts';
+      import {postSlackMessage} from './src/lib/slack/messages.ts';
       globalThis.fetch=async()=>{throw Error('transport must stay quiet')};
       try { await postSlackMessage('C123','fixture');process.exit(2); }
       catch(error) { console.log(JSON.stringify({code:error.code,delay:error.retryAfterSeconds})); }
@@ -160,6 +162,8 @@ test("startup drains existing pending work without an incoming request", async (
       process.execPath,
       [
         "--import",
+        "./tests/register-server-only.mjs",
+        "--import",
         "tsx",
         "--input-type=module",
         "-e",
@@ -173,7 +177,7 @@ test("startup drains existing pending work without an incoming request", async (
         if(method==='chat.postMessage') {console.log(body.text);return Response.json({ok:true,channel:body.channel,ts:'123'});}
         throw Error('unexpected');
       };
-      const { startSlackWorker, stopSlackWorker }=await import('./app/lib/slack/worker.ts');
+      const { startSlackWorker, stopSlackWorker }=await import('./src/lib/slack/worker.ts');
       startSlackWorker();
       setTimeout(()=>{stopSlackWorker()},100);
     `,
@@ -198,7 +202,7 @@ test("untrusted long part and status text cannot truncate the card link or creat
     await save();
     await release("long", owner, "<@UEVERYONE>" + "x".repeat(8000));
     await move("long", { column_id: "review" });
-    const { runSlackDelivery } = await import("../app/lib/slack/worker");
+    const { runSlackDelivery } = await import("../src/lib/slack/worker");
     now += 10000;
     await runSlackDelivery();
     const text = String(posts.at(-1)?.text);
@@ -222,7 +226,7 @@ async function atHour(hour: number, action: () => Promise<void>) {
 }
 async function tick(seconds = 10) {
   now += seconds * 1000;
-  const { runSlackDelivery } = await import("../app/lib/slack/worker");
+  const { runSlackDelivery } = await import("../src/lib/slack/worker");
   await runSlackDelivery({ now: () => now });
 }
 test("all entry points preserve backward/intermediate snapshots and deletion does not erase pending work", async () =>
@@ -233,8 +237,7 @@ test("all entry points preserve backward/intermediate snapshots and deletion doe
     await save();
     await release("order", owner, "Original plate");
     const start = posts.length;
-    const { Route: actions } =
-      await import("../app/routes/api/mfg/parts.actions");
+    const actions = await import("../src/pages/api/mfg/parts/actions");
     const form = new FormData();
     form.set("action", "moveCard");
     form.set("cardId", "order");
@@ -346,8 +349,8 @@ test("missing and unmatched email fall back to recorded names and legacy cards u
     transport();
     await save();
     await release("no-email", owner, "No email");
-    const { db } = await import("../app/lib/db/client");
-    const { kanbanCards } = await import("../app/lib/db/schema");
+    const { db } = await import("../src/server/db/client");
+    const { kanbanCards } = await import("../src/server/db/schema");
     // Legacy pre-OAuth fixture, arranged directly because new HTTP releases always bind an owner.
     db.insert(kanbanCards)
       .values({ id: "unknown", title: "Legacy plate", column_id: "backlog" })
@@ -425,6 +428,8 @@ test("expired pending work is removed on restart even without deployment credent
       process.execPath,
       [
         "--import",
+        "./tests/register-server-only.mjs",
+        "--import",
         "tsx",
         "--input-type=module",
         "-e",
@@ -432,7 +437,7 @@ test("expired pending work is removed on restart even without deployment credent
     Date.now=()=>${now + 24 * 3600000 + 1};
     delete process.env.SLACK_BOT_TOKEN;
     globalThis.fetch=async()=>{throw Error('must not send')};
-    const {runSlackDelivery}=await import('./app/lib/slack/worker.ts');await runSlackDelivery();
+    const {runSlackDelivery}=await import('./src/lib/slack/worker.ts');await runSlackDelivery();
   `,
       ],
       { cwd: process.cwd(), env: process.env, encoding: "utf8" }
@@ -449,8 +454,7 @@ test("custom column labels are captured at transition time and never looked up a
     transport();
     await save();
     await release("custom", owner);
-    const { Route: columns } =
-      await import("../app/routes/api/kanban/config.index");
+    const columns = await import("../src/pages/api/kanban/config/index");
     const custom = [
       { id: "backlog", title: "Queued & ready", position: 0 },
       { id: "laser", title: "Laser <@UFAKE>", position: 1 },
@@ -514,7 +518,7 @@ test("a single pending record is never sent by concurrent worker calls", async (
     await release("concurrent", owner);
     await move("concurrent", { column_id: "done" });
     const start = posts.length;
-    const { runSlackDelivery } = await import("../app/lib/slack/worker");
+    const { runSlackDelivery } = await import("../src/lib/slack/worker");
     now += 10000;
     await Promise.all([
       runSlackDelivery(),
@@ -530,7 +534,7 @@ test("card update and capture either both commit or both roll back", async () =>
     transport();
     await save();
     await release("atomic", owner);
-    const { db } = await import("../app/lib/db/client");
+    const { db } = await import("../src/server/db/client");
     // Fault injection at durable storage, never used to observe the outcome.
     db.$client.exec(
       "CREATE TRIGGER fixture_reject_pending BEFORE INSERT ON slack_pending BEGIN SELECT RAISE(ABORT,'fixture'); END"
@@ -624,8 +628,7 @@ test("renaming columns inside a collection window preserves both label snapshots
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    const { Route: columns } =
-      await import("../app/routes/api/kanban/config.index");
+    const columns = await import("../src/pages/api/kanban/config/index");
     const setLabels = async (label: string) => {
       const response = await endpoint(columns, "PUT")(
         jsonRequest("/api/kanban/config", "PUT", cookie, {
@@ -659,6 +662,8 @@ async function restartedDelivery(at: number) {
     process.execPath,
     [
       "--import",
+      "./tests/register-server-only.mjs",
+      "--import",
       "tsx",
       "--input-type=module",
       "-e",
@@ -673,7 +678,7 @@ async function restartedDelivery(at: number) {
       if(method==='chat.postMessage') { posts.push(body); return Response.json({ok:true,channel:body.channel,ts:'123'}); }
       throw Error('unexpected');
     };
-    const {runSlackDelivery}=await import('./app/lib/slack/worker.ts');
+    const {runSlackDelivery}=await import('./src/lib/slack/worker.ts');
     await runSlackDelivery();
     console.log(JSON.stringify(posts));
   `,

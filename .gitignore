@@ -33,3 +33,6 @@ yarn-error.log*
 *.tsbuildinfo
 # hawk-shop local data (sqlite db + uploaded images)
 /data
+
+.astro/
+dist/

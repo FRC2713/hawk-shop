@@ -1,0 +1,376 @@
+/* Self-hosted because Hawk apps must also work on a LAN without font CDNs. */
+@import "./brand.css";
+@import "tailwindcss";
+
+/* Dark mode follows the operating system, matching the token overrides below. */
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
+@theme inline {
+  --font-sans: "Open Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Barlow", sans-serif;
+
+  /* Core Hawk Shop palette. See docs/BRANDING.md. */
+  --color-hawk-red: #ba0c2f;
+  --color-hawk-black: #000000;
+  --color-hawk-white: #ffffff;
+  --color-hawk-cool-grey: #a3a19e;
+  --color-hawk-warm-grey: #a3a19e;
+
+  /* shadcn semantic roles, adapted to the Hawk palette. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Operational states use dedicated semantic colors, never brand colors. */
+  --color-success: #f2f2f2;
+  --color-success-foreground: #333333;
+  --color-success-border: #5fc7ba;
+  --color-status-planned: #f2f2f2;
+  --color-status-planned-foreground: #333333;
+  --color-status-active: #5fc7ba;
+  --color-status-active-foreground: #333333;
+  --color-status-done: #f2f2f2;
+  --color-status-done-foreground: #333333;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: #f2f2f2;
+  --foreground: #333333;
+  --card: #ffffff;
+  --card-foreground: #333333;
+  --popover: #ffffff;
+  --popover-foreground: #333333;
+  --primary: #ba0c2f;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #333333;
+  --muted: #f2f2f2;
+  --muted-foreground: #333333;
+  --accent: #f2f2f2;
+  --accent-foreground: #ba0c2f;
+  --destructive: #ba0c2f;
+  --border: #d6d7d8;
+  --input: #c5c7c8;
+  --ring: #ba0c2f;
+  /* Text-only roles: link text and red emphasis such as "Happening now". */
+  --link: var(--primary);
+  --emphasis: var(--primary);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    min-width: 320px;
+    font-family: var(--font-sans);
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    @apply bg-background text-foreground;
+  }
+
+  /* shadcn controls provide their own ring; keep ordinary links visible too. */
+  a:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--primary) 45%, transparent);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Team heading hierarchy; prose and code keep their own readable fonts. */
+h1,
+h2,
+h3,
+h4,
+label,
+th {
+  font-family: var(--hawk-heading-font);
+}
+h1 {
+  font-weight: 700;
+  font-style: italic;
+  text-transform: uppercase;
+}
+h2 {
+  font-weight: 600;
+}
+
+/* Shared app navigation stays legible and reachable on small screens. */
+.skip-link {
+  position: absolute;
+  top: -5rem;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--card);
+  color: var(--foreground);
+  border: 2px solid var(--primary);
+}
+.skip-link:focus {
+  top: 0.5rem;
+}
+.app-navigation a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+}
+.app-navigation a[aria-current="page"] {
+  color: var(--link, var(--primary));
+  box-shadow: inset 0 -3px var(--primary);
+}
+@media (max-width: 600px) {
+  .app-header > div {
+    gap: 0.25rem;
+    padding-inline: 1rem;
+    padding-block: 0.5rem;
+  }
+  .app-header .brand-mark {
+    padding: 12px;
+  }
+  .app-header .brand-mark img {
+    width: auto;
+  }
+  .app-header a > span:last-child > span {
+    display: none;
+  }
+  .app-navigation {
+    gap: 0.75rem;
+  }
+  .app-navigation a {
+    font-size: 0.75rem;
+  }
+  .app-navigation a > svg {
+    display: none;
+  }
+  main {
+    padding-inline: 1rem;
+    padding-top: 1rem;
+  }
+}
+/*
+ * Dark mode: layered neutrals between Black and Charcoal so panels separate
+ * without harsh edges. Teal is the link color on dark (BRANDING.md); True Red
+ * stays for fills, rails and underlines, with a lighter tint for small red text.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #141414;
+    --foreground: var(--hawk-light-grey);
+    --card: #1e1e1e;
+    --card-foreground: var(--hawk-light-grey);
+    --popover: #1e1e1e;
+    --popover-foreground: var(--hawk-light-grey);
+    --secondary: #2a2a2a;
+    --secondary-foreground: var(--hawk-light-grey);
+    --muted: #2a2a2a;
+    --muted-foreground: var(--hawk-grey);
+    --accent: #2a2a2a;
+    --accent-foreground: var(--hawk-light-grey);
+    --destructive: color-mix(in srgb, var(--hawk-red) 45%, var(--hawk-white));
+    --border: var(--hawk-charcoal);
+    --input: #4a4a4a;
+    --link: var(--hawk-teal);
+    --emphasis: color-mix(in srgb, var(--hawk-red) 45%, var(--hawk-white));
+    color-scheme: dark;
+  }
+  /* Active navigation reads as white text over the red underline. */
+  .app-navigation a[aria-current="page"] {
+    color: var(--foreground);
+  }
+}
+
+.nav-api-short {
+  display: none;
+}
+@media (max-width: 600px) {
+  .app-navigation .nav-api-label {
+    display: none;
+  }
+  .app-navigation .nav-api-short {
+    display: inline;
+  }
+  .app-header > div {
+    flex-wrap: nowrap;
+  }
+  .app-header > div > a {
+    gap: 0.4rem;
+  }
+  .app-navigation {
+    gap: 0.65rem;
+  }
+}
+@media (max-width: 359px) {
+  .app-header > div {
+    flex-wrap: wrap;
+  }
+}
+
+/* Account menu: a disclosure in the header for the signed-in Suite member. */
+.account-menu {
+  position: relative;
+}
+.account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted-foreground);
+}
+.account-trigger::-webkit-details-marker {
+  display: none;
+}
+.account-trigger:hover,
+.account-menu[open] .account-trigger {
+  color: var(--foreground);
+}
+.account-trigger:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 0.25rem);
+}
+.account-trigger-name {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+.account-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 50;
+  width: max-content;
+  min-width: 14rem;
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.75rem;
+  border-radius: var(--radius-md, 0.375rem);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+.account-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.account-email {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.account-sign-out {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.5rem 0;
+  min-height: 2.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  text-decoration: none;
+}
+.account-sign-out:hover {
+  color: var(--link, var(--primary));
+}
+.account-sign-out:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .account-trigger-name {
+    display: none;
+  }
+}
+
+/* A board owns its scrolling area; page content and navigation stay in view. */
+.shop-workspace {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.shop-content > astro-island {
+  display: block;
+  height: 100%;
+}
+.shop-workspace .shop-content {
+  overflow: hidden;
+}
+.shop-content:focus {
+  outline: none;
+}
+.shop-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.brand-figures,
+.tabular-nums {
+  font-family: var(--hawk-figure-font);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .app-header .shop-header {
+    flex-wrap: wrap;
+  }
+  .shop-header > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .shop-header .account-trigger-name {
+    display: none;
+  }
+}

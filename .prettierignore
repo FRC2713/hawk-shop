@@ -30,3 +30,10 @@ data
 .DS_Store
 coverage
 
+
+.astro/
+dist/
+src/lib/onshapeApi/generated/
+
+.claude/
+.tanstack/

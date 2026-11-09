@@ -12,12 +12,22 @@ if (process.argv.includes("--contract")) {
     process.exit(1);
   }
   try {
-    for (const name of ["PUBLIC_URL", "APP_URL", "ONSHAPE_REDIRECT_URI"]) {
+    for (const name of [
+      "PUBLIC_URL",
+      "APP_URL",
+      "ONSHAPE_BASE_URL",
+      "HAWK_SUITE_ISSUER",
+    ]) {
       if (process.env[name]) {
         const url = new URL(process.env[name]);
         if (!["http:", "https:"].includes(url.protocol)) throw new Error();
       }
     }
+    if (
+      process.env.HAWK_SUITE_TRUST_PROXY !== "true" ||
+      !/^T[A-Z0-9]+$/.test(process.env.HAWK_SUITE_TEAM_ID)
+    )
+      throw new Error();
     if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_BASE64) {
       const key = JSON.parse(
         Buffer.from(

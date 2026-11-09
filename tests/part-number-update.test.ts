@@ -7,8 +7,12 @@ const dataDir = await mkdtemp(join(tmpdir(), "hawk-part-number-"));
 process.env.DATA_DIR = dataDir;
 after(() => rm(dataDir, { recursive: true, force: true }));
 const { handlePartNumberUpdate } =
-  await import("../app/onshape_connector/actions/partNumberUpdate");
-import { inRequest, sessionRequest, verifySession } from "./request-context";
+  await import("../src/onshape_connector/actions/partNumberUpdate");
+import {
+  inRequest,
+  ONSHAPE_SIGNATURE,
+  sessionRequest,
+} from "./request-context";
 
 function form(partNumber = "2713") {
   const data = new FormData();
@@ -184,7 +188,7 @@ test("confirmed writes send one JSON object and verify the normalized number for
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request =
           input instanceof Request ? input : new Request(input, init);
-        assert.equal(request.headers.get("authorization"), "Bearer editor");
+        assert.match(request.headers.get("authorization")!, ONSHAPE_SIGNATURE);
         methods.push(request.method);
         if (request.method === "POST") {
           assert.deepEqual(await request.json(), {
@@ -279,19 +283,10 @@ test("initial metadata transport failure is a failure without mutation", async (
 });
 
 test("the manufacturing action exposes unconfirmed and rejected edits as structured HTTP 400 failures", async (t) => {
-  const { Route } = await import("../app/routes/api/mfg/parts.actions");
-  const handler = (
-    Route as unknown as {
-      options: {
-        server: {
-          handlers: {
-            POST: (context: { request: Request }) => Promise<Response>;
-          };
-        };
-      };
-    }
-  ).options.server.handlers.POST;
-  await verifySession("editor");
+  const Route = await import("../src/pages/api/mfg/parts/actions");
+  const { currentRequest } = await import("../src/server/request-context");
+  const handler = async (_context: { request: Request }) =>
+    Route.POST(currentRequest());
   for (const rejected of [true, false]) {
     const fetchMock = t.mock.method(
       globalThis,

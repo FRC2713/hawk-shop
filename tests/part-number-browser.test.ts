@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { onshapePartsQuery } from "../app/lib/api/onshape";
-import { updatePartNumber } from "../app/lib/api/partActions";
+import { onshapePartsQuery } from "../src/lib/api/onshape";
+import { updatePartNumber } from "../src/lib/api/partActions";
 
 const scope = {
   documentId: "doc",

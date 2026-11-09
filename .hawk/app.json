@@ -7,19 +7,21 @@
   "database": "hawk-shop.db",
   "data_dir": "/data",
   "required_env": [
-    "ONSHAPE_CLIENT_ID",
-    "ONSHAPE_CLIENT_SECRET",
     "APP_URL",
-    "ONSHAPE_REDIRECT_URI"
+    "HAWK_SUITE_TRUST_PROXY",
+    "HAWK_SUITE_TEAM_ID",
+    "HAWK_SUITE_ISSUER"
   ],
   "optional_env": [
     "DATA_DIR",
     "PORT",
     "HOST",
-    "ONSHAPE_SCOPE",
-    "ONSHAPE_IFRAME_EMBED",
     "SLACK_BOT_TOKEN",
-    "SLACK_WORKSPACE_ID"
+    "SLACK_WORKSPACE_ID",
+    "ONSHAPE_ACCESS_KEY",
+    "ONSHAPE_SECRET_KEY",
+    "ONSHAPE_BASE_URL",
+    "ONSHAPE_CACHE_TTL_SECONDS"
   ],
   "migrations": "on-start",
   "rollback": "requires-schema-review"

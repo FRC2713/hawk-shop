@@ -12,12 +12,20 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "types": ["vite/client"],
+    "types": ["astro/client"],
     "paths": {
-      "~/*": ["./app/*"]
+      "~/*": ["./src/*"]
     },
     "target": "ES2022"
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", ".output", ".nitro"]
+  "include": [".astro/types.d.ts", "**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".output",
+    ".nitro",
+    ".claude",
+    ".tanstack"
+  ],
+  "extends": "astro/tsconfigs/strict"
 }

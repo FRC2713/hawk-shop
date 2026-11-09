@@ -1,0 +1,24 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { isOnshapeConfigured, onshapeOrigin } from "../lib/onshapeApi/auth";
+const configured = isOnshapeConfigured();
+---
+
+<AppLayout title="Onshape API status"
+  ><main class="bg-card max-w-xl space-y-4 rounded-lg border p-6">
+    <h1 class="text-2xl">Onshape API status</h1>
+    <p>
+      {
+        configured
+          ? "The server has an Onshape API key pair configured."
+          : "Onshape API access is not configured. Ask the deployment operator to set the server API key pair."
+      }
+    </p>
+    <p>
+      CAD access uses the server's Onshape account. Shop sign-in and
+      manufacturing submitters use Hawk Suite.
+    </p>
+    {configured && <p>Onshape stack: {onshapeOrigin()}</p>}
+    <p><a href="/kanban" class="underline">Return to board</a></p>
+  </main></AppLayout
+>

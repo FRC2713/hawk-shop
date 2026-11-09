@@ -5,48 +5,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev            # Vite dev server (http://localhost:3000)
-npm run build          # production build -> .output/ (client + Nitro server bundle)
-npm run start          # run the built server: node .output/server/index.mjs
-npm run typecheck      # tsc --noEmit
-npm test               # HTTP/API and controlled transport behavior tests
-npm run test:runtime   # built production startup + HTTP smoke, after npm run build
+npm run dev            # Astro dev server (http://localhost:3000)
+npm run build          # production build -> dist/ (Astro Node server + browser islands)
+npm run start          # run the built server: node dist/server/entry.mjs
+npm run typecheck      # Astro and TypeScript checks
 npm run format         # prettier --write . (prettier-plugin-tailwindcss sorts classes)
 npm run format:check
-npm test               # node:test + tsx, isolated SQLite and scripted HTTP
 npm run db:generate    # drizzle-kit generate — new migration from schema.ts
 npm run db:migrate     # apply migrations without booting the app
 npm run db:studio      # drizzle studio
-npm run generate:onshape-client   # regenerate app/lib/onshapeApi/generated/ from Onshape's live OpenAPI spec
+npm run generate:onshape-client   # regenerate src/lib/onshapeApi/generated/ from Onshape's live OpenAPI spec
 ```
 
-Run `npm test`, `npm run typecheck`, and `npm run format:check` for verification; add `npm run build` for Onshape changes. Tests use the built-in Node test runner with tsx, isolated SQLite databases, and controlled external transports. Never call live Onshape or send real Slack messages from tests. Set a temporary `DATA_DIR` before dynamically importing any DB-backed module. Run `npm run build` and then `npm run test:runtime` when changing routes, server imports, or runtime startup; the runtime check verifies pending delivery before incoming traffic and then serves a real health request. There is no linter.
+Verification: `npm run typecheck`, `npm run format:check`, `npm run build`, then `npm test`. Tests use a disposable database and Playwright Chromium. Install the browser with `npx playwright install chromium`.
 
 ## Architecture
 
-Manufacturing workflow tool for an FRC team, built with **TanStack Start** (React 19, Vite, Nitro) and deployed as a **single self-hosted Docker container**. Parts are pulled from an Onshape CAD Part Studio, "released" onto a kanban board, and tracked through manufacturing processes on shop equipment.
+Manufacturing workflow tool for an FRC team, built with **Astro** with server-rendered pages and React 19 islands and deployed as a **single self-hosted Docker container**. Parts are pulled from an Onshape CAD Part Studio, "released" onto a kanban board, and tracked through manufacturing processes on shop equipment.
 
 This is a port of [rhr-mfg](https://github.com/FRC2713/rhr-mfg) off Supabase. If you are looking at that repo for reference, the app/UI layer is nearly identical; everything below the data-access modules is different.
 
 ### Two data planes
 
-1. **Onshape (external, OAuth)** — CAD parts, metadata, thumbnails. Read-only except part-number writes.
+1. **Onshape (external, server API key)** — CAD parts, metadata, thumbnails. Read-only except part-number writes.
 2. **Local SQLite via Drizzle** — everything else, plus uploaded images on the filesystem next to it.
 
-Manufacturing reads use Onshape session checks. Releases and status mutations additionally require a server-verified actor bound to the OAuth session. Slack configuration requires a fresh workspace administrator or owner role check on every privileged request.
+There is no per-user DB authorization. Access control requires a Hawk Suite workspace identity from an explicitly trusted, isolated gateway. The Onshape API key only authorizes CAD operations.
 
 ### Everything durable lives under DATA_DIR
 
 `DATA_DIR` (default `./data`, `/data` in the container) holds the SQLite file and `uploads/`. A deployment mounts one volume there. Nothing else on disk is stateful.
 
-- `app/lib/db/client.ts` — the `db` singleton. Opens SQLite, sets pragmas (**WAL**, `foreign_keys = ON` — SQLite needs the latter per-connection or the junction-table cascades silently do nothing), **runs migrations**, and seeds. Parked on `globalThis` so dev-mode module reloads don't leak handles.
-- `app/lib/db/schema.ts` — Drizzle tables. **Column properties are deliberately snake_case** so `$inferSelect` produces exactly the row shape the UI was already written against; `app/lib/db/types.ts` re-exports those inferred types under the old `KanbanCardRow` / `EquipmentRow` / … names. Keep new columns snake_case.
-- `app/lib/storage/files.ts` — the local replacement for Supabase Storage. `resolveStoragePath` is the **only** place a user-influenced string gets joined onto the uploads root, and it rejects anything that escapes; don't build absolute upload paths anywhere else.
-- `app/routes/api/files.$.ts` — serves stored files (splat route; the path arrives as `params._splat`).
+- `src/server/db/client.ts` — the `db` singleton. Opens SQLite, sets pragmas (**WAL**, `foreign_keys = ON` — SQLite needs the latter per-connection or the junction-table cascades silently do nothing), **runs migrations**, and seeds. Parked on `globalThis` so dev-mode module reloads don't leak handles.
+- `src/server/db/schema.ts` — Drizzle tables. **Column properties are deliberately snake_case** so `$inferSelect` produces exactly the row shape the UI was already written against; `src/server/db/types.ts` re-exports those inferred types under the old `KanbanCardRow` / `EquipmentRow` / … names. Keep new columns snake_case.
+- `src/server/storage/files.ts` — the local replacement for Supabase Storage. `resolveStoragePath` is the **only** place a user-influenced string gets joined onto the uploads root, and it rejects anything that escapes; don't build absolute upload paths anywhere else.
+- `src/pages/api/files/[...path].ts` — serves stored files (splat route; the path arrives as `params.path`).
 
 Timestamps are ISO-8601 **strings**, not SQLite integers, so dates round-trip through the API unchanged.
 
-better-sqlite3 is a native addon, so it is marked external in `vite.config.ts` (`ssr.external`) and Nitro traces it into `.output/server/node_modules/` at build time rather than bundling it.
+better-sqlite3 is external in `astro.config.mjs`. The Node image includes production dependencies and the unchanged migration history.
 
 ### Migrations
 
@@ -54,76 +51,32 @@ better-sqlite3 is a native addon, so it is marked external in `vite.config.ts` (
 
 ### Live updates
 
-`app/lib/events/bus.ts` is an in-process `EventEmitter`; mutations call `publishKanbanEvent`, `app/routes/api/kanban/events.ts` streams them as SSE, and `useKanbanRealtime` invalidates the cards query. **This is single-process by design** — one container. Running more than one replica needs that module swapped for Redis pub/sub; nothing else would change.
+`src/server/events/bus.ts` is an in-process `EventEmitter`; mutations call `publishKanbanEvent`, `src/pages/api/kanban/events.ts` streams them as SSE, and `useKanbanRealtime` invalidates the cards query. **This is single-process by design** — one container. Running more than one replica needs that module swapped for Redis pub/sub; nothing else would change.
 
 ### Auth flow
 
-`app/start.ts` registers a global **request middleware** via `createStart({ requestMiddleware })`. It gates every non-`/signin`, non-`/auth/*` route on valid Onshape cookies and redirects page routes to `/auth/onshape`. It deliberately lets **all** `/api/*` and `/_serverFn/*` through, because those handlers verify themselves. `/_serverFn/*` in particular must not be redirected: `fetchOnshapeAuthState` is invoked over it precisely when the user may be signed out, and an HTML redirect there reads as a successful response to the caller.
+`src/middleware.ts` gates every page, API, upload, and event stream on Hawk Suite membership. `/signin`, static assets, and GET/HEAD health checks are public. An unauthenticated Onshape iframe receives only a top-level continuation with no shop data.
 
-**`requireAuth()` (`app/lib/requireAuth.ts`) is that verification, and every DB-backed handler starts with it** — `api/kanban/*`, `api/equipment*`, `api/processes*`, `api/users*`, `api/files/*`, and `api/onshape/thumbnail` (which answers cache hits without ever needing a token). It returns a 401 `Response` to hand straight back, or null to proceed. `api/health` is deliberately ungated: the container healthcheck calls it with no cookies. Cached Onshape routes also require explicit authentication because hits do not contact Onshape. Skipping `requireAuth` on a new DB-backed route reopens the hole — until this was added, those routes answered any caller on the network, reads and writes alike.
+`src/server/suite-identity.ts` follows Hawk Eye's identity-header contract. Enable `HAWK_SUITE_TRUST_PROXY=true` only on an isolated gateway network; configure `HAWK_SUITE_TEAM_ID` and `HAWK_SUITE_ISSUER`. Caddy strips browser identity headers before authorization and injects the approved workspace, Slack user, matching subject, and exact `suite/member` role. Header trust grants nothing by default. Never expose a trusted app port directly.
 
-`requireAuth` does **not** refresh. `refreshOnshapeTokenIfNeeded` rotates the refresh token, and a board view fires several API calls at once; parallel refreshes would race to invalidate each other's rotated token. Renewal happens only where one request drives it — the `/auth/onshape` route the loader bounces through.
+`requireAuth()` reads the verified request identity; Onshape credentials never grant Shop access. Same-origin checks protect every mutation, including multipart uploads. Use `APP_URL` for the browser-facing origin when TLS terminates at the gateway.
 
-There is exactly **one** definition of "signed in": `hasUsableSession` in `app/lib/onshapeAuthRequest.ts`, which requires a token **and** a known, future expiry. Everything defers to it — the middleware, `isOnshapeAuthenticated`, `getOnshapeTokenWithoutRefresh`. Do not add a second predicate. Five of them used to exist, they drifted, and a route that checked only for a token's _presence_ disagreed with the two that also checked expiry — which is an infinite redirect loop, not a subtle bug. Requiring the expiry also matters on its own: the old `if (expiresAt && …)` shape treated a _missing_ `onshape_expires_at` as valid forever, so a hand-set token cookie walked through the gate.
+Onshape access uses one server-side API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE_SECRET_KEY`, optional `ONSHAPE_BASE_URL`). There is no per-user Onshape connection: every CAD read and write runs as the key's Onshape account. `onshapeFetch` in `src/lib/onshapeApi/auth.ts` is the only transport; it HMAC-signs each request, refuses non-Onshape hosts, and re-signs bounded redirects. Route every Onshape call through it. A missing key pair returns 409, independently of Suite's 401. `/onshape` shows whether the key is configured. `/auth/logout` sends the browser to Suite sign-out. Redirect destinations pass through `safeRedirectPath`.
 
-Cookie parsing lives in the same module and must not throw: `decodeURIComponent` raises `URIError` on a stray `%`, and one malformed cookie from anything else on the hostname used to 500 every request in the app.
+`src/server/request-context.ts` uses AsyncLocalStorage so server helpers such as `requireAuth()` and `getSessionActor()` read the current request's verified identity.
 
-Redirect targets from `?redirect=` (and the cookie it is parked in) go through `safeRedirectPath` (`app/lib/safeRedirect.ts`), which reduces them to a rooted same-origin path. `new URL(value, origin)` lets an absolute or protocol-relative value replace the origin outright, so this was an open redirect that handed out a freshly minted session.
+### Onshape API — two clients coexist
 
-There is no `?auth=success` bypass any more. It let an unauthenticated request into any page in the app, and the loop it papered over is fixed at the source above. Unlike Next's `config.matcher`, request middleware sees _every_ request, so the static-asset exclusions are spelled out in `isPublicPath`.
-
-The middleware only ever sees **document** requests, so it gates the first page load and nothing after it — in-app navigation is client-side. `app/routes/_main.tsx`'s loader re-checks auth and bounces into `/auth/onshape` itself; that is the gate for everything under the app chrome.
-
-`start.ts` is in the client module graph, so it must not import anything `server-only`. The pure request-cookie helpers therefore live in `app/lib/onshapeAuthRequest.ts` (no marker) and are re-exported from `onshapeAuth.ts`.
-
-Tokens live in httpOnly cookies (`onshape_access_token` / `_refresh_token` / `_expires_at`), managed in `app/lib/onshapeAuth.ts` via `getCookie`/`setCookie`/`deleteCookie` from `@tanstack/react-start/server`. Those helpers are synchronous, but the exported wrappers stay `async` because every call site awaits them.
-
-Handlers that set cookies may return a fresh `Response`: the runtime merges the ambient `Set-Cookie` headers into it. For redirects use `redirectResponse()` from `app/lib/httpRedirect.ts` rather than `Response.redirect()`, whose headers are immutable.
-
-Cookie policy is in `app/lib/cookieOptions.ts` and is **not** keyed off `NODE_ENV`. `SameSite=None` requires `Secure`, which browsers only honor over HTTPS, so a plain-HTTP LAN install must use `Lax` or sign-in fails outright. `ONSHAPE_IFRAME_EMBED=true` (plus HTTPS) opts into the iframe-compatible `None`.
-
-`app/lib/tokenRefresh.ts` exposes read-only `getOnshapeTokenWithoutRefresh(request?)` for ordinary operations and `refreshOnshapeTokenIfNeeded()` for the OAuth route only. Expired or missing-expiry sessions cannot perform ordinary operations; they never rotate cookies implicitly.
-
-### Verified manufacturing identity and Slack administration
-
-`app/lib/sessionActor.ts` binds the user ID and optional email from the existing OAuth user-info response to hashed access and refresh tokens in SQLite. Use `requireSessionActor()` for release and status mutations; use the returned actor, never a user ID or email supplied by the browser. Keep the original submitter immutable and separate from manufacturing assignment. Renewal carries the verified identity forward, logout revokes it, and legacy sessions must sign in again. This does not add per-move or per-release Onshape identity requests.
-
-`app/lib/slack/` contains the optional outbound Slack integration. `requireSlackAdmin()` verifies the trusted actor's email against current active Red Hawk Robotics workspace admin/owner roles; it is a server check for reads as well as writes. Slack uncertainty denies configuration access while the manufacturing board remains usable. Bot credentials stay in deployment environment variables. Privileged writes must enforce the Slack settings request-origin/custom-header policy even when iframe-compatible cookies are enabled.
-
-For notification triggers, pending-work lifecycle, grouping, and the no-history rule, read `docs/slack-integration.md` before modifying Slack code. Deployment setup and required bot permissions are in `docs/slack-setup.md`.
-
-### Onshape API clients
-
-- `app/lib/onshapeApi/client.ts` provides the hand-written `OnshapeClient`. `createOnshapeClient()` captures usable request credentials without refresh.
-- `app/lib/onshapeApi/generated/` is generated output; never edit it. `generated-wrapper.ts` creates a separate authenticated client per operation with `createOnshapeApiClient()` or `createOnshapeApiClientFromRequest(request)`. Pass that client to every SDK request in the operation. Never configure the generated singleton with request credentials.
-- The old refreshing token compatibility functions and browser generated wrapper have been removed. Browser code uses `/api/*` and type-only imports for SDK types.
-
-### Onshape cache and part-number writes
-
-`app/lib/onshapeApi/cache.ts` combines durable SQLite responses with single-flight upstream reads. Workspace parts expire after `ONSHAPE_CACHE_TTL_SECONDS`, default 300; version and microversion parts normally never expire. Every new cached API route must call `requireAuth()` even on hits.
-
-`partNumberUpdate.ts` owns metadata discovery, write acceptance, normalized-value verification, and affected Part Studio cache invalidation. An accepted write invalidates the matching parts entry before verification, including unconfirmed outcomes. Invalidation detaches earlier pending reads; those reads cannot repopulate the cache or remove a newer pending read. Preserve unrelated scopes and normal indefinite retention. Count HTTP 2xx metadata reads, writes and verification via `recordOnshapeUsage`, including malformed semantic payloads; exclude HTTP failures.
-
-The browser `partActions.updatePartNumber(input, queryClient)` invalidates both thumbnail variants through `queryKeys.onshape.partsScope` after confirmed success. The input component owns clearing input and rendering errors. Query-owned parts data cannot be refreshed by rerunning route loaders. Unconfirmed writes report uncertainty without automatic replay.
+- `src/lib/onshapeApi/client.ts` — hand-written `OnshapeClient` class (documents, parts, session info, thumbnails).
+- `src/lib/onshapeApi/generated/` — `@hey-api/openapi-ts` output, **generated, never edit by hand**. Reach it through `generated-wrapper.ts` (server) or `generated-wrapper-client.ts` (browser), which inject the auth callback. Types like `BtPartMetadataInfo` come from here.
 
 ### Data fetching pattern
 
-**The app does not server-render page content.** `app/routes/__root.tsx` sets `ssr: false`, so the server renders the HTML shell and nothing else; every route component, loader, and query runs in the browser. The whole app is behind Onshape OAuth on a shop LAN, so there was no SEO or first-paint case that justified maintaining two data paths.
+Astro owns routes, layout, navigation, and the server-rendered overview. Pages call server repositories directly. Each interactive workflow is one React island under `src/components/islands/`, with its own query provider, error boundary, toasts, and live event subscription. Keep drag-and-drop, dialogs, filters, and selection within that root.
 
-That makes the rule simple: **all page data comes from `/api/*` through TanStack Query, and there is exactly one fetcher per query key.** There is no server prefetch and no `dehydrate`/`HydrationBoundary`. Server-side data modules (`app/lib/<domain>Api/`) exist for the `/api/*` handlers to call, not for the UI to call.
+`src/lib/api/` is the browser's view of `/api/*`. Keep one fetcher and query key factory per read, and use its shared mutation functions. Components do not fetch directly. Repositories and SQL remain in `src/server/`; browser modules stay client-safe. Type-only imports from repository types are erased. `virtual:hawk-shop/server-only` is enforced by a Vite plugin and fails the build if a server module enters a browser bundle.
 
-**`app/lib/api/` is the browser's entire view of `/api/*`.** Components never call `fetch` themselves — a URL, a payload shape, and a query key each exist in exactly one place:
-
-- `client.ts` — `apiFetch<T>()`, the single wrapper. Every handler answers with JSON and reports failure as `{ error }` plus a non-2xx status, so it unwraps that once and throws `ApiError` carrying the handler's own message. Pass `json:` for a JSON body, `body:` for `FormData`.
-- `keys.ts` — `queryKeys`, every key in the app. Nothing else may write a key literal: a mutation's invalidation and the `useQuery` it is meant to refresh only agree by construction if they call the same function.
-- `equipment.ts` / `processes.ts` / `users.ts` / `kanban.ts` / `onshape.ts` — `queryOptions()` factories for reads (`useQuery(equipmentQuery())`) and plain async functions for writes (`useMutation({ mutationFn: deleteEquipment })`). `staleTime` belongs on the factory, not on each call site. Mutations keep their own `onSuccess` in the component, because the toast and the dialog it closes are local to it.
-- `partActions.ts` — the one endpoint that does **not** go through `apiFetch`. `/api/mfg/parts/actions` answers a rejected operation with HTTP 400 _and_ a `{ success: false, error }` body, and the UI wants that body as an inline validation message, so the status is ignored and the body is the contract. It does guard the content type: the auth middleware can answer with an HTML redirect, and a bare `.json()` on that fails unreadably.
-
-Everything under `app/lib/api/` must stay client-safe — no `server-only` imports.
-
-Route loaders now always run in the browser, so anything cookie-backed still has to go through `createServerFn()` — that is what `app/lib/authServerFns.ts` is for. Those calls travel over `/_serverFn/*`, which is why `app/start.ts` lets that prefix through the auth gate alongside `/api/*`.
-
-Keep SSR off unless something genuinely needs it. Turning it back on means restoring the isomorphic-loader constraint and the serializability workarounds that came with it.
+Preserve the API's existing JSON payloads so equipment, manufacturing, and connector workflows share the same handlers. `partActions.ts` intentionally reads a rejected operation's `{ success: false, error }` body as inline validation data. A Suite 401 starts sign-in recovery; a CAD 409 stays in the workflow.
 
 ### Thumbnail caching
 
@@ -131,37 +84,52 @@ Keep SSR off unless something genuinely needs it. Turning it back on means resto
 
 Stored `image_url` values may be legacy proxy URLs (`/api/onshape/thumbnail?url=…`) that get unwrapped.
 
+The route also serves `?url=<absolute Onshape URL>` for the connector, which has a part's thumbnail href but no card yet. That form is allowlisted to `https://*.onshape.com` in `isOnshapeUrl` — the handler signs whatever it fetches with the server's API key, and `onshapeFetch` refuses any other host as a second check.
+
+### Onshape API calls are a hard annual budget
+
+Onshape bills an **annual, company-wide** API allocation — a team on EDU Enterprise gets 10,000 calls for the entire year, flat, and adding users does not raise it. Overrunning it returns **402**, not 429. This is not a rate limit you wait out; every avoided call is permanent savings, which inverts the usual caching trade-off: staleness is cheap, a miss is not.
+
+`src/lib/onshapeApi/cache.ts` is the chokepoint. Two layers:
+
+- **SQLite** (`onshape_api_cache`), not memory, so a `docker compose up` does not re-buy every response the team already paid for.
+- **In-process single-flight**, so ten browsers opening the board at once produce one upstream call. The SQLite layer cannot do this alone — none of the ten has written a row yet.
+
+`ttlMs: null` means never expires, and that is the right answer whenever the upstream is frozen: parts at `wvm=v` or `wvm=m` are immutable, so `partsTtlMs()` returns null for them and `ONSHAPE_CACHE_TTL_SECONDS` (default 300) only governs `wvm=w`. A throwing fetcher is never cached and never counted — Onshape excludes 4xx/5xx from the allocation, and caching an auth failure would poison the entry for the whole TTL.
+
+**The Onshape key is not an auth boundary.** The server holds it for every caller, and a cache hit needs no upstream call at all. `api/onshape/parts`, `api/onshape/version`, `api/onshape/thumbnail` and `api/onshape/usage` all call `requireAuth()` explicitly; a new cached route that skips it answers any caller on the LAN.
+
+`recordOnshapeUsage` tallies `calls` (left the building) vs `hits` (absorbed here) per day in `onshape_api_usage`, readable at `/api/onshape/usage`. Onshape's own page reports one yearly number with no endpoint breakdown, which is not enough to find out what is spending the allocation.
+
+Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release.
+
 ### Routing layout
 
-File-based routing under `app/routes/` (`srcDirectory: "app"` in `vite.config.ts`, so the `~/*` alias still points at `./app/*`). `app/routeTree.gen.ts` is generated — never edit it. `app/router.tsx` builds the router; `app/routes/__root.tsx` is the HTML shell.
+`src/pages/` contains Astro pages and typed APIRoute endpoints. `src/layouts/AppLayout.astro` renders the shared branded header, navigation, account disclosure, and skip link. `/` renders the overview on the server. `/kanban`, `/kanban/done`, `/equipment`, and `/onshape_connector` mount contained interactive workflows.
 
-- `app/routes/_main.tsx` — pathless layout for the chrome'd app (home, `/kanban`, `/kanban/done`, `/equipment`), the equivalent of the old `(main)` route group. Its children are `_main.index.tsx`, `_main.kanban.index.tsx`, etc.
-- `app/routes/onshape_connector.tsx` — the page Onshape embeds in an iframe. It reads `documentId` / `instanceType` (`w`|`v`|`m`) / `instanceId` / `elementId` from search params via `validateSearch`; the whole route is meaningless without them. Release eligibility (material + part number + no existing card) lives in `app/onshape_connector/utils/partEligibility.ts`.
-- `app/routes/api/` — server routes, i.e. `createFileRoute(...)({ server: { handlers: { GET, POST, ... } } })`. Each domain also has an `app/lib/<domain>Api/` module holding the queries so handlers stay thin.
-- `app/routes/api/health.ts` — container healthcheck; touches SQLite so an unwritable volume surfaces immediately.
-- `app/routes/auth/` — the OAuth server routes. `auth/status.tsx` is a page; the rest are handlers.
+Dynamic endpoint segments use `[id]` and files use `[...path]`. Query parameters on the connector identify its Part Studio; an incomplete scope shows instructions. The embedded entry offers a top-level continuation because Suite cookies use SameSite=Lax. Keep the full connector query in that continuation.
 
-Page bodies live in `app/components/app/*` so the route files stay thin, and dynamic segments use `$id` (`api/users.$id.ts`) rather than `[id]`.
-
-Kanban columns are not a table: they're a JSON blob in `kanban_config` row `id = 'default'` (see `app/lib/kanbanApi/config.ts`), with `DEFAULT_KANBAN_COLUMNS` as the fallback. Card `column_id` values are those JSON ids.
-
-**Client components must not import types from route modules.** Shared column types live in `app/lib/kanbanApi/columnTypes.ts`, and `PartsPageSearchParams` in `app/onshape_connector/utils/types.ts` — both have minimal imports on purpose, because pulling them from a route or from `schema.ts` drags server-only code into the browser bundle and fails the build.
+Kanban columns remain a JSON blob in `kanban_config` row `id = 'default'`, with `DEFAULT_KANBAN_COLUMNS` as fallback. Card `column_id` values refer to those ids.
 
 ## Conventions
 
-- Import alias is `~/*` → `./app/*`.
-- shadcn/ui (new-york, slate) in `app/components/ui/` — regenerate rather than hand-edit; app components live under `app/components/mfg/` by feature.
-- Tailwind v4 (CSS-first config in `app/app.css`, loaded through `@tailwindcss/vite`; `tailwind.config.ts` is nearly empty).
-- Inter is self-hosted via `@fontsource-variable/inter`, imported at the top of `app/app.css`. A shop-LAN install has no route to a font CDN, so don't replace it with a remote stylesheet.
-- Server-side data modules start with `import "@tanstack/react-start/server-only"`. That marker is enforced by Start's import protection: importing such a module from client code fails the build.
-- `app/lib/logger.ts` exists (debug suppressed in prod) but most code still uses `console.*` with a `[SCOPE]` prefix; match whichever the surrounding file uses.
+- Import alias is `~/*` → `./src/*`.
+- shadcn/ui (new-york, slate) in `src/components/ui/` — regenerate rather than hand-edit; app components live under `src/components/mfg/` by feature.
+- Tailwind v4 uses `src/styles/global.css`, with semantic tokens and branding copied from Hawk Eye. Before UI changes, read `docs/BRANDING.md` and `docs/architecture.md`.
+- Self-host Barlow headings, Open Sans body text, and Roboto Mono figures. Use supplied team marks and the shared tokens; dark mode follows the OS.
+- Server-side data modules start with `import "virtual:hawk-shop/server-only"`. That marker is enforced by the Astro Vite plugin: importing such a module from client code fails the build.
+- `src/lib/logger.ts` exists (debug suppressed in prod) but most code still uses `console.*` with a `[SCOPE]` prefix; match whichever the surrounding file uses.
 
-## Release contract
+## Agent skills
 
-Read `docs/release-pipeline.md` when changing image publication or deployment
-configuration. Publishing calls reusable CI, smoke-tests fresh and prior-release
-databases, then publishes the tested image by digest and proposes a suite PR.
-Keep `.hawk/app.json` synchronized with environment, health and storage changes.
-`node scripts/deploy-check.mjs` validates the built image configuration without
-opening SQLite or starting external clients. Production promotion belongs in
-hawk_suite and retains a separate approval.
+### Issue tracker
+
+GitHub Issues on `FRC2713/hawk-shop`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

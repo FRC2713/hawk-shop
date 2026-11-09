@@ -1,0 +1,39 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import Parts from "../components/islands/Parts";
+import { isOnshapeConfigured } from "../lib/onshapeApi/auth";
+import type { PartsPageSearchParams } from "../onshape_connector/utils/types";
+const search = Astro.url.searchParams;
+const type = search.get("instanceType");
+const queryParams: PartsPageSearchParams = {
+  documentId: search.get("documentId") || "",
+  instanceType: type === "v" || type === "m" ? type : "w",
+  instanceId: search.get("instanceId") || "",
+  elementId: search.get("elementId") || "",
+  elementType: search.get("elementType") || "",
+};
+const complete =
+  queryParams.documentId && queryParams.instanceId && queryParams.elementId;
+const connected = isOnshapeConfigured();
+---
+
+<AppLayout title="Onshape parts" workspace>
+  {
+    complete && connected ? (
+      <Parts queryParams={queryParams} client:load />
+    ) : (
+      <main class="mx-auto max-w-xl space-y-4 p-6">
+        <p>
+          {!complete
+            ? "Open Hawk Shop from an Onshape Part Studio to choose parts for manufacturing."
+            : "Onshape API access is not configured. Ask the deployment operator to set the API key pair."}
+        </p>
+        <p>
+          <a href="/kanban" class="underline">
+            Open board
+          </a>
+        </p>
+      </main>
+    )
+  }
+</AppLayout>

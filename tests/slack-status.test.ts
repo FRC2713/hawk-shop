@@ -8,8 +8,8 @@ process.env.APP_URL = "http://localhost";
 process.env.SLACK_BOT_TOKEN = "xoxb-secret";
 process.env.SLACK_WORKSPACE_ID = "TRHR";
 const { endpoint, signIn, jsonRequest } = await import("./http-fixture");
-const { Route: status } = await import("../app/routes/api/slack/status");
-const { Route: config } = await import("../app/routes/api/slack/config");
+const status = await import("../src/pages/api/slack/status");
+const config = await import("../src/pages/api/slack/config");
 let admin = true;
 let roleFailure = false;
 let channelError: string | null = null;
@@ -81,7 +81,7 @@ test("current health is administrator-only and role uncertainty never exposes pe
   const denied = await read(cookie);
   assert.equal(denied.status, 503);
   assert.doesNotMatch(await denied.text(), /xoxb-secret|raw upstream|pending/);
-  const { Route: board } = await import("../app/routes/api/kanban/cards.index");
+  const board = await import("../src/pages/api/kanban/cards/index");
   const boardResponse = await endpoint(board, "GET")(
     new Request("http://localhost/api/kanban/cards", {
       headers: { Cookie: cookie },
@@ -113,9 +113,9 @@ test("pending health shows retry guidance and expiry, then removes delivered, ca
   const originalNow = Date.now;
   let clock = originalNow();
   Date.now = () => clock;
-  const { Route: cards } = await import("../app/routes/api/kanban/cards.index");
-  const { Route: card } = await import("../app/routes/api/kanban/cards.$id");
-  const { runSlackDelivery } = await import("../app/lib/slack/worker");
+  const cards = await import("../src/pages/api/kanban/cards/index");
+  const card = await import("../src/pages/api/kanban/cards/[id]");
+  const { runSlackDelivery } = await import("../src/lib/slack/worker");
   const owner = await signIn();
   let actor = await signIn("bob@example.com", "bob");
   transport();
@@ -204,12 +204,14 @@ test("pending health shows retry guidance and expiry, then removes delivered, ca
       process.execPath,
       [
         "--import",
+        "./tests/register-server-only.mjs",
+        "--import",
         "tsx",
         "--input-type=module",
         "-e",
         `
     import {endpoint} from './tests/http-fixture.ts';
-    import {Route} from './app/routes/api/slack/status.ts';
+    import * as Route from './src/pages/api/slack/status.ts';
     globalThis.fetch=async(input)=>Response.json(String(input).endsWith('auth.test')?{ok:true,team_id:'TRHR',bot_id:'B1'}:String(input).endsWith('users.lookupByEmail')?{ok:true,user:{id:'UALICE',team_id:'TRHR',deleted:false,is_bot:false,is_owner:true}}:{ok:true,channel:{id:'C123',name:'manufacturing',is_member:true,is_archived:false,is_channel:true}});
     const response=await endpoint(Route,'GET')(new Request('http://localhost/api/slack/status',{headers:{Cookie:process.env.TEST_COOKIE}}),{});
     console.log(JSON.stringify({status:response.status,body:await response.json()}));

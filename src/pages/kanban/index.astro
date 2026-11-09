@@ -1,0 +1,11 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import Board from "../../components/islands/Board";
+---
+
+<AppLayout title="Manufacturing board" workspace
+  ><Board
+    cardId={Astro.url.searchParams.get("cardId") || undefined}
+    client:load
+  /></AppLayout
+>

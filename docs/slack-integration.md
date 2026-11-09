@@ -66,4 +66,4 @@ The current Onshape user-ID cookie is unsigned and explicitly is not a security 
 
 ## Deployment setup
 
-See [Slack setup](slack-setup.md) and the [outbound app manifest](slack-app-manifest.yaml). The `/slack` page manages durable channel selection and enabled state. The server requires a verified OAuth session actor and checks current Slack workspace authority for every settings, channel, save, and test request. `SLACK_BOT_TOKEN` and the trusted Red Hawk Robotics `SLACK_WORKSPACE_ID` stay in deployment configuration.
+See [Slack setup](slack-setup.md) and the [outbound app manifest](slack-app-manifest.yaml). The `/slack` page manages durable channel selection and enabled state. The server requires a verified Hawk Suite identity and checks current Slack workspace authority for every settings, channel, save, and test request. `SLACK_BOT_TOKEN` and the trusted Red Hawk Robotics `SLACK_WORKSPACE_ID` stay in deployment configuration.

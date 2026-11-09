@@ -3,23 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { requestHandler } from "@tanstack/start-server-core/request-response";
-import { verifySession } from "./request-context";
+import { endpoint } from "./http-fixture";
+import { sessionRequest } from "./request-context";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "hawk-onshape-mfg-auth-"));
 process.env.DATA_DIR = dataDir;
 process.env.DATABASE_PATH = path.join(dataDir, "hawk-shop.db");
 after(() => rmSync(dataDir, { recursive: true, force: true }));
 
-const { Route: actions } = await import("../app/routes/api/mfg/parts.actions");
+const actions = await import("../src/pages/api/mfg/parts/actions");
 
-type RouteHandler = (context: { request: Request }) => Promise<Response>;
-function endpoint(route: unknown, method: string) {
-  const handler = (
-    route as { options: { server: { handlers: Record<string, RouteHandler> } } }
-  ).options.server.handlers[method];
-  return requestHandler((request) => handler({ request }));
-}
 const postAction = endpoint(actions, "POST");
 
 test("signed-out manufacturing requests fail before parsing their body", async () => {
@@ -34,15 +27,12 @@ test("signed-out manufacturing requests fail before parsing their body", async (
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), {
     success: false,
-    error: "Not authenticated with Onshape",
+    error: "Sign in with Hawk Suite to continue.",
   });
 });
 
-const { Route: cards } = await import("../app/routes/api/kanban/cards.index");
+const cards = await import("../src/pages/api/kanban/cards/index");
 const getCards = endpoint(cards, "GET");
-const validExpiry = Date.now() + 3600000;
-const validCookie = `onshape_access_token=test-access; onshape_expires_at=${validExpiry}`;
-await verifySession("test-access", validExpiry);
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => {
   throw new Error("Manufacturing auth tests must not contact Onshape");
@@ -51,12 +41,18 @@ after(() => {
   globalThis.fetch = originalFetch;
 });
 
-function actionRequest(cookie: string, fields: Record<string, string>) {
+function actionRequest(
+  identity: "member" | Record<string, string>,
+  fields: Record<string, string>
+) {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.set(key, value);
   return new Request("http://localhost/api/mfg/parts/actions", {
     method: "POST",
-    headers: { Cookie: cookie },
+    headers:
+      identity === "member"
+        ? Object.fromEntries(sessionRequest("test-access").headers)
+        : identity,
     body: form,
   });
 }
@@ -71,7 +67,7 @@ const releaseFields = {
 async function readCards() {
   const response = await getCards(
     new Request("http://localhost/api/kanban/cards", {
-      headers: { Cookie: validCookie },
+      headers: sessionRequest("test-access").headers,
     }),
     {}
   );
@@ -79,33 +75,28 @@ async function readCards() {
   return (await response.json()).cards;
 }
 
-test("missing, expired, and missing-expiry sessions cannot add, move, or edit cards", async () => {
-  const created = await postAction(
-    actionRequest(`${validCookie}; onshape_user_id=submitter`, releaseFields),
-    {}
-  );
+test("requests without Suite identity cannot add, move, or edit cards", async () => {
+  const created = await postAction(actionRequest("member", releaseFields), {});
   assert.equal(created.status, 200);
   const cardId = (await created.json()).data.id;
   const before = await readCards();
 
-  for (const session of [
-    "",
-    `onshape_access_token=expired; onshape_expires_at=${Date.now() - 1000}`,
-    "onshape_access_token=no-expiry",
+  for (const headers of <Record<string, string>[]>[
+    {},
+    // Legacy Onshape cookies grant nothing.
+    { Cookie: "onshape_access_token=old; onshape_user_id=submitter" },
   ]) {
-    // Optional submitter attribution cannot authorize any of these requests.
-    const cookie = `${session}; onshape_user_id=submitter`;
     const attempts: Record<string, string>[] = [
       { ...releaseFields, partNumber: "Unauthorized duplicate" },
       { action: "moveCard", cardId, columnId: "done" },
       { action: "updateDueDate", cardId, dueDate: "2030-01-01" },
     ];
     for (const fields of attempts) {
-      const response = await postAction(actionRequest(cookie, fields), {});
+      const response = await postAction(actionRequest(headers, fields), {});
       assert.equal(response.status, 401);
       assert.deepEqual(await response.json(), {
         success: false,
-        error: "Not authenticated with Onshape",
+        error: "Sign in with Hawk Suite to continue.",
       });
     }
   }
@@ -114,7 +105,7 @@ test("missing, expired, and missing-expiry sessions cannot add, move, or edit ca
 
 test("authenticated actions preserve successful mutations and structured validation failures", async () => {
   const response = await postAction(
-    actionRequest(`${validCookie}; onshape_user_id=submitter`, {
+    actionRequest("member", {
       ...releaseFields,
       partNumber: "RHR-AUTHENTICATED-37",
     }),
@@ -132,7 +123,7 @@ test("authenticated actions preserve successful mutations and structured validat
     { action: "updateDueDate", cardId, dueDate: "2026-12-15" },
   ];
   for (const fields of mutations) {
-    const mutation = await postAction(actionRequest(validCookie, fields), {});
+    const mutation = await postAction(actionRequest("member", fields), {});
     assert.equal(mutation.status, 200);
     assert.equal((await mutation.json()).success, true);
     assert.deepEqual(mutation.headers.getSetCookie(), []);
@@ -144,7 +135,7 @@ test("authenticated actions preserve successful mutations and structured validat
   assert.equal(persisted.due_date, "2026-12-15");
 
   const invalid = await postAction(
-    actionRequest(validCookie, { action: "moveCard", cardId }),
+    actionRequest("member", { action: "moveCard", cardId }),
     {}
   );
   assert.equal(invalid.status, 400);
