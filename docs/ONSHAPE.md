@@ -229,17 +229,54 @@ Not Onshape behavior, but often mistaken for it: card `image_url` values written
 
 ## Webhooks
 
-Hawk Shop registers no webhooks yet. These entries are here for the "cut calls" work, which may use them to invalidate the cache.
+Hawk Shop can receive webhooks but doesn't register any yet (#58). `POST /api/onshape/webhook` clears a document's cached workspace (`wvm=w`) reads when Onshape reports a change, so the next connector read sees the edit instead of waiting out `ONSHAPE_CACHE_TTL_SECONDS`.
+
+How the receiver behaves (Hawk Shop's own contract, covered by `tests/onshape-webhook.test.ts` and `tests/runtime.test.ts`):
+
+- Enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are both set (`onshapeWebhookSettings`). Otherwise every request gets 404.
+- The callback URL is `<ONSHAPE_WEBHOOK_BASE_URL>/api/onshape/webhook?secret=<ONSHAPE_WEBHOOK_SECRET>` (`onshapeWebhookCallbackUrl`). The secret is compared in constant time (`isOnshapeWebhookSecret`). A missing or wrong secret gets the same empty 404 as a disabled route.
+- With the right secret every delivery gets an empty 200, even one it ignores, because a non-200 cancels a new registration. `onshape.model.lifecycle.changed`, `onshape.model.lifecycle.createversion` and `onshape.model.lifecycle.metadata` run `invalidateOnshapeCacheForDocument(documentId)` inline. It deletes that document's workspace rows and drops their in-flight reads. Version and microversion entries and other documents stay cached. Other events, including `webhook.register`, change nothing.
+- No debounce. Invalidation is idempotent, and single-flight collapses the reads that follow a burst into one upstream call.
+- The middleware exempts exactly `POST /api/onshape/webhook` from Suite identity and the same-origin check. A trailing slash, subpath, neighbouring path or other method still needs identity. The response carries no shop data.
+
+**Gateway route.** The Suite gateway authorizes every Shop request, so Onshape's deliveries never reach the app until the gateway forwards this one path without `authorize`. In the Shop site block of the Suite Caddyfile (see `deploy/hawk-suite-auth.patch`), add this before the catch-all `handle`, after `import clear-suite-identity`:
+
+```caddy
+@shop-onshape-webhook {
+    method POST
+    path /api/onshape/webhook
+}
+handle @shop-onshape-webhook {
+    reverse_proxy hawk-shop:3000
+}
+```
+
+Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and subpaths still go through `authorize`. Identity headers are already cleared, so the app sees an anonymous request. Set `ONSHAPE_WEBHOOK_BASE_URL` to the public origin of that site (for example `https://shop.<domain>`). `deploy/hawk-suite-auth.patch` doesn't include this route yet; add it, with a routing check, when webhooks are turned on.
 
 - **Webhooks are registered with `POST /api/v6/webhooks`.** Onshape immediately sends a `webhook.register` notification, and if the endpoint doesn't answer 200 the registration is cancelled. HTTPS endpoints need a certificate from a recognized CA.
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/)
-  - Relied on by: nothing yet
+  - Relied on by: the webhook route (answers 200 to every authenticated delivery); registration is #58
 
-- **The endpoint must be one Onshape can call.** Hawk Shop sits behind the Suite gateway, so a webhook route would need a public path that bypasses Suite sign-in.
+- **The endpoint must be one Onshape can call.** Hawk Shop sits behind the Suite gateway, so the webhook route needs a public path that bypasses Suite sign-in.
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/)
-  - Relied on by: nothing yet
+  - Relied on by: the middleware exemption and the gateway route above
+
+- **Deliveries are JSON bodies with `event` and `documentId` fields** (also `workspaceId`, `webhookId`, `messageId`, `timestamp`).
+  - Label: unverified
+  - Source: example notifications on the [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/) page; no delivery has been seen with our key
+  - Relied on by: the webhook route
+
+- **Onshape keeps the callback URL's query string when it delivers**, so the secret arrives with every notification.
+  - Label: unverified
+  - Source: FRCDesignApp puts its token in the URL the same way (seen with OAuth)
+  - Relied on by: `isOnshapeWebhookSecret`, `onshapeWebhookCallbackUrl`
+
+- **`onshape.model.lifecycle.metadata` fires when part properties such as the part number change.**
+  - Label: unverified
+  - Source: event name in Onshape's webhook event list; not seen with our key
+  - Relied on by: the webhook route's handled-events list
 
 - **Webhooks are transient by default and are deleted after a period without events** unless registered with `isTransient: false`. Onshape keeps delivering until the endpoint errors or stops responding for a long time.
   - Label: documented
@@ -249,7 +286,7 @@ Hawk Shop registers no webhooks yet. These entries are here for the "cut calls" 
 - **`onshape.model.lifecycle.changed` fires on workspace edits and `onshape.model.lifecycle.createversion` when a version is cut.**
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/) (event names in its examples)
-  - Relied on by: nothing yet
+  - Relied on by: the webhook route's handled-events list (`ONSHAPE_DOCUMENT_CHANGE_EVENTS`)
 
 - **Whether webhook deliveries or registrations count against the allocation.**
   - Label: unverified
@@ -259,7 +296,7 @@ Hawk Shop registers no webhooks yet. These entries are here for the "cut calls" 
 - **Deliveries are not signed**, so a webhook URL needs its own secret token.
   - Label: unverified
   - Source: FRCDesignApp ONSHAPE.md (seen with OAuth)
-  - Relied on by: nothing yet
+  - Relied on by: `isOnshapeWebhookSecret` (the secret in the callback URL is the only check)
 
 ## Errors
 
