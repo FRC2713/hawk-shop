@@ -1,3 +1,5 @@
+import { ErrorMessage } from "./ErrorDisplay";
+import type { ActionResponse } from "~/onshape_connector/utils/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useState } from "react";
@@ -68,7 +70,7 @@ export function PartMfgState({
   });
 
   const isSubmitting = addCard.isPending;
-  const result =
+  const result: ActionResponse | null =
     addCard.data ??
     (addCard.error ? { success: false, error: "Failed to add card" } : null);
 
@@ -144,7 +146,7 @@ export function PartMfgState({
           </p>
         )}
         {result && !result.success && result.error && (
-          <p className="text-destructive text-xs">{result.error}</p>
+          <ErrorMessage error={result.error} errorId={result.errorId} />
         )}
       </div>
     );
@@ -256,7 +258,11 @@ export function PartMfgState({
         </tbody>
       </table>
       {result && !result.success && result.error && (
-        <p className="text-destructive mt-2 text-xs">{result.error}</p>
+        <ErrorMessage
+          error={result.error}
+          errorId={result.errorId}
+          cardId={matchingCard?.id}
+        />
       )}
     </div>
   );

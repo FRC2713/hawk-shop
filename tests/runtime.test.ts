@@ -582,7 +582,7 @@ test("header report dialog preserves failed text and confirms an accepted report
   const page = await context.newPage();
   const database = new Database(join(data, "hawk-shop.db"));
   try {
-    await page.goto(origin + "/");
+    await page.goto(origin + "/?cardId=header-card-context");
     await page.getByLabel("Account: Shop Member").click();
     await expect(
       page.getByRole("button", { name: "Report a problem", exact: true })
@@ -628,6 +628,11 @@ test("header report dialog preserves failed text and confirms an accepted report
           )
       )
       .toContain("The board is stuck");
+    assert.ok(
+      (await readFile(join(data, "slack-posts.jsonl"), "utf8")).includes(
+        "header-card-context"
+      )
+    );
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ colorScheme: "dark" });
@@ -794,6 +799,31 @@ test("error displays and workflow boundaries open reports with their error refer
     const posts = await readFile(join(data, "slack-posts.jsonl"), "utf8");
     assert.ok(posts.includes("Fixture equipment failure"));
     await page.unroute("**/api/equipment");
+    await json("/api/kanban/cards", "POST", {
+      id: "report-selected-card",
+      title: "Report selected card",
+    });
+    await page.goto(origin + "/kanban?cardId=report-selected-card");
+    await page
+      .getByRole("button", {
+        name: "Report a problem with this card",
+        exact: true,
+      })
+      .click();
+    await expect(page.getByRole("dialog").last()).toBeVisible();
+    await page.getByLabel("What went wrong?").fill("This card is stuck");
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText("Report ID:");
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("report-selected-card");
     // An invalid equipment shape causes a render failure caught by the island boundary.
     await page.route("**/api/equipment", (route) =>
       route.fulfill({
@@ -801,7 +831,7 @@ test("error displays and workflow boundaries open reports with their error refer
         body: JSON.stringify({ equipment: { invalid: true } }),
       })
     );
-    await page.reload();
+    await page.goto(origin + "/equipment");
     await expect(
       page.getByRole("heading", { name: "Unable to display this workflow" })
     ).toBeVisible();

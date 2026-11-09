@@ -19,8 +19,6 @@ export function ErrorDisplay({
   cardId,
   exampleUrl,
 }: ErrorDisplayProps) {
-  const message = typeof error === "string" ? error : error.message;
-  const reference = errorId ?? getErrorId(error);
   return (
     <Card className="border-destructive">
       <CardContent className="pt-6">
@@ -29,19 +27,7 @@ export function ErrorDisplay({
             <AlertCircle className="h-5 w-5" />
             <p className="text-sm font-semibold">Error</p>
           </div>
-          <p className="text-sm">{message}</p>
-          {reference && (
-            <p className="text-sm">
-              Error ID: <code>{reference}</code>
-            </p>
-          )}
-          <ReportProblemButton
-            context={{
-              error_id: reference,
-              error_message: message,
-              card_id: cardId,
-            }}
-          />
+          <ErrorMessage error={error} errorId={errorId} cardId={cardId} />
           {exampleUrl && (
             <div className="bg-muted mt-4 space-y-2 rounded-md p-3 text-xs">
               <p className="font-semibold">Example URL format:</p>
@@ -57,5 +43,32 @@ export function ErrorDisplay({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Inline forms and toasts retain the same reference and report context. */
+export function ErrorMessage({
+  error,
+  errorId,
+  cardId,
+}: Omit<ErrorDisplayProps, "exampleUrl">) {
+  const message = typeof error === "string" ? error : error.message;
+  const reference = errorId ?? getErrorId(error);
+  return (
+    <div className="space-y-2 text-sm" role="alert">
+      <p>{message}</p>
+      {reference && (
+        <p>
+          Error ID: <code>{reference}</code>
+        </p>
+      )}
+      <ReportProblemButton
+        context={{
+          error_id: reference,
+          error_message: message,
+          ...(cardId ? { card_id: cardId } : {}),
+        }}
+      />
+    </div>
   );
 }

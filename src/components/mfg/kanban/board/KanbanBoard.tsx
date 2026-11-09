@@ -1,3 +1,4 @@
+import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import {
   closestCenter,
@@ -173,7 +174,7 @@ export function KanbanBoard({
         );
       }
       toast.error("Failed to move card", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: <ErrorMessage error={error} cardId={variables.cardId} />,
       });
     },
     onSettled: () => {

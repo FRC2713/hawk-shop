@@ -4,15 +4,15 @@ import { and, eq, gte, isNull, lte } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { problemReports } from "~/server/db/schema";
 import type { SuiteIdentity } from "~/server/suite-identity";
-import { getSlackSettings } from "./settings";
-import { slackAppBaseUrl } from "./appUrl";
-import { postSlackMessage } from "./messages";
+import { getSlackSettings } from "~/lib/slack/settings";
+import { slackAppBaseUrl } from "~/lib/slack/appUrl";
+import { postSlackMessage } from "~/lib/slack/messages";
 import {
   SlackError,
   slackCall,
   slackEnvironment,
   slackCooldown,
-} from "./client";
+} from "~/lib/slack/client";
 
 const escape = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

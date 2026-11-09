@@ -1,3 +1,5 @@
+import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
+import { ReportProblemButton } from "~/components/app/report-problem";
 import { useState, useMemo } from "react";
 import {
   Calendar,
@@ -316,9 +318,16 @@ export function KanbanCardDetails({
   );
 
   return (
-    <SheetContent className="flex w-full flex-col sm:max-w-lg">
+    <SheetContent
+      data-report-card-id={card.id}
+      className="flex w-full flex-col sm:max-w-lg"
+    >
       <SheetHeader className="space-y-1">
         <SheetTitle className="text-xl">{card.title}</SheetTitle>
+        <ReportProblemButton
+          context={{ card_id: card.id }}
+          children="Report a problem with this card"
+        />
         <SheetDescription className="flex items-center gap-2">
           <Clock className="size-3" />
           Created {formatDate(card.date_created)}
@@ -616,7 +625,7 @@ export function KanbanCardDetails({
             </p>
           ) : detailsQuery.isError ? (
             <div role="alert" className="space-y-2">
-              <p className="text-sm">Unable to load status history.</p>
+              <ErrorMessage error={detailsQuery.error} cardId={card.id} />
               <Button
                 variant="outline"
                 size="sm"

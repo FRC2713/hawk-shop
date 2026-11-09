@@ -16,7 +16,7 @@ import {
   type PendingSlackNotification,
 } from "./queue";
 import { getSlackSettings } from "./settings";
-import { deliverProblemReports } from "./reports";
+import { deliverProblemReports } from "~/server/reports";
 
 const state = globalThis as typeof globalThis & {
   __hawkSlackWorker?: {

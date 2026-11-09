@@ -9,6 +9,7 @@ import {
 import { Button } from "~/components/ui/button";
 import {
   openProblemReport,
+  currentReportContext,
   submitProblemReport,
   type ReportContext,
 } from "~/lib/api/reports";
@@ -43,7 +44,7 @@ export function ReportProblem() {
             type="button"
             className="account-sign-out w-full text-left"
             onClick={() => {
-              setContext({});
+              setContext(currentReportContext());
               setReportId("");
               setError("");
               setOpen(true);

@@ -1,7 +1,7 @@
 import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
-import { queueProblemReport } from "~/lib/slack/reports";
+import { queueProblemReport } from "~/server/reports";
 
 export const POST: APIRoute = async ({ request, locals }) => {
   const unauthorized = await requireAuth();
