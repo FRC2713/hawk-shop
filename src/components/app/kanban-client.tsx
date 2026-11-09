@@ -1,5 +1,5 @@
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { KanbanSquare, Search, Settings2, Edit, Save, X } from "lucide-react";
@@ -31,6 +31,42 @@ export function MfgKanbanClient({
   const [selectedProcessIds, setSelectedProcessIds] = useState<string[]>([]);
   const [sortByUser, setSortByUser] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const restoreSearch = () =>
+      setSearchQuery(new URL(window.location.href).searchParams.get("q") || "");
+    restoreSearch();
+    const focusSearch = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        event.key !== "/" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        (target instanceof HTMLElement &&
+          (target.closest("input, textarea, select, [role='textbox']") ||
+            target.isContentEditable))
+      )
+        return;
+      event.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("popstate", restoreSearch);
+    window.addEventListener("keydown", focusSearch);
+    return () => {
+      window.removeEventListener("popstate", restoreSearch);
+      window.removeEventListener("keydown", focusSearch);
+    };
+  }, []);
+
+  const changeSearch = (query: string) => {
+    setSearchQuery(query);
+    const url = new URL(window.location.href);
+    if (query) url.searchParams.set("q", query);
+    else url.searchParams.delete("q");
+    window.history.replaceState(window.history.state, "", url);
+  };
   const [originalConfig, setOriginalConfig] = useState<KanbanConfig | null>(
     null
   );
@@ -204,10 +240,13 @@ export function MfgKanbanClient({
             <div className="relative w-full min-w-0 flex-1 sm:max-w-md">
               <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
               <Input
+                ref={searchRef}
+                aria-label="Search board"
+                aria-keyshortcuts="/"
                 type="text"
                 placeholder="Search by part number or name..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => changeSearch(e.target.value)}
                 className="h-9 pr-9 pl-9"
               />
               {searchQuery && (
@@ -215,8 +254,9 @@ export function MfgKanbanClient({
                   variant="ghost"
                   size="icon"
                   className="absolute top-1/2 right-0 size-8 -translate-y-1/2"
-                  onClick={() => setSearchQuery("")}
+                  onClick={() => changeSearch("")}
                   title="Clear search"
+                  aria-label="Clear search"
                 >
                   <X className="size-3.5" />
                 </Button>

@@ -553,3 +553,118 @@ test(
     }
   }
 );
+
+test(
+  "board search restores q, filters with processes, counts matches and supports dragging",
+  { timeout: 60000 },
+  async () => {
+    const first = (
+      await json("/api/kanban/cards", "POST", {
+        title: "2713-24-112 Search bracket 0.5in",
+        processIds: ["process-cnc-milling"],
+      })
+    ).card;
+    const second = (
+      await json("/api/kanban/cards", "POST", {
+        title: "2713-24-113 Search plate 1-1/2",
+        processIds: ["process-3d-printing"],
+      })
+    ).card;
+    await json(`/api/kanban/cards/${first.id}`, "PATCH", {
+      machine: "Search router",
+    });
+    await json(`/api/kanban/cards/${first.id}/assign`, "POST", {
+      assignee: identity["x-token-subject"],
+    });
+    const config = await (await call("/api/kanban/config")).json();
+    const target = config.columns[1];
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const context = await browser.newContext({
+        extraHTTPHeaders: identity,
+        viewport: { width: 1440, height: 900 },
+      });
+      const page = await context.newPage();
+      await page.goto(origin + "/kanban?q=112&keep=yes#board");
+      const search = page.getByPlaceholder("Search by part number or name...");
+      await expect(search).toHaveValue("112");
+      const bracket = page.getByRole("heading", {
+        name: first.title,
+        exact: true,
+      });
+      const plate = page.getByRole("heading", {
+        name: second.title,
+        exact: true,
+      });
+      await expect(bracket).toBeVisible();
+      await expect(plate).toHaveCount(0);
+      await search.fill("1/2 router shop milling");
+      await expect(bracket).toBeVisible();
+      await expect(page).toHaveURL(/q=1%2F2\+router\+shop\+milling/);
+      assert.equal(new URL(page.url()).searchParams.get("keep"), "yes");
+      assert.equal(new URL(page.url()).hash, "#board");
+      await page.reload();
+      await expect(search).toHaveValue("1/2 router shop milling");
+      await expect(bracket).toBeVisible();
+      await search.fill("search");
+      await expect(plate).toBeVisible();
+      await page.getByRole("button", { name: "Filter by Process" }).click();
+      await page
+        .getByRole("menuitemcheckbox", { name: "CNC Milling", exact: true })
+        .click();
+      await page.keyboard.press("Escape");
+      await expect(plate).toHaveCount(0);
+      await expect(bracket).toBeVisible();
+      await page.getByRole("button", { name: "Sort by user" }).click();
+      await expect(bracket).toBeVisible();
+      await page.getByRole("button", { name: "Processes (1)" }).click();
+      await page
+        .getByRole("menuitem", { name: "Show all", exact: true })
+        .click();
+      await expect(plate).toBeVisible();
+      await page.getByRole("button", { name: "Clear search" }).click();
+      await expect(plate).toBeVisible();
+      assert.equal(new URL(page.url()).searchParams.has("q"), false);
+      await search.blur();
+      await page.keyboard.press("/");
+      await expect(search).toBeFocused();
+      await expect(search).toHaveValue("");
+      await page.keyboard.type("/");
+      await expect(search).toHaveValue("/");
+      await search.fill("112");
+      // Moving the found card still uses the real board drag/drop and mutation.
+      const sourceColumn = page.getByRole("region", {
+        name: config.columns[0].title,
+        exact: true,
+      });
+      const targetColumn = page.getByRole("region", {
+        name: target.title,
+        exact: true,
+      });
+      await expect(sourceColumn.getByLabel("Matching cards")).toHaveText("1");
+      await expect(targetColumn.getByLabel("Matching cards")).toHaveText("0");
+      const handle = sourceColumn.getByRole("button", {
+        name: "Drag to reorder",
+        exact: true,
+      });
+      const from = await handle.boundingBox();
+      const to = await targetColumn.boundingBox();
+      assert.ok(from && to);
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(from.x + 20, from.y + 20, { steps: 4 });
+      await page.mouse.move(to.x + to.width / 2, to.y + 150, { steps: 12 });
+      await page.mouse.up();
+      await expect(
+        targetColumn.getByRole("heading", { name: first.title, exact: true })
+      ).toBeVisible();
+      await expect(sourceColumn.getByLabel("Matching cards")).toHaveText("0");
+      await expect(targetColumn.getByLabel("Matching cards")).toHaveText("1");
+      await context.close();
+    } finally {
+      await browser.close();
+      await call(`/api/kanban/cards/${first.id}`, { method: "DELETE" });
+      await call(`/api/kanban/cards/${second.id}`, { method: "DELETE" });
+    }
+  }
+);
