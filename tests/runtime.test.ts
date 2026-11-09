@@ -45,6 +45,8 @@ before(async () => {
       ONSHAPE_ACCESS_KEY: "",
       ONSHAPE_SECRET_KEY: "",
       ONSHAPE_REMAINING_WARN_AT: "",
+      ONSHAPE_WEBHOOK_SECRET: "runtime-webhook-secret",
+      ONSHAPE_WEBHOOK_BASE_URL: "https://shop.example.org",
       DATABASE_PATH: "",
       UPLOADS_DIR: "",
     },
@@ -123,6 +125,42 @@ test("health stays public; Onshape cookies never grant Shop or API access", asyn
     headers: { "x-hawk-slack-team": "TOTHER" },
   });
   assert.equal(invalid.status, 401);
+});
+
+test("only the exact Onshape webhook POST is reachable without Suite identity", async () => {
+  const deliver = (path: string, method = "POST") =>
+    fetch(origin + path, {
+      method,
+      redirect: "manual",
+      headers: { "Content-Type": "application/json" },
+      body:
+        method === "POST"
+          ? JSON.stringify({
+              event: "onshape.model.lifecycle.changed",
+              documentId: "doc",
+            })
+          : undefined,
+    });
+  const accepted = await deliver(
+    "/api/onshape/webhook?secret=runtime-webhook-secret"
+  );
+  assert.equal(accepted.status, 200);
+  assert.equal(await accepted.text(), "");
+  const rejected = await deliver("/api/onshape/webhook?secret=wrong");
+  assert.equal(rejected.status, 404);
+  assert.equal(await rejected.text(), "");
+  for (const [path, method] of [
+    ["/api/onshape/webhook?secret=runtime-webhook-secret", "GET"],
+    ["/api/onshape/webhook/?secret=runtime-webhook-secret", "POST"],
+    ["/api/onshape/webhook/extra?secret=runtime-webhook-secret", "POST"],
+    ["/api/onshape/webhooks?secret=runtime-webhook-secret", "POST"],
+    ["/api/onshape/webhookx?secret=runtime-webhook-secret", "POST"],
+    ["/api/onshape/parts?secret=runtime-webhook-secret", "GET"],
+    ["/api/kanban/cards?secret=runtime-webhook-secret", "POST"],
+  ]) {
+    const response = await deliver(path, method);
+    assert.equal(response.status, 401, `${method} ${path}`);
+  }
 });
 
 test("Suite login preserves a safe destination and never redirects to an outside site", async () => {
