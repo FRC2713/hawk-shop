@@ -5,6 +5,7 @@ import {
   getPartsWmve,
 } from "~/lib/onshapeApi/generated-wrapper";
 import { cacheKey, partsTtlMs, withOnshapeCache } from "~/lib/onshapeApi/cache";
+import { assertOnshapeAllocation } from "~/lib/onshapeApi/auth";
 import type { PartsPageSearchParams } from "./types";
 
 /**
@@ -55,6 +56,8 @@ async function fetchPartsUncached(
       includePropertyDefaults: true,
     },
   });
+
+  assertOnshapeAllocation(response.response);
 
   // Check for errors in the response
   if ((response as any).error) {

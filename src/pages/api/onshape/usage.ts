@@ -1,8 +1,7 @@
 import type { APIRoute } from "astro";
-import { desc } from "drizzle-orm";
-import { db } from "~/server/db/client";
-import { onshapeApiUsage } from "~/server/db/schema";
 import { requireAuth } from "~/lib/requireAuth";
+import { summarizeOnshapeUsage } from "~/lib/onshapeApi/cache";
+import { readOnshapeRemaining } from "~/lib/onshapeApi/remaining";
 
 /**
  * What the app has actually spent against the Onshape allocation.
@@ -12,6 +11,10 @@ import { requireAuth } from "~/lib/requireAuth";
  * reports the local tally: `calls` left the building, `hits` were absorbed by
  * the server cache. The ratio is the answer to "is the caching working".
  *
+ * `remaining` is the latest `x-rate-limit-remaining` Onshape sent and
+ * `remainingByLabel` has one entry per endpoint family. That header is not the
+ * yearly allocation, which only Onshape's developer portal shows.
+ *
  * Read-only and gated like every other DB-backed route.
  */
 export const GET: APIRoute = async () => {
@@ -19,33 +22,12 @@ export const GET: APIRoute = async () => {
   if (unauthorized) return unauthorized;
 
   try {
-    const rows = await db
-      .select()
-      .from(onshapeApiUsage)
-      .orderBy(desc(onshapeApiUsage.day));
-
-    const totals = rows.reduce(
-      (acc, row) => {
-        acc.calls += row.calls;
-        acc.hits += row.hits;
-        return acc;
-      },
-      { calls: 0, hits: 0 }
-    );
-
-    const attempted = totals.calls + totals.hits;
-
+    const remainingByLabel = readOnshapeRemaining();
+    const [latest] = remainingByLabel;
     return Response.json({
-      totals: {
-        ...totals,
-        attempted,
-        // Share of would-be Onshape calls this cache absorbed.
-        hitRate:
-          attempted === 0
-            ? 0
-            : Math.round((totals.hits / attempted) * 1000) / 10,
-      },
-      byDay: rows,
+      ...summarizeOnshapeUsage(),
+      remaining: latest ?? null,
+      remainingByLabel,
     });
   } catch (error) {
     console.error("[ONSHAPE USAGE] read failed:", error);

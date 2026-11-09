@@ -44,6 +44,7 @@ before(async () => {
       SLACK_WORKSPACE_ID: "",
       ONSHAPE_ACCESS_KEY: "",
       ONSHAPE_SECRET_KEY: "",
+      ONSHAPE_REMAINING_WARN_AT: "",
       DATABASE_PATH: "",
       UPLOADS_DIR: "",
     },
@@ -454,6 +455,60 @@ test(
         ).toBeVisible();
       }
       assert.deepEqual(errors, []);
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+  }
+);
+
+test(
+  "/onshape shows Onshape's reported remaining count, warns below the threshold, and names a 402",
+  { timeout: 30000 },
+  async () => {
+    const seed = (
+      label: string,
+      remaining: number,
+      observedAt: string,
+      status: number
+    ) => {
+      const database = new Database(join(data, "hawk-shop.db"));
+      database
+        .prepare(
+          "INSERT OR REPLACE INTO onshape_api_remaining(label, remaining, observed_at, last_status) VALUES (?, ?, ?, ?)"
+        )
+        .run(label, remaining, observedAt, status);
+      database.close();
+    };
+    seed("users", 3000, "2026-11-08T12:00:00.000Z", 200);
+    seed("parts", 250, "2026-11-09T12:00:00.000Z", 200);
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const context = await browser.newContext({ extraHTTPHeaders: identity });
+      const page = await context.newPage();
+      await page.goto(origin + "/onshape");
+      await expect(
+        page.getByText("Onshape reports 250 calls remaining")
+      ).toBeVisible();
+      await expect(page.getByText(/not the yearly allocation/i)).toBeVisible();
+      await expect(page.getByRole("alert")).toContainText("below 1,000");
+      await expect(
+        page.getByRole("heading", { name: "Onshape's reported count is low" })
+      ).toBeVisible();
+      await expect(
+        page.getByText(/users: 3,000 \(observed Nov 8, 2026/)
+      ).toBeVisible();
+      await expect(page.getByText("Calls sent to Onshape")).toBeVisible();
+      await expect(page.getByText(/allocation used up/i)).toHaveCount(0);
+
+      seed("thumbnails", 0, "2026-11-09T13:00:00.000Z", 402);
+      await page.reload();
+      await expect(
+        page.getByRole("heading", { name: "Onshape API allocation used up" })
+      ).toBeVisible();
+      await expect(
+        page.getByText("Onshape API access is not configured")
+      ).toBeVisible();
       await context.close();
     } finally {
       await browser.close();

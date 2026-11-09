@@ -1,7 +1,18 @@
 ---
+import { OctagonX, TriangleAlert } from "lucide-react";
 import AppLayout from "../layouts/AppLayout.astro";
 import { isOnshapeConfigured, onshapeOrigin } from "../lib/onshapeApi/auth";
+import { summarizeOnshapeUsage } from "../lib/onshapeApi/cache";
+import {
+  formatCount as count,
+  formatObservedAt as when,
+  onshapeRemainingStatus,
+} from "../lib/onshapeApi/remaining";
 const configured = isOnshapeConfigured();
+const { totals, byDay } = summarizeOnshapeUsage();
+const { rows, latest, warnAt, exhausted, low } = onshapeRemainingStatus();
+// Brand callout: Light Grey panel, 4px red rail, 12/14px padding.
+const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
 ---
 
 <AppLayout title="Onshape API status"
@@ -14,6 +25,108 @@ const configured = isOnshapeConfigured();
           : "Onshape API access is not configured. Ask the deployment operator to set the server API key pair."
       }
     </p>
+    {
+      exhausted.length > 0 && (
+        <div role="alert" class={callout}>
+          <h2 class="flex items-center gap-2 text-base">
+            <OctagonX aria-hidden="true" className="size-5 shrink-0" />
+            Onshape API allocation used up
+          </h2>
+          <p>
+            Onshape answered 402 for{" "}
+            {exhausted.map((row) => row.label).join(", ")} on{" "}
+            {when(exhausted[0].observedAt)}.
+          </p>
+        </div>
+      )
+    }
+
+    <section class="space-y-2" aria-labelledby="usage-heading">
+      <h2 id="usage-heading" class="text-xl">Hawk Shop usage</h2>
+      <p class="text-lg">
+        Calls sent to Onshape: <span class="brand-figures"
+          >{count(totals.calls)}</span
+        > · Served from cache: <span class="brand-figures"
+          >{count(totals.hits)}</span
+        > (<span class="brand-figures">{totals.hitRate}%</span>)
+      </p>
+      {
+        byDay.length > 0 && (
+          <ul class="text-muted-foreground text-sm">
+            {byDay.slice(0, 7).map((row) => (
+              <li>
+                <span class="brand-figures">{row.day}</span> {row.label}:{" "}
+                <span class="brand-figures">{count(row.calls)}</span> calls,{" "}
+                <span class="brand-figures">{count(row.hits)}</span> cached
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </section>
+
+    <section class="space-y-2" aria-labelledby="remaining-heading">
+      <h2 id="remaining-heading" class="text-xl">Onshape's reported count</h2>
+      {
+        latest ? (
+          <>
+            <p>
+              {latest.value === null ? (
+                `Onshape has not reported a remaining count for ${latest.label}.`
+              ) : (
+                <>
+                  Onshape reports{" "}
+                  <span class="brand-figures">{count(latest.value)}</span> calls
+                  remaining
+                </>
+              )}
+              <span class="text-muted-foreground text-sm">
+                {" "}
+                ({latest.label}, observed {when(latest.observedAt)})
+              </span>
+            </p>
+            {low.length > 0 && (
+              <div role="alert" class={callout}>
+                <h3 class="flex items-center gap-2 font-semibold">
+                  <TriangleAlert
+                    aria-hidden="true"
+                    className="size-5 shrink-0"
+                  />
+                  Onshape's reported count is low
+                </h3>
+                <p>
+                  The count for {low.map((row) => row.label).join(", ")} is
+                  below <span class="brand-figures">{count(warnAt)}</span>.
+                </p>
+              </div>
+            )}
+            {rows.length > 1 && (
+              <ul class="text-muted-foreground text-sm">
+                {rows.map((row) => (
+                  <li>
+                    {row.label}:{" "}
+                    {row.value === null ? (
+                      "unknown"
+                    ) : (
+                      <span class="brand-figures">{count(row.value)}</span>
+                    )}{" "}
+                    (observed {when(row.observedAt)})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p>Onshape has not reported a remaining count yet.</p>
+        )
+      }
+      <p class="text-muted-foreground text-sm">
+        This count comes from Onshape's response header and appears to be per
+        endpoint. It is not the yearly allocation, which only Onshape's
+        developer portal shows.
+      </p>
+    </section>
+
     <p>
       CAD access uses the server's Onshape account. Shop sign-in and
       manufacturing submitters use Hawk Suite.

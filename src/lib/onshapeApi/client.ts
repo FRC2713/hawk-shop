@@ -3,7 +3,11 @@
  * Documentation: https://onshape-public.github.io/docs/
  */
 
-import { onshapeApiRequest, isOnshapeConfigured } from "./auth";
+import {
+  assertOnshapeAllocation,
+  isOnshapeConfigured,
+  onshapeApiRequest,
+} from "./auth";
 
 export interface OnshapeUser {
   id: string;
@@ -70,6 +74,7 @@ export class OnshapeClient {
     const response = await onshapeApiRequest(endpoint, options);
 
     if (!response.ok) {
+      assertOnshapeAllocation(response);
       let errorMessage = `Request failed with status ${response.status}`;
       try {
         const errorData = await response.json();

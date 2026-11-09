@@ -1,4 +1,4 @@
-import { OnshapeConfigurationError } from "~/lib/onshapeApi/auth";
+import { onshapeErrorResponse } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { fetchPartsFromOnshape } from "~/onshape_connector/utils/partsQuery.server";
@@ -49,8 +49,8 @@ export const GET: APIRoute = async ({ request }) => {
     let errorMessage = "Failed to fetch parts";
     let statusCode = 500;
 
-    if (error instanceof OnshapeConfigurationError)
-      return Response.json({ error: error.message }, { status: 409 });
+    const known = onshapeErrorResponse(error);
+    if (known) return known;
     if (error instanceof Error) {
       if (error.message.includes("Not authenticated")) {
         errorMessage =

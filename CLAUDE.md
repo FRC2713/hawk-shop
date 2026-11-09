@@ -61,7 +61,7 @@ better-sqlite3 is external in `astro.config.mjs`. The Node image includes produc
 
 `requireAuth()` reads the verified request identity; Onshape credentials never grant Shop access. Same-origin checks protect every mutation, including multipart uploads. Use `APP_URL` for the browser-facing origin when TLS terminates at the gateway.
 
-Onshape access uses one server-side API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE_SECRET_KEY`, optional `ONSHAPE_BASE_URL`). There is no per-user Onshape connection: every CAD read and write runs as the key's Onshape account. `onshapeFetch` in `src/lib/onshapeApi/auth.ts` is the only transport; it HMAC-signs each request, refuses non-Onshape hosts, and re-signs bounded redirects. Route every Onshape call through it. A missing key pair returns 409, independently of Suite's 401. `/onshape` shows whether the key is configured. `/auth/logout` sends the browser to Suite sign-out. Redirect destinations pass through `safeRedirectPath`.
+Onshape access uses one server-side API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE_SECRET_KEY`, optional `ONSHAPE_BASE_URL`). There is no per-user Onshape connection: every CAD read and write runs as the key's Onshape account. `onshapeFetch` in `src/lib/onshapeApi/auth.ts` is the only transport; it HMAC-signs each request, refuses non-Onshape hosts, and re-signs bounded redirects (signing and redirect rules: docs/ONSHAPE.md#authentication-and-signing). Route every Onshape call through it. A missing key pair returns 409, independently of Suite's 401. `/onshape` shows whether the key is configured. `/auth/logout` sends the browser to Suite sign-out. Redirect destinations pass through `safeRedirectPath`.
 
 `src/server/request-context.ts` uses AsyncLocalStorage so server helpers such as `requireAuth()` and `getSessionActor()` read the current request's verified identity.
 
@@ -88,18 +88,20 @@ The route also serves `?url=<absolute Onshape URL>` for the connector, which has
 
 ### Onshape API calls are a hard annual budget
 
-Onshape bills an **annual, company-wide** API allocation — a team on EDU Enterprise gets 10,000 calls for the entire year, flat, and adding users does not raise it. Overrunning it returns **402**, not 429. This is not a rate limit you wait out; every avoided call is permanent savings, which inverts the usual caching trade-off: staleness is cheap, a miss is not.
+Onshape gives the team a fixed **yearly** API allocation (10,000 requests company-wide), and running out returns **402** until it resets, not a 429 you wait out. Every avoided call is permanent savings, which inverts the usual caching trade-off: staleness is cheap, a miss is not. The Onshape facts behind this, each labeled documented, observed or unverified, are in [docs/ONSHAPE.md](docs/ONSHAPE.md); read it before changing any Onshape call, and update it in the same PR as code that relies on new Onshape behavior.
 
 `src/lib/onshapeApi/cache.ts` is the chokepoint. Two layers:
 
 - **SQLite** (`onshape_api_cache`), not memory, so a `docker compose up` does not re-buy every response the team already paid for.
 - **In-process single-flight**, so ten browsers opening the board at once produce one upstream call. The SQLite layer cannot do this alone — none of the ten has written a row yet.
 
-`ttlMs: null` means never expires, and that is the right answer whenever the upstream is frozen: parts at `wvm=v` or `wvm=m` are immutable, so `partsTtlMs()` returns null for them and `ONSHAPE_CACHE_TTL_SECONDS` (default 300) only governs `wvm=w`. A throwing fetcher is never cached and never counted — Onshape excludes 4xx/5xx from the allocation, and caching an auth failure would poison the entry for the whole TTL.
+`ttlMs: null` means never expires, and that is the right answer whenever the upstream is frozen: parts at `wvm=v` or `wvm=m` are immutable, so `partsTtlMs()` returns null for them and `ONSHAPE_CACHE_TTL_SECONDS` (default 300) only governs `wvm=w`. A throwing fetcher is never cached and never counted: Onshape doesn't charge 4xx/5xx, and caching an auth failure would poison the entry for the whole TTL.
 
 **The Onshape key is not an auth boundary.** The server holds it for every caller, and a cache hit needs no upstream call at all. `api/onshape/parts`, `api/onshape/version`, `api/onshape/thumbnail` and `api/onshape/usage` all call `requireAuth()` explicitly; a new cached route that skips it answers any caller on the LAN.
 
-`recordOnshapeUsage` tallies `calls` (left the building) vs `hits` (absorbed here) per day in `onshape_api_usage`, readable at `/api/onshape/usage`. Onshape's own page reports one yearly number with no endpoint breakdown, which is not enough to find out what is spending the allocation.
+`recordOnshapeUsage` tallies `calls` (left the building) vs `hits` (absorbed here) per day in `onshape_api_usage`, readable at `/api/onshape/usage`. Onshape's developer portal shows only a yearly total, which is not enough to find out what is spending the allocation. The `x-rate-limit-remaining` response header is **not** the yearly remaining count (see docs/ONSHAPE.md#remaining-calls-header), so never label it as one.
+
+`onshapeFetch` also saves the final response's `x-rate-limit-remaining` header in `onshape_api_remaining`, one row per `endpointFamily`; it is not the yearly allocation. `/onshape` warns below `ONSHAPE_REMAINING_WARN_AT` (default 1000) and shows a 402 as "allocation used up". Callers turning a non-OK Onshape response into an error call `assertOnshapeAllocation` first, so a 402 reads the same on every path.
 
 Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release.
 

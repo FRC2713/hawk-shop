@@ -4,11 +4,9 @@ import "virtual:hawk-shop/server-only";
  * Server-side cache for Onshape API responses, plus the usage tally that tells
  * you whether it is working.
  *
- * Onshape's quota is an **annual, company-wide** call allowance — not a rate
- * limit you wait out. Every avoided call is permanent savings, which flips the
- * usual caching trade-off: staleness is cheap, a cache miss is not. Anything
- * with an immutable upstream (a version, a microversion) is therefore cached
- * with no expiry at all.
+ * Onshape's allowance is yearly, so staleness is cheap and a cache miss is not
+ * (see docs/ONSHAPE.md#allocation-and-billing). Anything with an immutable
+ * upstream (a version, a microversion) is cached with no expiry at all.
  *
  * Two layers sit here:
  *
@@ -23,7 +21,7 @@ import "virtual:hawk-shop/server-only";
  * rather than breaking.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { onshapeApiCache, onshapeApiUsage } from "~/server/db/schema";
 
@@ -146,8 +144,8 @@ function writeCache(key: string, value: unknown, ttlMs: number | null): void {
  *
  * `kind: "call"` means a request left the building and will show up on
  * Onshape's annual counter; `kind: "hit"` means this cache paid for it instead.
- * Failures are deliberately *not* recorded as calls — Onshape excludes 4xx/5xx
- * responses from the allocation, so counting them here would overstate spend.
+ * Failures are deliberately *not* recorded as calls: Onshape doesn't charge
+ * 4xx/5xx (see docs/ONSHAPE.md#allocation-and-billing).
  */
 export function recordOnshapeUsage(label: string, kind: "call" | "hit"): void {
   try {
@@ -170,6 +168,34 @@ export function recordOnshapeUsage(label: string, kind: "call" | "hit"): void {
   } catch (error) {
     console.error("[ONSHAPE USAGE] tally failed:", error);
   }
+}
+
+/** The per-day tally, newest first, with totals and the cache hit rate. */
+export function summarizeOnshapeUsage() {
+  const byDay = db
+    .select()
+    .from(onshapeApiUsage)
+    .orderBy(desc(onshapeApiUsage.day))
+    .all();
+  const totals = byDay.reduce(
+    (acc, row) => {
+      acc.calls += row.calls;
+      acc.hits += row.hits;
+      return acc;
+    },
+    { calls: 0, hits: 0 }
+  );
+  const attempted = totals.calls + totals.hits;
+  return {
+    totals: {
+      ...totals,
+      attempted,
+      // Share of would-be Onshape calls this cache absorbed.
+      hitRate:
+        attempted === 0 ? 0 : Math.round((totals.hits / attempted) * 1000) / 10,
+    },
+    byDay,
+  };
 }
 
 /**

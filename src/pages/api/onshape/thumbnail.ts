@@ -11,9 +11,10 @@ import {
   storagePathFromUrl,
 } from "~/server/storage/files";
 import {
+  assertOnshapeAllocation,
   isOnshapeUrl,
+  onshapeErrorResponse,
   onshapeFetch,
-  OnshapeConfigurationError,
 } from "~/lib/onshapeApi/auth";
 
 /**
@@ -138,9 +139,10 @@ export const GET: APIRoute = async ({ request }) => {
   let response: Response;
   try {
     response = await onshapeFetch(imageUrl);
+    assertOnshapeAllocation(response);
   } catch (error) {
-    if (error instanceof OnshapeConfigurationError)
-      return Response.json({ error: error.message }, { status: 409 });
+    const known = onshapeErrorResponse(error);
+    if (known) return known;
     throw error;
   }
   if (!response.ok) {
