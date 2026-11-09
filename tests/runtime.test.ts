@@ -1354,3 +1354,33 @@ test(
     }
   }
 );
+
+test("a stored thumbnail redirects through the middleware to its file", async () => {
+  const source = "https://cad.onshape.com/api/thumbnails/runtime/s/300x300";
+  const db = new Database(join(data, "hawk-shop.db"));
+  db.prepare(
+    "INSERT INTO part_thumbnails(document_id,instance_type,instance_id,element_id,part_id,storage_path,source_url,microversion_id,created_at) VALUES ('d','m','mv','e','p','thumbnails/runtime.png',?,'mv',?)"
+  ).run(source, new Date().toISOString());
+  db.close();
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(join(data, "uploads", "thumbnails"), { recursive: true });
+  await writeFile(join(data, "uploads", "thumbnails", "runtime.png"), "png");
+
+  const response = await call(
+    "/api/onshape/thumbnail?" +
+      new URLSearchParams({
+        url: source,
+        documentId: "d",
+        elementId: "e",
+        partId: "p",
+        microversionId: "mv",
+      })
+  );
+  assert.equal(response.status, 307, output);
+  const location = response.headers.get("location");
+  assert.equal(location, "/api/files/thumbnails/runtime.png");
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const file = await call(location!);
+  assert.equal(file.status, 200);
+  assert.equal(await file.text(), "png");
+});

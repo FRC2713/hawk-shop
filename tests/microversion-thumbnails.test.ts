@@ -180,7 +180,10 @@ async function thumbnail(query: string) {
     })
   );
   assert.equal(response.status, 307, await response.clone().text());
-  const location = new URL(response.headers.get("Location")!);
+  const location = new URL(
+    response.headers.get("Location")!,
+    "http://localhost"
+  );
   const prefix = "/api/files/";
   assert.ok(location.pathname.startsWith(prefix), location.pathname);
   const file = await endpoint(filesRoute, "GET", {

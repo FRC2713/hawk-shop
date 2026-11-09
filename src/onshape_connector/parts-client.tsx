@@ -341,7 +341,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
   // Show loading screen while data is being fetched
   if (showLoading) {
     return (
-      <main className="container mx-auto px-4 py-8">
+      <main className="h-full overflow-y-auto px-4 py-8">
         <div className="mx-auto max-w-6xl space-y-6">
           {/* Header Skeleton */}
           <div className="flex items-center justify-between">
@@ -368,7 +368,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
   }
 
   return (
-    <main className="container mx-auto px-4 py-8">
+    <main className="h-full overflow-y-auto px-4 py-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-2">
         {/* Error Messages */}
         {displayError && (

@@ -3,6 +3,19 @@ import { requestContext } from "./server/request-context";
 import { suiteIdentity, suiteSettings } from "./server/suite-identity";
 import { ONSHAPE_WEBHOOK_PATH } from "./server/onshape-webhook";
 
+// Response.redirect() and fetch() responses have immutable headers; copy those
+// before adding one rather than throwing a 500.
+function withHeader(response: Response, name: string, value: string) {
+  try {
+    response.headers.set(name, value);
+    return response;
+  } catch {
+    const copy = new Response(response.body, response);
+    copy.headers.set(name, value);
+    return copy;
+  }
+}
+
 export const onRequest = defineMiddleware(async (context, next) => {
   if (import.meta.env.DEV) {
     const { startSlackWorker } = await import("./lib/slack/worker");
@@ -21,9 +34,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     context.url.pathname === ONSHAPE_WEBHOOK_PATH &&
     context.request.method === "POST"
   ) {
-    const response = await next();
-    response.headers.set("Cache-Control", "no-store");
-    return response;
+    return withHeader(await next(), "Cache-Control", "no-store");
   }
   if (
     path.startsWith("/_astro/") ||
@@ -63,9 +74,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     // The exchange proves possession of a one-use code and its iframe verifier.
     // It grants no identity itself; Caddy validates the resulting Suite token.
     if (isExchange) {
-      const response = await next();
-      response.headers.set("Cache-Control", "no-store");
-      return response;
+      return withHeader(await next(), "Cache-Control", "no-store");
     }
     if (!context.locals.identity) {
       const configured = suiteSettings().HAWK_SUITE_TRUST_PROXY === "true";
@@ -90,9 +99,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
         ["GET", "HEAD"].includes(context.request.method) &&
         context.request.headers.get("sec-fetch-dest") === "iframe"
       ) {
-        const response = await next();
-        response.headers.set("Cache-Control", "no-store");
-        return response;
+        return withHeader(await next(), "Cache-Control", "no-store");
       }
       return context.redirect(
         `/signin?redirect=${encodeURIComponent(destination)}`
@@ -109,8 +116,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
         identity.email ?? null
       );
     }
-    const response = await next();
-    response.headers.set("Cache-Control", "private, no-store");
-    return response;
+    return withHeader(await next(), "Cache-Control", "private, no-store");
   });
 });
