@@ -120,6 +120,8 @@ export function KanbanColumn({
   return (
     <>
       <div
+        role="region"
+        aria-label={column.title}
         ref={combinedRef}
         style={style}
         className={`group/column bg-card flex h-full w-[280px] shrink-0 flex-col rounded-xl border transition-all duration-200 sm:w-[320px] ${
@@ -152,7 +154,11 @@ export function KanbanColumn({
               onEditEnd={() => setIsEditing(false)}
               isReadOnly={isLastColumn}
             />
-            <Badge variant="secondary" className="text-xs tabular-nums">
+            <Badge
+              variant="secondary"
+              className="text-xs tabular-nums"
+              aria-label="Matching cards"
+            >
               {isLastColumn ? filteredCards.length : cards.length}
             </Badge>
           </div>

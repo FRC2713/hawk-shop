@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  AlertTriangle,
   Edit,
   Save,
   Settings2,
@@ -31,6 +32,8 @@ interface KanbanBoardControlsProps {
   onHideImages: () => void;
   hideImages: boolean;
   isSaving: boolean;
+  hasWarningsOnly: boolean;
+  onHasWarningsOnlyChange: (value: boolean) => void;
   selectedProcessIds: string[];
   onProcessFilterChange: (processIds: string[]) => void;
   sortByUser: boolean;
@@ -46,6 +49,8 @@ export function KanbanBoardControls({
   isSaving,
   onHideImages,
   hideImages,
+  hasWarningsOnly,
+  onHasWarningsOnlyChange,
   selectedProcessIds,
   onProcessFilterChange,
   sortByUser,
@@ -119,6 +124,17 @@ export function KanbanBoardControls({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <Button
+        variant={hasWarningsOnly ? "secondary" : "outline"}
+        size="sm"
+        aria-pressed={hasWarningsOnly}
+        onClick={() => onHasWarningsOnlyChange(!hasWarningsOnly)}
+        className="gap-2"
+      >
+        <AlertTriangle className="size-4" aria-hidden="true" />
+        Has warnings
+      </Button>
 
       <ToggleGroup
         type="multiple"

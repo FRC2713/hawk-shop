@@ -399,3 +399,23 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
   - Relied on by: `OnshapeClient`
 
 Hawk Shop's own codes are separate: a missing key pair returns 409 from Hawk Shop (`OnshapeConfigurationError`), and a Suite sign-in failure returns 401. Neither comes from Onshape.
+
+## Release checks
+
+The connector runs release checks on its loaded part metadata. The add-card
+server action reads the same Part Studio through `fetchPartsFromOnshape` and
+runs the same pure checks. A fresh cached read adds no upstream calls. If the
+cache has expired or been invalidated, the action uses the ordinary cached
+parts fetch; it never requests additional metadata, geometry or mass properties
+for checks. Local manufacturing cards without any CAD coordinates still need
+only Suite identity. Partial CAD coordinates are rejected.
+
+Placeholder material names default to `Unknown`, `Default` and `Generic`,
+matched after trimming and ignoring case. Callers can replace or disable that
+list with `ReleaseCheckContext.placeholderMaterials`. The add-card action saves
+only warning-level issues in the card's nullable `release_issues` JSON column.
+Clean releases and local manufacturing cards store null. These are snapshots
+of the server checks at release time: later workspace reads and card edits
+never recompute or replace them. The board shows a warning count, full messages
+and fixes in card details, and a "Has warnings" filter that combines with search
+and process filters.

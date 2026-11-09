@@ -325,6 +325,25 @@ export function KanbanCardDetails({
       </SheetHeader>
 
       <div className="mt-6 flex-1 space-y-6 overflow-y-auto px-4">
+        {!!card.release_issues?.length && (
+          <section
+            aria-label="Release warnings"
+            className="border-border bg-muted border-l-4 p-3"
+          >
+            <h4 className="font-semibold">Release warnings</h4>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Recorded when this part was released.
+            </p>
+            <ul className="mt-3 space-y-3 text-sm">
+              {card.release_issues.map((issue, index) => (
+                <li key={`${issue.code}-${index}`}>
+                  <p className="font-semibold">{issue.message}</p>
+                  {issue.fix && <p className="mt-1">{issue.fix}</p>}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {/* Image Section */}
         {imageUrl && !imageError && (
           <div className="overflow-hidden">
