@@ -31,21 +31,21 @@ Onshape webhooks are optional. With `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOO
 
 ## Configuration
 
-| Variable                                    | Default                     | Purpose                                                                |
-| ------------------------------------------- | --------------------------- | ---------------------------------------------------------------------- |
-| `HAWK_SUITE_TRUST_PROXY`                    | `false`                     | Enable only behind the isolated, trusted Suite gateway                 |
-| `HAWK_SUITE_TEAM_ID`                        | unset                       | Approved Slack workspace ID, required with proxy trust                 |
-| `HAWK_SUITE_ISSUER`                         | unset                       | Suite origin ending in `/`, required with proxy trust                  |
-| `APP_URL`                                   | `http://localhost:3000`     | Browser-facing origin for cookies, login return URLs, and write checks |
-| `HOST` / `PORT`                             | `127.0.0.1` / `3000`        | Server listener; container listens on `0.0.0.0`                        |
-| `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY` | unset                       | Optional Onshape API key pair for CAD import and part-number writes    |
-| `ONSHAPE_BASE_URL`                          | `https://cad.onshape.com`   | Onshape stack origin; enterprise stacks use their own subdomain        |
-| `ONSHAPE_CACHE_TTL_SECONDS`                 | `300`                       | Editable workspace cache TTL; immutable part versions do not expire    |
-| `ONSHAPE_WEBHOOK_SECRET`                    | unset                       | Optional shared secret for Onshape webhook deliveries                  |
-| `ONSHAPE_WEBHOOK_BASE_URL`                  | unset                       | Public origin Onshape can reach; webhooks need it and the secret       |
-| `DATA_DIR`                                  | `./data`, `/data` in Docker | Database and uploads root                                              |
-| `DATABASE_PATH`                             | `$DATA_DIR/hawk-shop.db`    | SQLite path override                                                   |
-| `UPLOADS_DIR`                               | `$DATA_DIR/uploads`         | Upload path override                                                   |
+| Variable                                    | Default                                           | Purpose                                                                                         |
+| ------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `HAWK_SUITE_TRUST_PROXY`                    | `false`                                           | Enable only behind the isolated, trusted Suite gateway                                          |
+| `HAWK_SUITE_TEAM_ID`                        | unset                                             | Approved Slack workspace ID, required with proxy trust                                          |
+| `HAWK_SUITE_ISSUER`                         | unset                                             | Suite origin ending in `/`, required with proxy trust                                           |
+| `APP_URL`                                   | `http://localhost:3000`                           | Browser-facing origin for cookies, login return URLs, and write checks                          |
+| `HOST` / `PORT`                             | `127.0.0.1` / `3000`                              | Server listener; container listens on `0.0.0.0`                                                 |
+| `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY` | unset                                             | Optional Onshape API key pair for CAD import and part-number writes                             |
+| `ONSHAPE_BASE_URL`                          | `https://cad.onshape.com`                         | Onshape stack origin; enterprise stacks use their own subdomain                                 |
+| `ONSHAPE_CACHE_TTL_SECONDS`                 | `86400` with configured webhooks, otherwise `300` | Finite, positive workspace TTL override in seconds; version and microversion parts never expire |
+| `ONSHAPE_WEBHOOK_SECRET`                    | unset                                             | Optional shared secret for Onshape webhook deliveries                                           |
+| `ONSHAPE_WEBHOOK_BASE_URL`                  | unset                                             | Public origin Onshape can reach; webhooks need it and the secret                                |
+| `DATA_DIR`                                  | `./data`, `/data` in Docker                       | Database and uploads root                                                                       |
+| `DATABASE_PATH`                             | `$DATA_DIR/hawk-shop.db`                          | SQLite path override                                                                            |
+| `UPLOADS_DIR`                               | `$DATA_DIR/uploads`                               | Upload path override                                                                            |
 
 ## Development and verification
 
