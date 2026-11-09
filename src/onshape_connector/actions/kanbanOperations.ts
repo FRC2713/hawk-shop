@@ -1,8 +1,12 @@
+import "virtual:hawk-shop/server-only";
 import { z } from "zod";
-import { createCard, updateCard } from "~/server/kanbanApi/cards";
+import { createCard, updateCard, getCards } from "~/server/kanbanApi/cards";
 import { logger } from "~/lib/logger";
 import type { SessionActor } from "~/lib/sessionActor";
 import type { ActionResponse } from "../utils/types";
+import { checkPartForRelease } from "../utils/partEligibility";
+import { fetchPartsFromOnshape } from "../utils/partsQuery.server";
+import { getCardVersionId } from "../utils/versionUtils";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
 
@@ -146,6 +150,61 @@ export async function handleAddKanbanCard(
       elementType: "PARTSTUDIO", // Default, not used for version extraction
     };
     const versionId = extractVersionId(queryParams);
+
+    // Local manufacturing cards have no CAD scope. A partial CAD scope must
+    // never bypass the server's release checks.
+    const hasCadScope = [
+      data.documentId,
+      data.instanceId,
+      data.elementId,
+      data.partId,
+    ].some((value) => value !== undefined);
+    if (hasCadScope) {
+      if (
+        !data.documentId ||
+        !data.instanceId ||
+        !data.elementId ||
+        !data.partId ||
+        !["w", "v", "m"].includes(data.instanceType)
+      ) {
+        return {
+          success: false,
+          error: "A complete Onshape part scope is required for release.",
+        };
+      }
+      const parts = await fetchPartsFromOnshape(queryParams);
+      const part = parts.find(
+        (part) => (part.partId || part.id) === data.partId
+      );
+      if (!part)
+        return {
+          success: false,
+          error:
+            "This part was not found in the selected Part Studio. Reload the connector.",
+        };
+      const { cards, error } = await getCards();
+      if (error) throw new Error(error);
+      const matchingCard = cards.find(
+        (card) =>
+          card.title === part.partNumber &&
+          (!getCardVersionId(card) || getCardVersionId(card) === versionId)
+      );
+      const issues = checkPartForRelease(part, {
+        matchingCard,
+        instanceType: data.instanceType,
+        quantityPerRobot: data.quantityPerRobot,
+        quantityToMake: data.quantityToMake,
+      });
+      const errors = issues.filter((issue) => issue.severity === "error");
+      if (errors.length)
+        return {
+          success: false,
+          error: errors.map((issue) => issue.message).join(" "),
+        };
+      // The cached part is authoritative, including its current part number.
+      data.partNumber = part.partNumber!;
+      data.microversionId = part.microversionId;
+    }
 
     // Build image URL from raw thumbnail URL (same strategy as PartCardThumbnail)
     // Ensure thumbnail uses version-specific parameters if we need to rebuild it

@@ -7,9 +7,9 @@ import { createHash } from "node:crypto";
 
 const dataDir = await mkdtemp(join(tmpdir(), "hawk-microversion-"));
 process.env.DATA_DIR = dataDir;
-// Workspace parts reads expire almost at once, so each read in a test reaches
-// the mocked Onshape and can report a new microversion.
-process.env.ONSHAPE_CACHE_TTL_SECONDS = "0.001";
+// Each explicit connector read below invalidates its document, as a webhook
+// would. Keep release checks inside a fresh ordinary cache lifetime.
+process.env.ONSHAPE_CACHE_TTL_SECONDS = "300";
 after(() => rm(dataDir, { recursive: true, force: true }));
 
 const { endpoint, jsonRequest, signIn } = await import("./http-fixture");
@@ -21,6 +21,8 @@ const actionsRoute = await import("../src/pages/api/mfg/parts/actions");
 const usageRoute = await import("../src/pages/api/onshape/usage");
 
 const cookie = await signIn();
+const { invalidateOnshapeCacheForDocument } =
+  await import("../src/lib/onshapeApi/cache");
 
 /**
  * A fake Onshape: one Part Studio whose parts' microversions the test sets.
@@ -57,7 +59,8 @@ function fakeOnshape(
           [...microversions].map(([partId, microversionId]) => ({
             partId,
             microversionId,
-            partNumber: `PN-${partId}`,
+            partNumber: `PN-${documentId}-${partId}`,
+            material: { displayName: "Aluminum" },
             thumbnailInfo: {
               sizes: [{ size: "300x300", href: thumbnailHref(partId) }],
             },
@@ -108,6 +111,7 @@ function fakeOnshape(
 }
 
 async function readParts(documentId: string) {
+  invalidateOnshapeCacheForDocument(documentId);
   const query = new URLSearchParams({
     documentId,
     instanceType: "w",
@@ -138,7 +142,7 @@ async function release(
   const form = new FormData();
   Object.entries({
     action: "addCard",
-    partNumber: `PN-${part.partId}`,
+    partNumber: `PN-${documentId}-${part.partId}`,
     documentId,
     instanceType: "w",
     instanceId: "ws",

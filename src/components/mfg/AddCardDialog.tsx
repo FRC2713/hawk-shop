@@ -1,3 +1,9 @@
+import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
+import {
+  checkPartForRelease,
+  type ReleaseCheckContext,
+} from "~/onshape_connector/utils/partEligibility";
+import { ReleaseIssues } from "./ReleaseIssues";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -30,6 +36,9 @@ export interface AddCardFormData {
 }
 
 interface AddCardDialogProps {
+  part?: BtPartMetadataInfo;
+  matchingCard?: ReleaseCheckContext["matchingCard"];
+  instanceType?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: AddCardFormData) => void;
@@ -37,6 +46,9 @@ interface AddCardDialogProps {
 }
 
 export function AddCardDialog({
+  part,
+  matchingCard,
+  instanceType,
   open,
   onOpenChange,
   onSubmit,
@@ -48,6 +60,12 @@ export function AddCardDialog({
     quantityToMake: "",
     dueDate: undefined,
   });
+  const issues = checkPartForRelease(part, {
+    matchingCard,
+    instanceType,
+    ...formData,
+  });
+  const hasReleaseErrors = issues.some((issue) => issue.severity === "error");
   const [processesOpen, setProcessesOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [errors, setErrors] = useState<{
@@ -93,7 +111,7 @@ export function AddCardDialog({
       return;
     }
 
-    onSubmit(formData);
+    if (!hasReleaseErrors) onSubmit(formData);
   };
 
   const handleClose = (open: boolean) => {
@@ -122,6 +140,7 @@ export function AddCardDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="space-y-4 py-4">
+            <ReleaseIssues issues={issues} />
             {/* Process Selection */}
             <div className="space-y-2">
               <Label htmlFor="processes">
@@ -308,7 +327,7 @@ export function AddCardDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || hasReleaseErrors}>
               {isSubmitting ? "Adding..." : "Add to Tracker"}
             </Button>
           </DialogFooter>
