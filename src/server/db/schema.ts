@@ -72,6 +72,9 @@ export const kanbanCards = sqliteTable(
     onshape_element_id: text("onshape_element_id"),
     onshape_part_id: text("onshape_part_id"),
     onshape_version_id: text("onshape_version_id"),
+    // The part's microversion when it was released (or last seen by a
+    // workspace parts read). Thumbnails are cached under it.
+    onshape_microversion_id: text("onshape_microversion_id"),
   },
   (table) => [
     index("idx_kanban_cards_column_id").on(table.column_id),
@@ -123,7 +126,13 @@ export const kanbanCardProcesses = sqliteTable(
 /**
  * Cache of Onshape part thumbnails copied into local storage. `storage_path` is
  * relative to the uploads directory; `source_url` is the Onshape URL it came
- * from and is what cache lookups key on.
+ * from.
+ *
+ * Rows with a `microversion_id` are keyed by the real part
+ * (`document_id`, `instance_type = "m"`, `instance_id` = microversion,
+ * `element_id`, `part_id`) and are looked up by that. Legacy rows from before
+ * microversion keys have a null `microversion_id`, a synthetic key, and are
+ * looked up by `source_url`.
  */
 export const partThumbnails = sqliteTable(
   "part_thumbnails",
@@ -135,6 +144,7 @@ export const partThumbnails = sqliteTable(
     part_id: text("part_id").notNull(),
     storage_path: text("storage_path").notNull(),
     source_url: text("source_url"),
+    microversion_id: text("microversion_id"),
     created_at: text("created_at").notNull().$defaultFn(now),
   },
   (table) => [
@@ -207,6 +217,19 @@ export const onshapeApiRemaining = sqliteTable("onshape_api_remaining", {
   remaining: integer("remaining"),
   observed_at: text("observed_at").notNull(),
   last_status: integer("last_status").notNull(),
+});
+
+/**
+ * One Onshape webhook per document whose workspace the app reads (see
+ * `~/lib/onshapeApi/webhooks`). `webhook_id` is Onshape's id. A re-check that
+ * finds the webhook gone registers it again and replaces the id.
+ */
+export const onshapeWebhooks = sqliteTable("onshape_webhooks", {
+  document_id: text("document_id").primaryKey(),
+  webhook_id: text("webhook_id").notNull(),
+  registered_at: text("registered_at").notNull(),
+  last_event_at: text("last_event_at"),
+  last_checked_at: text("last_checked_at"),
 });
 
 /**

@@ -1,6 +1,7 @@
 import { defineMiddleware } from "astro:middleware";
 import { requestContext } from "./server/request-context";
 import { suiteIdentity, suiteSettings } from "./server/suite-identity";
+import { ONSHAPE_WEBHOOK_PATH } from "./server/onshape-webhook";
 
 export const onRequest = defineMiddleware(async (context, next) => {
   if (import.meta.env.DEV) {
@@ -13,6 +14,17 @@ export const onRequest = defineMiddleware(async (context, next) => {
     ["GET", "HEAD"].includes(context.request.method)
   )
     return next();
+  // Onshape cannot carry Suite identity. The route checks its own secret,
+  // answers empty bodies and only clears cache. Exact path and method only:
+  // no trailing slash, no subpath, no other verb.
+  if (
+    context.url.pathname === ONSHAPE_WEBHOOK_PATH &&
+    context.request.method === "POST"
+  ) {
+    const response = await next();
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
   if (
     path.startsWith("/_astro/") ||
     path.startsWith("/brand/") ||

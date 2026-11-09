@@ -78,9 +78,11 @@ const globalForCache = globalThis as unknown as {
 };
 const inflight = (globalForCache.__onshapeInflight ??= new Map());
 
+const KEY_SEPARATOR = "::";
+
 /** Build a stable cache key. Parts are ordered, so callers cannot transpose them. */
 export function cacheKey(label: string, ...parts: (string | number)[]): string {
-  return [label, ...parts].join("::");
+  return [label, ...parts].join(KEY_SEPARATOR);
 }
 
 /** Drop the durable entry and detach reads that started before the edit. */
@@ -243,4 +245,29 @@ export async function withOnshapeCache<T>({
   } finally {
     if (inflight.get(key) === request) inflight.delete(key);
   }
+}
+
+/**
+ * Forget every **workspace** (`wvm=w`) read of one document, durable rows and
+ * in-flight requests alike, so the next read goes upstream once.
+ *
+ * Relies on the key layout `cacheKey(label, documentId, wvm, ...)`. Version and
+ * microversion entries are immutable and stay, as do keys of any other shape.
+ * Called when an Onshape webhook reports that the document changed.
+ */
+export function invalidateOnshapeCacheForDocument(documentId: string): void {
+  // What follows the label in every workspace key of this document.
+  const tail = cacheKey(documentId, "w", "");
+  const afterLabel = (key: string) =>
+    key.slice(key.indexOf(KEY_SEPARATOR) + KEY_SEPARATOR.length);
+  for (const key of [...inflight.keys()])
+    if (afterLabel(key).startsWith(tail)) inflight.delete(key);
+
+  const pattern = tail.replace(/[\\%_]/g, (char) => `\\${char}`) + "%";
+  const key = onshapeApiCache.cache_key;
+  db.delete(onshapeApiCache)
+    .where(
+      sql`substr(${key}, instr(${key}, ${KEY_SEPARATOR}) + ${KEY_SEPARATOR.length}) LIKE ${pattern} ESCAPE '\\'`
+    )
+    .run();
 }

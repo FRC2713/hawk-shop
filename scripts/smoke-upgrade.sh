@@ -36,8 +36,9 @@ docker pull --platform linux/amd64 "$BASELINE_IMAGE" >/dev/null
 docker volume create "$volume" >/dev/null
 docker run -d --name "$name" --network none -v "$volume:/data" --platform linux/amd64 "${args[@]}" "$BASELINE_IMAGE" >/dev/null
 wait_ready
-module=./.output/server/node_modules/better-sqlite3
-docker exec "$name" node -e 'const D=require(process.argv[1]);const d=new D("/data/hawk-shop.db");d.exec("CREATE TABLE deployment_smoke (value TEXT); INSERT INTO deployment_smoke VALUES (char(114,101,116,97,105,110,101,100))");d.close()' "$module"
+# Astro images keep better-sqlite3 in ./node_modules; the older Nuxt images kept
+# it under ./.output/server. The baseline can be either.
+docker exec "$name" node -e 'let D;for(const m of ["./node_modules/better-sqlite3","./.output/server/node_modules/better-sqlite3"]){try{D=require(m);break}catch(e){if(e.code!=="MODULE_NOT_FOUND")throw e}}if(!D)throw new Error("better-sqlite3 not found in the baseline image");const d=new D("/data/hawk-shop.db");d.exec("CREATE TABLE deployment_smoke (value TEXT); INSERT INTO deployment_smoke VALUES (char(114,101,116,97,105,110,101,100))");d.close()'
 docker rm -f "$name" >/dev/null
 docker run -d --name "$name" --network none -v "$volume:/data" "${args[@]}" "$IMAGE" >/dev/null
 wait_ready

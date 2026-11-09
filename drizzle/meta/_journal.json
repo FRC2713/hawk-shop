@@ -36,6 +36,20 @@
       "when": 1794232586372,
       "tag": "0004_deep_master_mold",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794234018453,
+      "tag": "0005_chief_nomad",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794234302479,
+      "tag": "0006_regular_pride",
+      "breakpoints": true
     }
   ]
 }

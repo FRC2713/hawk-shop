@@ -36,7 +36,10 @@ export async function uploadOnshapeThumbnail(
   params: ThumbnailParams
 ): Promise<string | null> {
   try {
-    const response = await onshapeFetch(buildOnshapeThumbnailUrl(params));
+    // An image asked for as JSON (the signer's default) answers 406.
+    const response = await onshapeFetch(buildOnshapeThumbnailUrl(params), {
+      headers: { Accept: "*/*" },
+    });
     if (!response.ok) {
       logger.error(
         `[Images] Failed to fetch thumbnail from Onshape: ${response.status}`
