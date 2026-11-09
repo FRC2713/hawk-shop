@@ -10,7 +10,11 @@ import {
   saveFile,
   storagePathFromUrl,
 } from "~/server/storage/files";
-import { refreshOnshapeTokenIfNeeded } from "~/lib/tokenRefresh";
+import {
+  isOnshapeUrl,
+  onshapeFetch,
+  OnshapeConfigurationError,
+} from "~/lib/onshapeApi/auth";
 
 /**
  * If image_url was stored as our proxy URL (/api/onshape/thumbnail?url=...), extract the real
@@ -34,28 +38,6 @@ function resolveImageUrl(imageUrl: string): string {
     // ignore
   }
   return trimmed;
-}
-
-/**
- * Whether a caller-supplied URL is safe to fetch with the user's Onshape token.
- *
- * This matters because the `?url=` form takes its target straight from the
- * query string and then attaches `Authorization: Bearer <token>` to it. Without
- * this check, anyone who could reach the app could point it at a host they
- * control and be handed a live Onshape access token. Onshape enterprises get
- * their own subdomain, so the allowlist is the apex domain and anything under
- * it — over HTTPS only.
- */
-function isOnshapeUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:") return false;
-    return (
-      url.hostname === "onshape.com" || url.hostname.endsWith(".onshape.com")
-    );
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -141,8 +123,8 @@ export const GET: APIRoute = async ({ request }) => {
   }
 
   // Cache miss — fetch from Onshape. Only ever from Onshape: this request
-  // carries a bearer token, and the target may have come from the query
-  // string.
+  // is signed with the server key, and the target may have come from the
+  // query string.
   if (!isOnshapeUrl(imageUrl)) {
     return Response.json(
       {
@@ -153,15 +135,14 @@ export const GET: APIRoute = async ({ request }) => {
     );
   }
 
-  const accessToken = await refreshOnshapeTokenIfNeeded();
-  if (!accessToken) {
-    return Response.json({ error: "Not authenticated" }, { status: 409 });
+  let response: Response;
+  try {
+    response = await onshapeFetch(imageUrl);
+  } catch (error) {
+    if (error instanceof OnshapeConfigurationError)
+      return Response.json({ error: error.message }, { status: 409 });
+    throw error;
   }
-
-  const response = await fetch(imageUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
   if (!response.ok) {
     return Response.json(
       { error: `Failed to fetch thumbnail: ${response.statusText}` },

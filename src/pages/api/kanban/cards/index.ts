@@ -1,5 +1,5 @@
-import { currentRequest } from "~/server/request-context";
 import type { APIRoute } from "astro";
+import { requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
 import { createCard, getCards } from "~/server/kanbanApi/cards";
 
@@ -31,8 +31,8 @@ export const GET: APIRoute = async ({ request }) => {
   }
 };
 export const POST: APIRoute = async ({ request }) => {
-  const unauthorized = await requireAuth();
-  if (unauthorized) return unauthorized;
+  const actor = await requireSessionActor();
+  if (actor instanceof Response) return actor;
 
   try {
     const body = await request.json();
@@ -46,17 +46,19 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // Create the card
-    const newCard = await createCard({
-      id: body.id,
-      title: body.title,
-      imageUrl: body.imageUrl,
-      assignee: body.assignee,
-      machine: body.machine,
-      dueDate: body.dueDate,
-      content: body.content,
-      processIds: body.processIds || [],
-      createdBy: currentRequest().locals.identity?.subject,
-    });
+    const newCard = await createCard(
+      {
+        id: body.id,
+        title: body.title,
+        imageUrl: body.imageUrl,
+        assignee: body.assignee,
+        machine: body.machine,
+        dueDate: body.dueDate,
+        content: body.content,
+        processIds: body.processIds || [],
+      },
+      actor
+    );
 
     return Response.json({ card: newCard }, { status: 201 });
   } catch (error) {

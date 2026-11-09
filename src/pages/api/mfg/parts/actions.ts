@@ -1,3 +1,4 @@
+import { requireSessionActor } from "~/lib/sessionActor";
 import type { APIRoute } from "astro";
 import {
   handleAddKanbanCard,
@@ -12,6 +13,14 @@ import type { ActionResponse } from "~/onshape_connector/utils/types";
  * Main action handler that routes to specific action handlers
  */
 export const POST: APIRoute = async ({ request }) => {
+  const actor = await requireSessionActor();
+  if (actor instanceof Response) {
+    return Response.json(
+      { success: false, ...(await actor.json()) },
+      { status: actor.status }
+    );
+  }
+
   const formData = await request.formData();
   const actionType = formData.get("action")?.toString();
 
@@ -24,11 +33,11 @@ export const POST: APIRoute = async ({ request }) => {
     try {
       let result: ActionResponse;
       if (actionType === "addCard") {
-        result = await handleAddKanbanCard(formData, request);
+        result = await handleAddKanbanCard(formData, actor);
       } else if (actionType === "moveCard") {
-        result = await handleMoveKanbanCard(formData);
+        result = await handleMoveKanbanCard(formData, actor);
       } else if (actionType === "updateDueDate") {
-        result = await handleUpdateKanbanDueDate(formData);
+        result = await handleUpdateKanbanDueDate(formData, actor);
       } else {
         result = { success: false, error: "Unknown action type" };
       }

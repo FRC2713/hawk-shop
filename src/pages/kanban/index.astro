@@ -4,5 +4,8 @@ import Board from "../../components/islands/Board";
 ---
 
 <AppLayout title="Manufacturing board" workspace
-  ><Board client:load /></AppLayout
+  ><Board
+    cardId={Astro.url.searchParams.get("cardId") || undefined}
+    client:load
+  /></AppLayout
 >

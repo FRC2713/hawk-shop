@@ -18,6 +18,9 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
+ARG APP_REVISION=development
+ENV APP_REVISION=${APP_REVISION}
+LABEL org.opencontainers.image.revision=${APP_REVISION}
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0 DATA_DIR=/data
 RUN groupadd --system --gid 1001 nodejs \
   && useradd --system --uid 1001 --gid nodejs hawkshop
@@ -25,6 +28,8 @@ COPY --from=production-deps --chown=hawkshop:nodejs /app/node_modules ./node_mod
 COPY --from=builder --chown=hawkshop:nodejs /app/dist ./dist
 COPY --from=builder --chown=hawkshop:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=hawkshop:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=hawkshop:nodejs /app/.hawk ./.hawk
+COPY --from=builder --chown=hawkshop:nodejs /app/scripts/deploy-check.mjs ./scripts/deploy-check.mjs
 RUN mkdir -p /data/uploads && chown -R hawkshop:nodejs /data
 USER hawkshop
 VOLUME ["/data"]

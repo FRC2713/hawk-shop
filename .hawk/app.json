@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "name": "hawk-shop",
+  "image": "ghcr.io/frc2713/hawk-shop",
+  "port": 3000,
+  "health": "/api/health",
+  "database": "hawk-shop.db",
+  "data_dir": "/data",
+  "required_env": [
+    "APP_URL",
+    "HAWK_SUITE_TRUST_PROXY",
+    "HAWK_SUITE_TEAM_ID",
+    "HAWK_SUITE_ISSUER"
+  ],
+  "optional_env": [
+    "DATA_DIR",
+    "PORT",
+    "HOST",
+    "SLACK_BOT_TOKEN",
+    "SLACK_WORKSPACE_ID",
+    "ONSHAPE_ACCESS_KEY",
+    "ONSHAPE_SECRET_KEY",
+    "ONSHAPE_BASE_URL",
+    "ONSHAPE_CACHE_TTL_SECONDS"
+  ],
+  "migrations": "on-start",
+  "rollback": "requires-schema-review"
+}

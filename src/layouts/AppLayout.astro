@@ -100,8 +100,11 @@ const links = [
                   {identity.email && (
                     <p class="account-email">{identity.email}</p>
                   )}
+                  <a class="account-sign-out" href="/slack">
+                    Slack settings
+                  </a>
                   <a class="account-sign-out" href="/onshape">
-                    Onshape connection
+                    Onshape API status
                   </a>
                   <a class="account-sign-out" href={suiteUrl("auth/portal")}>
                     Hawk Suite

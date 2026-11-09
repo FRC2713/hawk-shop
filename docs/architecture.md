@@ -4,17 +4,17 @@ Shop follows Hawk Eye's Astro architecture. The server renders page layout, navi
 
 `src/pages/api/` retains the existing endpoint URLs and payloads. `src/server/` owns SQLite repositories, migrations, storage, and the event bus. `src/lib/api/` contains browser fetchers and shared query keys. The build rejects browser imports of modules marked `virtual:hawk-shop/server-only`.
 
-SQLite, its ordered Drizzle migrations, and uploaded images retain their existing format and location under `DATA_DIR`. This migration does not replace the database or renumber existing users. The historical `users.onshape_user_id` column accepts Suite subjects for new Suite users; existing Onshape users remain available for historical assignment and submitter display. Cards created after migration record the verified Suite subject as submitter, independently of the connected CAD account. Changing assignee leaves submitter intact.
+SQLite, its ordered Drizzle migrations, and uploaded images retain their existing format and location under `DATA_DIR`. This migration does not replace the database or renumber existing users. The historical `users.onshape_user_id` column accepts Suite subjects for new Suite users; existing Onshape users remain available for historical assignment and submitter display. Cards created after migration record the verified Suite subject as submitter. Changing assignee leaves submitter intact.
 
 ## Authentication
 
 The Suite gateway strips caller identity headers, authenticates the approved Slack workspace, and injects the same identity headers Hawk Eye reads. Shop validates the team, Slack user, subject, and exact `suite/member` role on every request. `HAWK_SUITE_TRUST_PROXY` defaults to false. Enabling it requires an isolated app network and a gateway that strips and replaces identity headers. An arbitrary caller able to reach the trusted app port could impersonate a member.
 
-Health checks and static files remain public. Every data endpoint, uploaded image, live event stream, mutation, and CAD callback requires Suite membership. Same-origin checks cover JSON and multipart writes. Responses containing shop data are private and not cached by shared proxies.
+Health checks and static files remain public. Every data endpoint, uploaded image, live event stream, and mutation requires Suite membership. Same-origin checks cover JSON and multipart writes. Responses containing shop data are private and not cached by shared proxies.
 
-Onshape OAuth authorizes CAD access only. It remains available through the account menu's Onshape connection page. Local cards, assignments, processes, equipment, uploads, and board configuration work with Suite alone. CAD operations report a missing connection with HTTP 409; Suite session failures use HTTP 401. Connecting or disconnecting CAD does not change the Suite login.
+CAD access uses one server-side Onshape API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE_SECRET_KEY`). Every request is HMAC-signed in `src/lib/onshapeApi/auth.ts`; the signing transport refuses non-Onshape hosts and re-signs bounded Onshape redirects. Users never connect an Onshape account, and the key never reaches the browser. Local cards, assignments, processes, equipment, uploads, and board configuration work without it. CAD operations report a missing key pair with HTTP 409; Suite session failures use HTTP 401. `/onshape` shows whether the key pair is configured.
 
-Astro's cookie jar is passed through AsyncLocalStorage so parallel requests keep their own cookie state. CAD refreshes share an in-flight exchange when they use the same rotating refresh token. Existing disk caching and API usage accounting remain intact.
+All CAD reads and writes share the key's Onshape permissions, so its account should see only the robot documents. Existing disk caching and API usage accounting remain intact.
 
 ## Deployment handoff
 

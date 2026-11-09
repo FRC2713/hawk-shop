@@ -27,10 +27,10 @@ This is a port of [rhr-mfg](https://github.com/FRC2713/rhr-mfg) off Supabase. If
 
 ### Two data planes
 
-1. **Onshape (external, OAuth)** — CAD parts, metadata, thumbnails. Read-only except part-number writes.
+1. **Onshape (external, server API key)** — CAD parts, metadata, thumbnails. Read-only except part-number writes.
 2. **Local SQLite via Drizzle** — everything else, plus uploaded images on the filesystem next to it.
 
-There is no per-user DB authorization. Access control requires a Hawk Suite workspace identity from an explicitly trusted, isolated gateway. Onshape tokens only authorize CAD operations.
+There is no per-user DB authorization. Access control requires a Hawk Suite workspace identity from an explicitly trusted, isolated gateway. The Onshape API key only authorizes CAD operations.
 
 ### Everything durable lives under DATA_DIR
 
@@ -55,15 +55,15 @@ better-sqlite3 is external in `astro.config.mjs`. The Node image includes produc
 
 ### Auth flow
 
-`src/middleware.ts` gates every page, API, upload, event stream, and OAuth route on Hawk Suite membership. `/signin`, static assets, and GET/HEAD health checks are public. An unauthenticated Onshape iframe receives only a top-level continuation with no shop data.
+`src/middleware.ts` gates every page, API, upload, and event stream on Hawk Suite membership. `/signin`, static assets, and GET/HEAD health checks are public. An unauthenticated Onshape iframe receives only a top-level continuation with no shop data.
 
 `src/server/suite-identity.ts` follows Hawk Eye's identity-header contract. Enable `HAWK_SUITE_TRUST_PROXY=true` only on an isolated gateway network; configure `HAWK_SUITE_TEAM_ID` and `HAWK_SUITE_ISSUER`. Caddy strips browser identity headers before authorization and injects the approved workspace, Slack user, matching subject, and exact `suite/member` role. Header trust grants nothing by default. Never expose a trusted app port directly.
 
-`requireAuth()` reads the verified request identity; Onshape cookies never grant Shop access. Same-origin checks protect every mutation, including multipart uploads. Use `APP_URL` for the browser-facing origin when TLS terminates at the gateway.
+`requireAuth()` reads the verified request identity; Onshape credentials never grant Shop access. Same-origin checks protect every mutation, including multipart uploads. Use `APP_URL` for the browser-facing origin when TLS terminates at the gateway.
 
-Onshape OAuth remains an optional CAD connection under `/onshape` and `/auth/onshape/*`. Missing CAD tokens return 409, independently of Suite's 401. The `/auth/logout` route clears CAD cookies and sends the browser to Suite sign-out. Redirect destinations pass through `safeRedirectPath`.
+Onshape access uses one server-side API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE_SECRET_KEY`, optional `ONSHAPE_BASE_URL`). There is no per-user Onshape connection: every CAD read and write runs as the key's Onshape account. `onshapeFetch` in `src/lib/onshapeApi/auth.ts` is the only transport; it HMAC-signs each request, refuses non-Onshape hosts, and re-signs bounded redirects. Route every Onshape call through it. A missing key pair returns 409, independently of Suite's 401. `/onshape` shows whether the key is configured. `/auth/logout` sends the browser to Suite sign-out. Redirect destinations pass through `safeRedirectPath`.
 
-`src/server/request-context.ts` uses AsyncLocalStorage to share Astro's request-scoped cookies with integration helpers. Keep cookie reads tolerant of malformed values. The existing `hasUsableSession` predicate describes CAD connection validity only; it does not authenticate a Shop user.
+`src/server/request-context.ts` uses AsyncLocalStorage so server helpers such as `requireAuth()` and `getSessionActor()` read the current request's verified identity.
 
 ### Onshape API — two clients coexist
 
@@ -84,7 +84,7 @@ Preserve the API's existing JSON payloads so equipment, manufacturing, and conne
 
 Stored `image_url` values may be legacy proxy URLs (`/api/onshape/thumbnail?url=…`) that get unwrapped.
 
-The route also serves `?url=<absolute Onshape URL>` for the connector, which has a part's thumbnail href but no card yet. That form is allowlisted to `https://*.onshape.com` in `isOnshapeUrl` — the handler attaches the user's bearer token to whatever it fetches, so an unchecked target hands out a live Onshape access token.
+The route also serves `?url=<absolute Onshape URL>` for the connector, which has a part's thumbnail href but no card yet. That form is allowlisted to `https://*.onshape.com` in `isOnshapeUrl` — the handler signs whatever it fetches with the server's API key, and `onshapeFetch` refuses any other host as a second check.
 
 ### Onshape API calls are a hard annual budget
 
@@ -97,11 +97,11 @@ Onshape bills an **annual, company-wide** API allocation — a team on EDU Enter
 
 `ttlMs: null` means never expires, and that is the right answer whenever the upstream is frozen: parts at `wvm=v` or `wvm=m` are immutable, so `partsTtlMs()` returns null for them and `ONSHAPE_CACHE_TTL_SECONDS` (default 300) only governs `wvm=w`. A throwing fetcher is never cached and never counted — Onshape excludes 4xx/5xx from the allocation, and caching an auth failure would poison the entry for the whole TTL.
 
-**Caching moved the auth boundary.** A cache hit answers without a token, so "needs an Onshape token to function" is no longer a gate. `api/onshape/parts`, `api/onshape/version`, `api/onshape/thumbnail` and `api/onshape/usage` all call `requireAuth()` explicitly; a new cached route that skips it answers any caller on the LAN.
+**The Onshape key is not an auth boundary.** The server holds it for every caller, and a cache hit needs no upstream call at all. `api/onshape/parts`, `api/onshape/version`, `api/onshape/thumbnail` and `api/onshape/usage` all call `requireAuth()` explicitly; a new cached route that skips it answers any caller on the LAN.
 
 `recordOnshapeUsage` tallies `calls` (left the building) vs `hits` (absorbed here) per day in `onshape_api_usage`, readable at `/api/onshape/usage`. Onshape's own page reports one yearly number with no endpoint breakdown, which is not enough to find out what is spending the allocation.
 
-Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are one `/users/current` per sign-in and the part-number metadata read/write on release; the per-release `/users/current` is served from the `onshape_user_id` cookie set at sign-in.
+Anything that adds a new Onshape call belongs behind `withOnshapeCache`. The known remaining uncached calls are the part-number metadata read/write on release.
 
 ### Routing layout
 

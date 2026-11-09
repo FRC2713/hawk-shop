@@ -25,26 +25,23 @@ npm run dev
 
 The default address is `http://localhost:3000`. Without Suite configuration, the sign-in page explains the missing setup and data endpoints fail closed. There is no development authentication bypass. Tests use disposable databases and synthetic gateway identities.
 
-For CAD access, create an [Onshape OAuth app](https://dev-portal.onshape.com/oauthApps) and set its client ID, secret, and registered callback URL. Open `/onshape` to connect. An embedded Onshape entry offers a top-level continuation for Suite sign-in while preserving its Part Studio parameters.
+For CAD access, create an [Onshape API key pair](https://dev-portal.onshape.com/keys) and set `ONSHAPE_ACCESS_KEY` and `ONSHAPE_SECRET_KEY` on the server. Every CAD request uses that Onshape account, so give it access to the robot documents only. `/onshape` shows whether the key pair is configured. An embedded Onshape entry offers a top-level continuation for Suite sign-in while preserving its Part Studio parameters.
 
 ## Configuration
 
-| Variable                                      | Default                                  | Purpose                                                                |
-| --------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| `HAWK_SUITE_TRUST_PROXY`                      | `false`                                  | Enable only behind the isolated, trusted Suite gateway                 |
-| `HAWK_SUITE_TEAM_ID`                          | unset                                    | Approved Slack workspace ID, required with proxy trust                 |
-| `HAWK_SUITE_ISSUER`                           | unset                                    | Suite origin ending in `/`, required with proxy trust                  |
-| `APP_URL`                                     | `http://localhost:3000`                  | Browser-facing origin for cookies, login return URLs, and write checks |
-| `HOST` / `PORT`                               | `127.0.0.1` / `3000`                     | Server listener; container listens on `0.0.0.0`                        |
-| `ONSHAPE_CLIENT_ID` / `ONSHAPE_CLIENT_SECRET` | unset                                    | Optional CAD integration credentials                                   |
-| `ONSHAPE_REDIRECT_URI`                        | app origin plus `/auth/onshape/callback` | Must match the registered Onshape callback                             |
-| `ONSHAPE_SCOPE`                               | `OAuth2Read OAuth2ReadPII OAuth2Write`   | CAD OAuth scopes                                                       |
-| `ONSHAPE_IFRAME_EMBED`                        | `false`                                  | Use secure cross-site CAD cookies over HTTPS                           |
-| `COOKIE_SECURE`                               | derived from `APP_URL`                   | Override secure CAD cookie policy                                      |
-| `ONSHAPE_CACHE_TTL_SECONDS`                   | `300`                                    | Editable workspace cache TTL; immutable part versions do not expire    |
-| `DATA_DIR`                                    | `./data`, `/data` in Docker              | Database and uploads root                                              |
-| `DATABASE_PATH`                               | `$DATA_DIR/hawk-shop.db`                 | SQLite path override                                                   |
-| `UPLOADS_DIR`                                 | `$DATA_DIR/uploads`                      | Upload path override                                                   |
+| Variable                                    | Default                     | Purpose                                                                |
+| ------------------------------------------- | --------------------------- | ---------------------------------------------------------------------- |
+| `HAWK_SUITE_TRUST_PROXY`                    | `false`                     | Enable only behind the isolated, trusted Suite gateway                 |
+| `HAWK_SUITE_TEAM_ID`                        | unset                       | Approved Slack workspace ID, required with proxy trust                 |
+| `HAWK_SUITE_ISSUER`                         | unset                       | Suite origin ending in `/`, required with proxy trust                  |
+| `APP_URL`                                   | `http://localhost:3000`     | Browser-facing origin for cookies, login return URLs, and write checks |
+| `HOST` / `PORT`                             | `127.0.0.1` / `3000`        | Server listener; container listens on `0.0.0.0`                        |
+| `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY` | unset                       | Optional Onshape API key pair for CAD import and part-number writes    |
+| `ONSHAPE_BASE_URL`                          | `https://cad.onshape.com`   | Onshape stack origin; enterprise stacks use their own subdomain        |
+| `ONSHAPE_CACHE_TTL_SECONDS`                 | `300`                       | Editable workspace cache TTL; immutable part versions do not expire    |
+| `DATA_DIR`                                  | `./data`, `/data` in Docker | Database and uploads root                                              |
+| `DATABASE_PATH`                             | `$DATA_DIR/hawk-shop.db`    | SQLite path override                                                   |
+| `UPLOADS_DIR`                               | `$DATA_DIR/uploads`         | Upload path override                                                   |
 
 ## Development and verification
 

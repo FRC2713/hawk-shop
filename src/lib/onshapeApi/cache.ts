@@ -85,6 +85,12 @@ export function cacheKey(label: string, ...parts: (string | number)[]): string {
   return [label, ...parts].join("::");
 }
 
+/** Drop the durable entry and detach reads that started before the edit. */
+export function invalidateOnshapeCache(key: string): void {
+  inflight.delete(key);
+  db.delete(onshapeApiCache).where(eq(onshapeApiCache.cache_key, key)).run();
+}
+
 function readCache<T>(key: string): { hit: true; value: T } | { hit: false } {
   try {
     const [row] = db
@@ -197,10 +203,11 @@ export async function withOnshapeCache<T>({
     return pending as Promise<T>;
   }
 
-  const request = (async () => {
+  let request!: Promise<T>;
+  request = (async () => {
     const value = await fetcher();
     recordOnshapeUsage(label, "call");
-    writeCache(key, value, ttlMs);
+    if (inflight.get(key) === request) writeCache(key, value, ttlMs);
     return value;
   })();
 
@@ -208,6 +215,6 @@ export async function withOnshapeCache<T>({
   try {
     return await request;
   } finally {
-    inflight.delete(key);
+    if (inflight.get(key) === request) inflight.delete(key);
   }
 }

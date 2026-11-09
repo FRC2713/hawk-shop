@@ -3,6 +3,10 @@ import { requestContext } from "./server/request-context";
 import { suiteIdentity, suiteSettings } from "./server/suite-identity";
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  if (import.meta.env.DEV) {
+    const { startSlackWorker } = await import("./lib/slack/worker");
+    startSlackWorker();
+  }
   const path = context.url.pathname.replace(/\/$/, "") || "/";
   if (
     (path === "/api/health" || path === "/health") &&
@@ -68,7 +72,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
       await upsertUser(
         identity.subject,
         parts[0] || "Suite member",
-        parts.slice(1).join(" ") || undefined
+        parts.slice(1).join(" ") || undefined,
+        identity.email ?? null
       );
     }
     // Require same-origin writes for JSON, multipart, uploads, and actions.

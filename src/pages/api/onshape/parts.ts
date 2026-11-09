@@ -1,3 +1,4 @@
+import { OnshapeConfigurationError } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { fetchPartsFromOnshape } from "~/onshape_connector/utils/partsQuery.server";
@@ -31,18 +32,13 @@ export const GET: APIRoute = async ({ request }) => {
 
   try {
     // Use shared utility function to fetch parts
-    // allowTokenRefresh=true because this is a server route handler where
-    // cookies can be modified
-    const parts = await fetchPartsFromOnshape(
-      {
-        documentId,
-        instanceType: instanceType as "w" | "v" | "m",
-        instanceId,
-        elementId,
-        elementType: "", // Not used in fetching
-      },
-      true // Allow token refresh in route handlers
-    );
+    const parts = await fetchPartsFromOnshape({
+      documentId,
+      instanceType: instanceType as "w" | "v" | "m",
+      instanceId,
+      elementId,
+      elementType: "", // Not used in fetching
+    });
 
     // Return parts data as JSON
     return Response.json(parts);
@@ -53,9 +49,12 @@ export const GET: APIRoute = async ({ request }) => {
     let errorMessage = "Failed to fetch parts";
     let statusCode = 500;
 
+    if (error instanceof OnshapeConfigurationError)
+      return Response.json({ error: error.message }, { status: 409 });
     if (error instanceof Error) {
       if (error.message.includes("Not authenticated")) {
-        errorMessage = "Connect Onshape to use CAD features.";
+        errorMessage =
+          "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";
         statusCode = 409;
       } else {
         errorMessage = error.message;

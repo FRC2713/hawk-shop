@@ -9,7 +9,13 @@ import { db } from "~/server/db/client";
 export const GET: APIRoute = () => {
   try {
     db.get(sql`select 1`);
-    return Response.json({ status: "ok" });
+    return Response.json({
+      status: "ok",
+      revision: process.env.APP_REVISION ?? "development",
+      schemaVersion: db.get(
+        sql`select hash from __drizzle_migrations order by id desc limit 1`
+      ),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     return Response.json({ status: "error", error: message }, { status: 503 });

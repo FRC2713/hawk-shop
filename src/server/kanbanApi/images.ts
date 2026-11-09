@@ -6,7 +6,7 @@ import {
   saveFile,
   storagePathFromUrl,
 } from "~/server/storage/files";
-import { getValidOnshapeTokenFromRequest } from "~/lib/tokenRefresh";
+import { onshapeFetch, onshapeOrigin } from "~/lib/onshapeApi/auth";
 
 interface ThumbnailParams {
   documentId: string;
@@ -24,7 +24,7 @@ function buildOnshapeThumbnailUrl(params: ThumbnailParams): string {
   // Use the Onshape API v10 thumbnail endpoint format
   // wvm = workspace/version/microversion type indicator
   const wvm = instanceType === "w" ? "w" : instanceType === "v" ? "v" : "m";
-  return `https://cad.onshape.com/api/v10/thumbnails/d/${documentId}/${wvm}/${instanceId}/e/${elementId}/p/${encodeURIComponent(partId)}?outputFormat=PNG&pixelSize=300`;
+  return `${onshapeOrigin()}/api/v10/thumbnails/d/${documentId}/${wvm}/${instanceId}/e/${elementId}/p/${encodeURIComponent(partId)}?outputFormat=PNG&pixelSize=300`;
 }
 
 /**
@@ -36,20 +36,7 @@ export async function uploadOnshapeThumbnail(
   params: ThumbnailParams
 ): Promise<string | null> {
   try {
-    const accessToken = await getValidOnshapeTokenFromRequest(request);
-    if (!accessToken) {
-      logger.error("[Images] No Onshape access token available");
-      return null;
-    }
-
-    const thumbnailUrl = buildOnshapeThumbnailUrl(params);
-
-    const response = await fetch(thumbnailUrl, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
+    const response = await onshapeFetch(buildOnshapeThumbnailUrl(params));
     if (!response.ok) {
       logger.error(
         `[Images] Failed to fetch thumbnail from Onshape: ${response.status}`

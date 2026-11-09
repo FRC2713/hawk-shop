@@ -1,3 +1,4 @@
+import { OnshapeConfigurationError } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
 import {
   createOnshapeApiClient,
@@ -72,12 +73,15 @@ export const GET: APIRoute = async ({ request }) => {
     let errorMessage = "Failed to fetch version";
     let statusCode = 500;
 
+    if (error instanceof OnshapeConfigurationError)
+      return Response.json({ error: error.message }, { status: 409 });
     if (error instanceof Error) {
       if (
         error.message.includes("Not authenticated") ||
         error.message.includes("invalid_token")
       ) {
-        errorMessage = "Connect Onshape to use CAD features.";
+        errorMessage =
+          "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";
         statusCode = 409;
       } else if (
         error.message.includes("not found") ||

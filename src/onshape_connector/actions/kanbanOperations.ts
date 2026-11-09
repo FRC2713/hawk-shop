@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createCard, updateCard } from "~/server/kanbanApi/cards";
 import { logger } from "~/lib/logger";
-import { currentRequest } from "~/server/request-context";
+import type { SessionActor } from "~/lib/sessionActor";
 import type { ActionResponse } from "../utils/types";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
@@ -86,7 +86,7 @@ function formDataToObject(
  */
 export async function handleAddKanbanCard(
   formData: FormData,
-  request: Request
+  actor: SessionActor
 ): Promise<ActionResponse> {
   // Parse and validate form data
   const rawData = formDataToObject(
@@ -166,27 +166,26 @@ export async function handleAddKanbanCard(
       imageUrl = `/api/onshape/thumbnail?url=${encodeURIComponent(thumbnailUrl)}`;
     }
 
-    // Attribute the release to the verified Suite member.
-    const createdBy = currentRequest().locals.identity?.subject;
-
     // Create card with version ID
     // Keep title as just partNumber - matching will use composite key (partNumber::versionId)
-    const card = await createCard({
-      title: data.partNumber,
-      imageUrl,
-      machine: "TBD",
-      createdBy,
-      processIds: data.processIds,
-      quantityPerRobot: data.quantityPerRobot,
-      quantityToMake: data.quantityToMake,
-      dueDate: data.dueDate,
-      onshapeDocumentId: data.documentId,
-      onshapeInstanceType: data.instanceType,
-      onshapeInstanceId: data.instanceId,
-      onshapeElementId: data.elementId,
-      onshapePartId: data.partId,
-      onshapeVersionId: versionId,
-    });
+    const card = await createCard(
+      {
+        title: data.partNumber,
+        imageUrl,
+        machine: "TBD",
+        processIds: data.processIds,
+        quantityPerRobot: data.quantityPerRobot,
+        quantityToMake: data.quantityToMake,
+        dueDate: data.dueDate,
+        onshapeDocumentId: data.documentId,
+        onshapeInstanceType: data.instanceType,
+        onshapeInstanceId: data.instanceId,
+        onshapeElementId: data.elementId,
+        onshapePartId: data.partId,
+        onshapeVersionId: versionId,
+      },
+      actor
+    );
 
     return { success: true, data: card };
   } catch (error) {
@@ -205,7 +204,8 @@ export async function handleAddKanbanCard(
  * Handle moving a card between columns
  */
 export async function handleMoveKanbanCard(
-  formData: FormData
+  formData: FormData,
+  actor: SessionActor
 ): Promise<ActionResponse> {
   // Parse and validate form data
   const rawData = formDataToObject(formData, ["cardId", "columnId"]);
@@ -221,7 +221,7 @@ export async function handleMoveKanbanCard(
   const { cardId, columnId } = parseResult.data;
 
   try {
-    const card = await updateCard(cardId, { column_id: columnId });
+    const card = await updateCard(cardId, { column_id: columnId }, actor);
     return { success: true, data: card };
   } catch (error) {
     logger.error("[Kanban] Error moving card:", error);
@@ -236,7 +236,8 @@ export async function handleMoveKanbanCard(
  * Handle updating a card's due date
  */
 export async function handleUpdateKanbanDueDate(
-  formData: FormData
+  formData: FormData,
+  actor: SessionActor
 ): Promise<ActionResponse> {
   // Parse and validate form data
   const rawData = formDataToObject(formData, ["cardId", "dueDate"]);
@@ -252,9 +253,13 @@ export async function handleUpdateKanbanDueDate(
   const { cardId, dueDate } = parseResult.data;
 
   try {
-    const card = await updateCard(cardId, {
-      due_date: dueDate || undefined,
-    });
+    const card = await updateCard(
+      cardId,
+      {
+        due_date: dueDate || undefined,
+      },
+      actor
+    );
     return { success: true, data: card };
   } catch (error) {
     logger.error("[Kanban] Error updating due date:", error);

@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro";
+import { requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
 import {
   deleteCard,
@@ -34,15 +35,15 @@ export const GET: APIRoute = async ({ params }) => {
   }
 };
 export const PATCH: APIRoute = async ({ request, params }) => {
-  const unauthorized = await requireAuth();
-  if (unauthorized) return unauthorized;
+  const actor = await requireSessionActor();
+  if (actor instanceof Response) return actor;
 
   const id = params.id!;
   try {
     const body = await request.json();
-    const { processIds, created_by: _submitter, ...updates } = body;
+    const { processIds, ...updates } = body;
 
-    const updatedCard = await updateCard(id, updates);
+    const updatedCard = await updateCard(id, updates, actor);
 
     // Update processes if provided
     if (processIds !== undefined) {

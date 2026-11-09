@@ -15,6 +15,20 @@
       "when": 1787701934644,
       "tag": "0001_vengeful_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794095380361,
+      "tag": "0002_flashy_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794189061365,
+      "tag": "0003_odd_wasp",
+      "breakpoints": true
     }
   ]
 }

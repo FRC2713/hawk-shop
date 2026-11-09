@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "preview": "astro preview",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "node --import ./tests/register-server-only.mjs --import tsx --test tests/*.test.ts",
+    "test:runtime": "HAWK_SHOP_VERIFY_BUILT_SERVER=1 node --import ./tests/register-server-only.mjs --import tsx --test tests/slack-runtime.test.ts"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.9",

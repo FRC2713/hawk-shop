@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { partActions, queryKeys } from "~/lib/api";
+import { partActions } from "~/lib/api";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 
@@ -20,22 +20,11 @@ export function PartNumberInput({ part, queryParams }: PartNumberInputProps) {
   const queryClient = useQueryClient();
 
   const updatePartNumber = useMutation({
-    mutationFn: partActions.updatePartNumber,
+    mutationFn: (input: partActions.UpdatePartNumberInput) =>
+      partActions.updatePartNumber(input, queryClient),
     onSuccess: (result) => {
       if (!result.success) return;
       setPartNumberInput("");
-      // Refresh the connector query after a successful metadata write.
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.onshape.parts(
-          {
-            documentId: queryParams.documentId || "",
-            instanceType: queryParams.instanceType || "w",
-            instanceId: queryParams.instanceId || "",
-            elementId: queryParams.elementId || "",
-          },
-          true
-        ),
-      });
     },
   });
 
@@ -108,7 +97,7 @@ export function PartNumberInput({ part, queryParams }: PartNumberInputProps) {
         <p className="text-destructive text-xs">Error: {result.error}</p>
       )}
       {result?.success && (
-        <p className="text-foreground text-xs">
+        <p className="text-xs text-green-600 dark:text-green-400">
           Part number updated successfully!
         </p>
       )}

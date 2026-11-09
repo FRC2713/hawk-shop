@@ -40,8 +40,10 @@ before(async () => {
       HAWK_SUITE_TRUST_PROXY: "true",
       HAWK_SUITE_TEAM_ID: "TTEAM",
       HAWK_SUITE_ISSUER: "https://suite.example/",
-      ONSHAPE_CLIENT_ID: "",
-      ONSHAPE_CLIENT_SECRET: "",
+      SLACK_BOT_TOKEN: "",
+      SLACK_WORKSPACE_ID: "",
+      ONSHAPE_ACCESS_KEY: "",
+      ONSHAPE_SECRET_KEY: "",
       DATABASE_PATH: "",
       UPLOADS_DIR: "",
     },
@@ -102,7 +104,6 @@ test("health stays public; Onshape cookies never grant Shop or API access", asyn
     "/api/kanban/events",
     "/api/onshape/usage",
     "/api/files/private.png",
-    "/api/onshape/token",
   ]) {
     const response = await fetch(origin + path, {
       headers: { Cookie: cookie },
@@ -370,24 +371,21 @@ test("cached CAD remains private and a missing connection does not expire Suite"
     ).status,
     401
   );
-  assert.equal((await call("/api/onshape/token")).status, 409);
+  assert.equal(
+    (await call("/api/onshape/version?documentId=uncached&versionId=missing"))
+      .status,
+    409
+  );
   assert.equal((await call("/api/kanban/cards")).status, 200);
-  const failedCallback = await call(
-    "/auth/onshape/callback?code=fake&state=fake"
-  );
-  assert.match(
-    failedCallback.headers.get("location") || "",
-    /^\/onshape\?error=/
-  );
+  // The OAuth connection flow is gone; CAD uses the server key pair only.
+  assert.equal((await call("/auth/onshape")).status, 404);
+  const status = await call("/onshape");
+  assert.equal(status.status, 200);
+  assert.match(await status.text(), /Onshape API access is not configured/);
   const logout = await call("/auth/logout");
   assert.equal(
     logout.headers.get("location"),
     "https://suite.example/auth/logout"
-  );
-  assert.ok(
-    logout.headers
-      .getSetCookie()
-      .some((value) => value.startsWith("onshape_access_token="))
   );
 });
 
@@ -452,7 +450,7 @@ test(
             "/onshape_connector?documentId=fixture&instanceId=fixture&elementId=fixture"
         );
         await expect(
-          page.getByRole("link", { name: "Connect Onshape" })
+          page.getByText("Onshape API access is not configured")
         ).toBeVisible();
       }
       assert.deepEqual(errors, []);

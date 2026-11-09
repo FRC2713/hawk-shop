@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+  workflow_call:
   pull_request:
 
 jobs:
@@ -14,6 +15,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # Same pin as the Dockerfile, for the same reason: node:22 ships npm 10,
+      # which resolves nitro's optional peer on lru-cache differently and calls
+      # the committed lockfile out of sync. The lockfile is npm 11's.
       - run: npm install -g npm@11
       - run: npm ci
       - run: npm run typecheck
@@ -21,3 +25,24 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      - run: npm run test:runtime
+  container:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: hawk-candidate:pr
+          build-args: APP_REVISION=${{ github.sha }}
+      - name: Verify fresh startup and prior-release upgrade
+        env:
+          IMAGE: hawk-candidate:pr
+        run: |
+          bash scripts/smoke-image.sh
+          bash scripts/smoke-upgrade.sh

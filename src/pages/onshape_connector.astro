@@ -1,7 +1,7 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
 import Parts from "../components/islands/Parts";
-import { isOnshapeAuthenticated } from "../lib/onshapeAuth";
+import { isOnshapeConfigured } from "../lib/onshapeApi/auth";
 import type { PartsPageSearchParams } from "../onshape_connector/utils/types";
 const search = Astro.url.searchParams;
 const type = search.get("instanceType");
@@ -14,8 +14,7 @@ const queryParams: PartsPageSearchParams = {
 };
 const complete =
   queryParams.documentId && queryParams.instanceId && queryParams.elementId;
-const connected = await isOnshapeAuthenticated();
-const returnTo = Astro.url.pathname + Astro.url.search;
+const connected = isOnshapeConfigured();
 ---
 
 <AppLayout title="Onshape parts" workspace>
@@ -27,17 +26,8 @@ const returnTo = Astro.url.pathname + Astro.url.search;
         <p>
           {!complete
             ? "Open Hawk Shop from an Onshape Part Studio to choose parts for manufacturing."
-            : "Connect Onshape to load this Part Studio. Your manufacturing board remains available."}
+            : "Onshape API access is not configured. Ask the deployment operator to set the API key pair."}
         </p>
-        {complete && (
-          <a
-            class="shop-button"
-            href={`/onshape?redirect=${encodeURIComponent(returnTo)}`}
-            target="_top"
-          >
-            Connect Onshape
-          </a>
-        )}
         <p>
           <a href="/kanban" class="underline">
             Open board

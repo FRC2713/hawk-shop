@@ -2,7 +2,6 @@ import "virtual:hawk-shop/server-only";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import {
   createOnshapeApiClient,
-  createOnshapeApiClientReadOnly,
   getPartsWmve,
 } from "~/lib/onshapeApi/generated-wrapper";
 import { cacheKey, partsTtlMs, withOnshapeCache } from "~/lib/onshapeApi/cache";
@@ -20,12 +19,9 @@ import type { PartsPageSearchParams } from "./types";
  * call ever.
  *
  * @param queryParams - Query parameters for fetching parts
- * @param allowTokenRefresh - If true, will attempt to refresh tokens (for Route Handlers).
- *                           If false, uses read-only token access (for server components).
  */
 export async function fetchPartsFromOnshape(
-  queryParams: PartsPageSearchParams,
-  allowTokenRefresh: boolean = true
+  queryParams: PartsPageSearchParams
 ): Promise<BtPartMetadataInfo[]> {
   return withOnshapeCache<BtPartMetadataInfo[]>({
     label: "parts",
@@ -37,18 +33,14 @@ export async function fetchPartsFromOnshape(
       queryParams.elementId
     ),
     ttlMs: partsTtlMs(queryParams.instanceType),
-    fetcher: () => fetchPartsUncached(queryParams, allowTokenRefresh),
+    fetcher: () => fetchPartsUncached(queryParams),
   });
 }
 
 async function fetchPartsUncached(
-  queryParams: PartsPageSearchParams,
-  allowTokenRefresh: boolean
+  queryParams: PartsPageSearchParams
 ): Promise<BtPartMetadataInfo[]> {
-  // Use read-only client for server components, full client for route handlers
-  const client = allowTokenRefresh
-    ? await createOnshapeApiClient()
-    : await createOnshapeApiClientReadOnly();
+  const client = await createOnshapeApiClient();
 
   const response = await getPartsWmve({
     client,

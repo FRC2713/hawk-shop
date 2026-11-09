@@ -79,14 +79,14 @@ export async function apiFetch<T>(
 }
 
 /**
- * Send the browser into the OAuth gate, remembering where we were.
+ * Send the browser to Hawk Suite sign-in, remembering where we were.
  *
  * Guarded because several queries fail together: the first 401 of a batch
  * should start exactly one navigation.
  */
 let signInRedirectStarted = false;
 
-function redirectToSignIn(): void {
+export function redirectToSignIn(): void {
   if (typeof window === "undefined" || signInRedirectStarted) return;
   signInRedirectStarted = true;
 

@@ -1,3 +1,6 @@
+import { redirectToSignIn } from "./client";
+import type { QueryClient } from "@tanstack/react-query";
+import { queryKeys } from "./keys";
 import type { ActionResponse } from "~/onshape_connector/utils/types";
 
 /**
@@ -20,9 +23,7 @@ async function postAction(body: FormData): Promise<ActionResponse> {
   });
 
   if (response.status === 401) {
-    window.location.assign(
-      `/signin?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
-    );
+    redirectToSignIn();
     throw new Error("Sign in with Hawk Suite to continue.");
   }
   const contentType = response.headers.get("content-type");
@@ -115,12 +116,23 @@ export interface UpdatePartNumberInput {
   elementId: string;
 }
 
-export function updatePartNumber(
-  input: UpdatePartNumberInput
+export async function updatePartNumber(
+  input: UpdatePartNumberInput,
+  queryClient: QueryClient
 ): Promise<ActionResponse> {
   const body = new FormData();
   for (const [key, value] of Object.entries(input)) {
     body.append(key, value);
   }
-  return postAction(body);
+  const result = await postAction(body);
+  if (result.success) {
+    // Both thumbnail variants share this Part Studio prefix. Query refresh
+    // failures do not reject the accepted edit or trigger another write.
+    const affectedParts = { queryKey: queryKeys.onshape.partsScope(input) };
+    // Invalidation alone reuses initial reads without data. Cancel those old
+    // flights so their pre-edit responses cannot become fresh query data.
+    await queryClient.cancelQueries(affectedParts);
+    await queryClient.invalidateQueries(affectedParts);
+  }
+  return result;
 }

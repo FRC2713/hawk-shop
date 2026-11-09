@@ -3,11 +3,7 @@
  * Documentation: https://onshape-public.github.io/docs/
  */
 
-import {
-  getValidOnshapeTokenFromRequest,
-  getOnshapeTokenWithoutRefresh,
-} from "../tokenRefresh";
-import { onshapeApiRequest } from "./auth";
+import { onshapeApiRequest, isOnshapeConfigured } from "./auth";
 
 export interface OnshapeUser {
   id: string;
@@ -64,12 +60,6 @@ export interface OnshapePart {
  * Onshape API Client
  */
 export class OnshapeClient {
-  private accessToken: string;
-
-  constructor(accessToken: string) {
-    this.accessToken = accessToken;
-  }
-
   /**
    * Make a request to the Onshape API
    */
@@ -77,11 +67,7 @@ export class OnshapeClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const response = await onshapeApiRequest(
-      this.accessToken,
-      endpoint,
-      options
-    );
+    const response = await onshapeApiRequest(endpoint, options);
 
     if (!response.ok) {
       let errorMessage = `Request failed with status ${response.status}`;
@@ -208,46 +194,11 @@ export class OnshapeClient {
 }
 
 /**
- * Create an Onshape client with automatic token refresh
- * This should be used in server-side loaders/actions
+ * Create an Onshape client signed with the server API key, or null when unconfigured.
  */
-export async function createOnshapeClient(
-  request: Request
-): Promise<OnshapeClient> {
-  const accessToken = await getValidOnshapeTokenFromRequest(request);
-  if (!accessToken) {
-    throw new Error("Not authenticated with Onshape");
-  }
-  return new OnshapeClient(accessToken);
-}
-
-/**
- * Create an Onshape client from tokens (for server components)
- * This should be used in server components where cookies are read-only
- * Token refresh happens in route handlers, not during render
- */
-export async function createOnshapeClientFromTokens(): Promise<OnshapeClient | null> {
-  const accessToken = await getOnshapeTokenWithoutRefresh();
-  if (!accessToken) {
+export async function createOnshapeClient(): Promise<OnshapeClient | null> {
+  if (!isOnshapeConfigured()) {
     return null;
   }
-  return new OnshapeClient(accessToken);
-}
-
-/**
- * Get the current Onshape user from active tokens
- * Returns null if not authenticated or if the request fails
- * This should be used in server components
- */
-export async function getCurrentOnshapeUser(): Promise<OnshapeUser | null> {
-  try {
-    const client = await createOnshapeClientFromTokens();
-    if (!client) {
-      return null;
-    }
-    return await client.getCurrentUser();
-  } catch (error) {
-    console.error("Error fetching current Onshape user:", error);
-    return null;
-  }
+  return new OnshapeClient();
 }
