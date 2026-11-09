@@ -1,5 +1,6 @@
-import { useMemo, useEffect, useState, useRef } from "react";
+import { useMemo, useEffect, useState } from "react";
 import Fuse from "fuse.js";
+import { buildSearchIndex } from "~/lib/search";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 interface UsePartsSearchOptions {
@@ -15,10 +16,7 @@ interface UsePartsSearchResult {
   isSearching: boolean;
 }
 
-/**
- * Hook for searching and filtering parts using Fuse.js
- * Optimizes Fuse instance creation by only recreating when parts data actually changes
- */
+/** Shared part matching with the connector's fuzzy search as a fallback. */
 export function usePartsSearch({
   parts,
   debounceMs = 300,
@@ -43,58 +41,28 @@ export function usePartsSearch({
     };
   }, [searchQuery, debounceMs]);
 
-  // Create Fuse instance only when parts data actually changes
-  // Compare by length and first/last item IDs to detect changes efficiently
-  const previousLengthRef = useRef<number | undefined>(undefined);
-  const previousFirstIdRef = useRef<string | undefined>(undefined);
-  const previousLastIdRef = useRef<string | undefined>(undefined);
-  const fuseRef = useRef<Fuse<BtPartMetadataInfo> | null>(null);
-
-  const fuse = useMemo(() => {
-    if (!parts || parts.length === 0) {
-      previousLengthRef.current = 0;
-      previousFirstIdRef.current = undefined;
-      previousLastIdRef.current = undefined;
-      fuseRef.current = null;
-      return null;
-    }
-
-    // Quick check: compare length and first/last item IDs
-    const currentLength = parts.length;
-    const currentFirstId =
-      parts[0]?.partId || parts[0]?.id || parts[0]?.partIdentity || "";
-    const currentLastId =
-      parts[parts.length - 1]?.partId ||
-      parts[parts.length - 1]?.id ||
-      parts[parts.length - 1]?.partIdentity ||
-      "";
-
-    const hasChanged =
-      currentLength !== previousLengthRef.current ||
-      currentFirstId !== previousFirstIdRef.current ||
-      currentLastId !== previousLastIdRef.current;
-
-    // If data appears unchanged and we have a fuse instance, reuse it
-    if (!hasChanged && fuseRef.current) {
-      return fuseRef.current;
-    }
-
-    // Update refs
-    previousLengthRef.current = currentLength;
-    previousFirstIdRef.current = currentFirstId;
-    previousLastIdRef.current = currentLastId;
-
-    // Create new Fuse instance
-    const newFuse = new Fuse(parts, {
-      keys: ["name", "partNumber"],
-      threshold: 0.4, // Lower = more strict, higher = more fuzzy
-      ignoreLocation: true, // Search anywhere in the string
-      minMatchCharLength: 1,
-    });
-
-    fuseRef.current = newFuse;
-    return newFuse;
+  // Rebuild on metadata changes too, even when every part keeps the same id.
+  const index = useMemo(() => {
+    const entries = (parts || []).map((part, position) => ({
+      id: String(position),
+      part,
+    }));
+    return buildSearchIndex(entries, [
+      { value: ({ part }) => part.name, weight: 2 },
+      { value: ({ part }) => part.partNumber, weight: 2 },
+    ]);
   }, [parts]);
+
+  const fuse = useMemo(
+    () =>
+      new Fuse(parts || [], {
+        keys: ["name", "partNumber"],
+        threshold: 0.4,
+        ignoreLocation: true,
+        minMatchCharLength: 1,
+      }),
+    [parts]
+  );
 
   // Filter parts based on search query
   const filteredParts = useMemo(() => {
@@ -102,12 +70,16 @@ export function usePartsSearch({
       return [];
     }
 
-    if (!debouncedSearchQuery.trim() || !fuse) {
+    if (!debouncedSearchQuery.trim()) {
       return parts;
     }
 
+    const matches = index.search(debouncedSearchQuery);
+    if (matches.length) return matches.map(({ id }) => parts[Number(id)]!);
+
+    // Preserve typo and infix searches when the shared matcher has no result.
     return fuse.search(debouncedSearchQuery).map((result) => result.item);
-  }, [parts, fuse, debouncedSearchQuery]);
+  }, [parts, index, fuse, debouncedSearchQuery]);
 
   return {
     searchQuery,
