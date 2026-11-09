@@ -50,6 +50,13 @@
       "when": 1794234302479,
       "tag": "0006_regular_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794240597915,
+      "tag": "0007_dark_cammi",
+      "breakpoints": true
     }
   ]
 }

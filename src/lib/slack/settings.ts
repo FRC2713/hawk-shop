@@ -14,6 +14,8 @@ export function getSlackSettings(connection: Pick<typeof db, "select"> = db) {
       channel_id: null,
       channel_name: null,
       enabled: false,
+      reports_enabled: false,
+      reports_channel_id: null,
       generation: 0,
       updated_at: new Date(0).toISOString(),
     }
@@ -22,7 +24,8 @@ export function getSlackSettings(connection: Pick<typeof db, "select"> = db) {
 export function saveSlackSettings(
   channel_id: string | null,
   channel_name: string | null,
-  enabled: boolean
+  enabled: boolean,
+  reports?: { reports_enabled: boolean; reports_channel_id: string | null }
 ) {
   return db.transaction((tx) => {
     const previous = getSlackSettings(tx);
@@ -36,6 +39,10 @@ export function saveSlackSettings(
       channel_id,
       channel_name,
       enabled,
+      reports_enabled: reports?.reports_enabled ?? previous.reports_enabled,
+      reports_channel_id: reports
+        ? reports.reports_channel_id
+        : previous.reports_channel_id,
       generation,
       updated_at: new Date().toISOString(),
     };

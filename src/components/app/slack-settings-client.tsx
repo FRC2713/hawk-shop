@@ -19,11 +19,15 @@ export function SlackSettingsClient() {
   const client = useQueryClient();
   const [channel, setChannel] = useState("");
   const [enabled, setEnabled] = useState(false);
+  const [reportsEnabled, setReportsEnabled] = useState(false);
+  const [reportsChannel, setReportsChannel] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => {
     if (settings.data) {
       setChannel(settings.data.channel_id ?? "");
       setEnabled(settings.data.enabled);
+      setReportsEnabled(settings.data.reports_enabled);
+      setReportsChannel(settings.data.reports_channel_id ?? "");
     }
   }, [settings.data?.generation, settings.data?.updated_at]);
   const refresh = () =>
@@ -63,7 +67,9 @@ export function SlackSettingsClient() {
   const currentSettings = settings.data;
   const dirty =
     channel !== (currentSettings.channel_id ?? "") ||
-    enabled !== currentSettings.enabled;
+    enabled !== currentSettings.enabled ||
+    reportsEnabled !== currentSettings.reports_enabled ||
+    reportsChannel !== (currentSettings.reports_channel_id ?? "");
   const busy = save.isPending || test.isPending || settings.isFetching;
   return (
     <main className="h-full min-h-0 w-full overflow-y-auto">
@@ -160,7 +166,12 @@ export function SlackSettingsClient() {
           onSubmit={(event) => {
             event.preventDefault();
             setNotice("");
-            save.mutate({ channel_id: channel || null, enabled });
+            save.mutate({
+              channel_id: channel || null,
+              enabled,
+              reports_enabled: reportsEnabled,
+              reports_channel_id: reportsChannel || null,
+            });
           }}
         >
           <div className="space-y-2">
@@ -220,10 +231,52 @@ export function SlackSettingsClient() {
             Disabling notifications or changing the channel cancels unsent
             notifications. A message already sending may still arrive.
           </p>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={reportsEnabled}
+              onChange={(event) => setReportsEnabled(event.target.checked)}
+              disabled={busy}
+            />
+            Enable problem reports
+          </label>
+          <label htmlFor="reports-channel" className="block font-medium">
+            Problem report channel
+          </label>
+          <select
+            id="reports-channel"
+            className="border-input bg-background w-full rounded-md border p-2"
+            value={reportsChannel}
+            onChange={(event) => setReportsChannel(event.target.value)}
+            disabled={busy || !channels.isSuccess}
+          >
+            <option value="">Use status notification channel</option>
+            {reportsChannel &&
+              !channels.data?.channels.some(
+                (item) => item.id === reportsChannel
+              ) && (
+                <option value={reportsChannel}>{reportsChannel} (saved)</option>
+              )}
+            {channels.data?.channels.map((item) => (
+              <option key={item.id} value={item.id}>
+                #{item.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-muted-foreground text-sm">
+            Reports are saved for up to seven days while Slack is unavailable.
+            Disabling reports pauses pending delivery. Pending reports keep
+            their original channel.
+          </p>
           <div className="flex flex-wrap gap-3">
             <Button
               type="submit"
-              disabled={busy || !dirty || (enabled && !channel)}
+              disabled={
+                busy ||
+                !dirty ||
+                (enabled && !channel) ||
+                (reportsEnabled && !reportsChannel && !channel)
+              }
             >
               {save.isPending ? "Saving…" : "Save settings"}
             </Button>

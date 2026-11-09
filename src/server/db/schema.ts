@@ -287,6 +287,10 @@ export const SEED_PROCESSES = [
 export { DEFAULT_KANBAN_COLUMNS } from "~/server/kanbanApi/columnTypes";
 
 export const slackConfig = sqliteTable("slack_config", {
+  reports_enabled: integer("reports_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  reports_channel_id: text("reports_channel_id"),
   id: text("id").primaryKey(),
   channel_id: text("channel_id"),
   channel_name: text("channel_name"),
@@ -324,3 +328,26 @@ export const slackPostGate = sqliteTable("slack_post_gate", {
   id: text("id").primaryKey(),
   next_post_at: text("next_post_at").notNull(),
 });
+
+// Receipts also enforce the per-member limit after successful delivery.
+export const problemReports = sqliteTable(
+  "problem_reports",
+  {
+    id: text("id").primaryKey(),
+    member_id: text("member_id").notNull(),
+    channel_id: text("channel_id").notNull(),
+    text: text("text").notNull(),
+    created_at: text("created_at").notNull(),
+    expires_at: text("expires_at").notNull(),
+    next_attempt_at: text("next_attempt_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    error_code: text("error_code"),
+    delivered_at: text("delivered_at"),
+  },
+  (table) => [
+    index("problem_reports_member_created").on(
+      table.member_id,
+      table.created_at
+    ),
+  ]
+);

@@ -3,6 +3,8 @@ export type SlackSettings = {
   channel_id: string | null;
   channel_name: string | null;
   enabled: boolean;
+  reports_enabled: boolean;
+  reports_channel_id: string | null;
   generation: number;
   updated_at: string;
 };

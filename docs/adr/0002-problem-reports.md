@@ -1,0 +1,9 @@
+# Deliver member problem reports through Slack
+
+Problem reports extend ADR-0001 as a separate message type initiated by a button in Hawk Shop. Slack administrators may choose a second channel, with the status notification channel as the fallback; the bot token remains in deployment configuration and this adds no commands or buttons in Slack.
+
+Reports use a durable pending queue processed by the existing Slack worker, transport, and posting cooldown. Their seven-day delivery window tolerates longer outages than status notifications. Disabling reports hides the action, rejects submissions, and pauses pending delivery; queued reports retain their original destination. Delivered receipts remain until the seven-day expiry so restarting the server or delivering a report cannot reset the five-per-ten-minute member limit.
+
+Only whitelisted diagnostics are attached. Page query strings and fragments are omitted, text is bounded and escaped, and server-added member identity, revision, time, and report ID accompany each report. A receipt confirms durable acceptance, while delivery failures are logged with the report ID and retried. As with status notifications, an upstream timeout after Slack accepts a post can cause a duplicate on retry.
+
+The shared header owns the dialog. Error displays can import `ReportProblemButton` from `~/components/app/report-problem` with `context` and optional prefilled `message`, or call `openProblemReport(context, message)` from `~/lib/api/reports`. The client-safe `ReportContext` accepts `page_path`, `card_id`, `error_id`, `error_message`, `user_agent`, and `viewport`. The dialog collects the current path, browser, and viewport itself. This works across React islands without a shared query provider; the button hides when the server-rendered page says reports are disabled.

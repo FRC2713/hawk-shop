@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -29,29 +29,51 @@ before(async () => {
   const port = address.port;
   await new Promise<void>((resolve) => socket.close(() => resolve()));
   origin = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, ["dist/server/entry.mjs"], {
-    env: {
-      ...process.env,
-      NODE_ENV: "production",
-      HOST: "127.0.0.1",
-      PORT: String(port),
-      DATA_DIR: data,
-      APP_URL: origin,
-      HAWK_SUITE_TRUST_PROXY: "true",
-      HAWK_SUITE_TEAM_ID: "TTEAM",
-      HAWK_SUITE_ISSUER: "https://suite.example/",
-      SLACK_BOT_TOKEN: "",
-      SLACK_WORKSPACE_ID: "",
-      ONSHAPE_ACCESS_KEY: "",
-      ONSHAPE_SECRET_KEY: "",
-      ONSHAPE_REMAINING_WARN_AT: "",
-      ONSHAPE_WEBHOOK_SECRET: "runtime-webhook-secret",
-      ONSHAPE_WEBHOOK_BASE_URL: "https://shop.example.org",
-      DATABASE_PATH: "",
-      UPLOADS_DIR: "",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const transport = join(data, "slack-transport.mjs");
+  await writeFile(
+    transport,
+    `
+    import {appendFileSync} from "node:fs";
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url === "https://slack.com/api/auth.test")
+        return Response.json({ok:true,team_id:"TTEAM",bot_id:"BFIXTURE"});
+      if (url === "https://slack.com/api/chat.postMessage") {
+        const body = JSON.parse(init.body);
+        appendFileSync(process.env.DATA_DIR + "/slack-posts.jsonl", JSON.stringify(body) + "\n");
+        return Response.json({ok:true,channel:body.channel,ts:"123"});
+      }
+      throw Error("Unexpected external request");
+    };
+  `
+  );
+  server = spawn(
+    process.execPath,
+    ["--import", transport, "dist/server/entry.mjs"],
+    {
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        HOST: "127.0.0.1",
+        PORT: String(port),
+        DATA_DIR: data,
+        APP_URL: origin,
+        HAWK_SUITE_TRUST_PROXY: "true",
+        HAWK_SUITE_TEAM_ID: "TTEAM",
+        HAWK_SUITE_ISSUER: "https://suite.example/",
+        SLACK_BOT_TOKEN: "fixture",
+        SLACK_WORKSPACE_ID: "TTEAM",
+        ONSHAPE_ACCESS_KEY: "",
+        ONSHAPE_SECRET_KEY: "",
+        ONSHAPE_REMAINING_WARN_AT: "",
+        ONSHAPE_WEBHOOK_SECRET: "runtime-webhook-secret",
+        ONSHAPE_WEBHOOK_BASE_URL: "https://shop.example.org",
+        DATABASE_PATH: "",
+        UPLOADS_DIR: "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  );
   server.stdout?.on("data", (chunk) => {
     output += chunk;
   });
@@ -553,3 +575,101 @@ test(
     }
   }
 );
+
+test("header report dialog preserves failed text and confirms an accepted report", async () => {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ extraHTTPHeaders: identity });
+  const page = await context.newPage();
+  const database = new Database(join(data, "hawk-shop.db"));
+  try {
+    await page.goto(origin + "/");
+    await page.getByLabel("Account: Shop Member").click();
+    await expect(
+      page.getByRole("button", { name: "Report a problem", exact: true })
+    ).toHaveCount(0);
+    database
+      .prepare(
+        "INSERT INTO slack_config (id, enabled, reports_enabled, reports_channel_id, generation, updated_at) VALUES ('default',0,1,'CREPORTS',0,?) ON CONFLICT(id) DO UPDATE SET reports_enabled=1,reports_channel_id='CREPORTS'"
+      )
+      .run(new Date().toISOString());
+    await page.reload();
+    await page.getByLabel("Account: Shop Member").click();
+    await page
+      .getByRole("button", { name: "Report a problem", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByLabel("What went wrong?").fill("The board is stuck");
+    await page.route("**/api/reports", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Please try again." }),
+      })
+    );
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText("Please try again.");
+    await expect(page.getByLabel("What went wrong?")).toHaveValue(
+      "The board is stuck"
+    );
+    await page.unroute("**/api/reports");
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText(
+      /Report ID: [a-f0-9-]{36}/
+    );
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("The board is stuck");
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent("hawk-shop:report", {
+          detail: {
+            context: {
+              error_id: "error-fixture",
+              error_message: "Move failed",
+              card_id: "card-fixture",
+            },
+            message: "The move failed",
+          },
+        })
+      )
+    );
+    await expect(page.getByLabel("What went wrong?")).toHaveValue(
+      "The move failed"
+    );
+    await expect(page.getByLabel("What went wrong?")).toBeFocused();
+    const box = await page.getByRole("dialog").boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390);
+    await page
+      .getByRole("button", { name: "Send report", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText(
+      /Report ID: [a-f0-9-]{36}/
+    );
+    await expect
+      .poll(
+        async () =>
+          await readFile(join(data, "slack-posts.jsonl"), "utf8").catch(
+            () => ""
+          )
+      )
+      .toContain("error-fixture");
+  } finally {
+    database
+      .prepare("UPDATE slack_config SET reports_enabled=0 WHERE id='default'")
+      .run();
+    database.close();
+    await browser.close();
+  }
+});

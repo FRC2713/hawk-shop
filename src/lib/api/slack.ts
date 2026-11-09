@@ -27,7 +27,10 @@ export const slackChannelsQuery = () =>
     refetchOnMount: "always",
   });
 export const saveSlackSettings = (
-  settings: Pick<SlackSettings, "channel_id" | "enabled">
+  settings: Pick<
+    SlackSettings,
+    "channel_id" | "enabled" | "reports_enabled" | "reports_channel_id"
+  >
 ) =>
   apiFetch<SlackSettings>("/api/slack/config", {
     method: "PUT",
