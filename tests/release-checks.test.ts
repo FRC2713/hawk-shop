@@ -39,52 +39,31 @@ for (const [code, part, context] of [
   });
 }
 
-test("placeholder-material warns without blocking release", () => {
-  const part = { ...clean, material: { displayName: "  UNKNOWN " } };
-  const issues = checkPartForRelease(part, {});
-  assert.deepEqual(
-    issues.map(({ code, severity }) => ({ code, severity })),
-    [{ code: "placeholder-material", severity: "warning" }]
-  );
-  assert.ok(issues[0].fix);
-  assert.equal(isPartEligibleForRelease(part, undefined), true);
-});
-
-test("quantity-below-per-robot warns without blocking release", () => {
-  const part = clean;
-  const issues = checkPartForRelease(part, {
-    quantityPerRobot: 4,
-    quantityToMake: 2,
+for (const [code, part, context] of [
+  [
+    "placeholder-material",
+    { ...clean, material: { displayName: "  UNKNOWN " } },
+    {},
+  ],
+  [
+    "quantity-below-per-robot",
+    clean,
+    { quantityPerRobot: 4, quantityToMake: 2 },
+  ],
+  ["missing-description", { ...clean, description: "  " }, {}],
+  ["released-from-workspace", clean, { instanceType: "w" }],
+] as const) {
+  test(`${code} warns without blocking release`, () => {
+    const issues = checkPartForRelease(part, context);
+    assert.deepEqual(
+      issues.map(({ code, severity }) => ({ code, severity })),
+      [{ code, severity: "warning" }]
+    );
+    assert.ok(issues[0].message);
+    assert.ok(issues[0].fix);
+    assert.equal(isPartEligibleForRelease(part, undefined), true);
   });
-  assert.deepEqual(
-    issues.map(({ code, severity }) => ({ code, severity })),
-    [{ code: "quantity-below-per-robot", severity: "warning" }]
-  );
-  assert.ok(issues[0].fix);
-  assert.equal(isPartEligibleForRelease(part, undefined), true);
-});
-
-test("missing-description warns without blocking release", () => {
-  const part = { ...clean, description: "  " };
-  const issues = checkPartForRelease(part, {});
-  assert.deepEqual(
-    issues.map(({ code, severity }) => ({ code, severity })),
-    [{ code: "missing-description", severity: "warning" }]
-  );
-  assert.ok(issues[0].fix);
-  assert.equal(isPartEligibleForRelease(part, undefined), true);
-});
-
-test("released-from-workspace warns without blocking release", () => {
-  const part = clean;
-  const issues = checkPartForRelease(part, { instanceType: "w" });
-  assert.deepEqual(
-    issues.map(({ code, severity }) => ({ code, severity })),
-    [{ code: "released-from-workspace", severity: "warning" }]
-  );
-  assert.ok(issues[0].fix);
-  assert.equal(isPartEligibleForRelease(part, undefined), true);
-});
+}
 
 test("placeholder names can be replaced or disabled without mutating the part", () => {
   const part = { ...clean, material: { displayName: "Team stock TBD" } };
