@@ -21,7 +21,7 @@ import {
 import { Calendar } from "~/components/ui/calendar";
 import { cn } from "~/lib/utils";
 import { processesQuery } from "~/lib/api";
-import { onshapeThumbnailSrc } from "~/lib/api/onshape";
+import { onshapeThumbnailSrc, partMicroversionOf } from "~/lib/api/onshape";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 export interface BulkReleaseFormData {
@@ -359,15 +359,11 @@ export function BulkReleaseDialog({
                             <img
                               src={onshapeThumbnailSrc(
                                 selectedPart.thumbnailUrl,
-                                {
-                                  documentId:
-                                    selectedPart.onshapeParams?.documentId,
-                                  elementId:
-                                    selectedPart.onshapeParams?.elementId,
+                                partMicroversionOf(selectedPart.onshapeParams, {
                                   partId: selectedPart.partId,
                                   microversionId:
                                     selectedPart.part.microversionId,
-                                }
+                                })
                               )}
                               alt={selectedPart.part.name || "Part"}
                               className="h-12 w-12 rounded object-cover"

@@ -12,6 +12,32 @@ export interface OnshapePartsScope {
 }
 
 /**
+ * One part at one microversion. The microversion changes only when the part
+ * does, so data derived from it, such as a thumbnail, never goes stale.
+ * Client-safe: the server's thumbnail cache uses this type too.
+ */
+export interface OnshapePartMicroversion {
+  documentId: string;
+  elementId: string;
+  partId: string;
+  microversionId: string;
+}
+
+/** The identity of a part read from a Part Studio, as far as it is known. */
+export function partMicroversionOf(
+  scope:
+    Partial<Pick<OnshapePartsScope, "documentId" | "elementId">> | undefined,
+  part: { partId?: string; microversionId?: string }
+): Partial<OnshapePartMicroversion> {
+  return {
+    documentId: scope?.documentId,
+    elementId: scope?.elementId,
+    partId: part.partId,
+    microversionId: part.microversionId,
+  };
+}
+
+/**
  * `<img>` src for a part thumbnail the connector has from a parts read.
  *
  * With the part's document, element and microversion the server caches the
@@ -20,12 +46,7 @@ export interface OnshapePartsScope {
  */
 export function onshapeThumbnailSrc(
   href: string,
-  part?: {
-    documentId?: string;
-    elementId?: string;
-    partId?: string;
-    microversionId?: string;
-  }
+  part?: Partial<OnshapePartMicroversion>
 ): string {
   return `/api/onshape/thumbnail?${searchParams({
     url: href,

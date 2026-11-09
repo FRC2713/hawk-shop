@@ -22,7 +22,7 @@ import { db } from "~/server/db/client";
 import { onshapeWebhooks } from "~/server/db/schema";
 import {
   ONSHAPE_DOCUMENT_CHANGE_EVENTS,
-  ONSHAPE_WEBHOOK_PATH,
+  ONSHAPE_WEBHOOK_SECRET_PARAM,
   onshapeWebhookCallbackUrl,
   onshapeWebhookSettings,
   type OnshapeWebhookSettings,
@@ -158,19 +158,36 @@ export function ensureOnshapeWebhook(documentId: string): Promise<void> {
   });
 }
 
-/** Does this listed webhook deliver to this app, whatever its secret? */
-function pointsHere(settings: OnshapeWebhookSettings, url: string): boolean {
+/**
+ * A callback URL reduced to what decides where a delivery goes and whether it
+ * is accepted: origin, path without a trailing slash, and the secret. Onshape
+ * may store the URL in a different but equivalent form.
+ */
+function callbackTarget(url: string) {
   try {
-    const listed = new URL(url);
-    const ours = new URL(onshapeWebhookCallbackUrl(settings));
-    return (
-      listed.origin === ours.origin &&
-      listed.pathname === ours.pathname &&
-      listed.pathname.endsWith(ONSHAPE_WEBHOOK_PATH)
-    );
+    const parsed = new URL(url);
+    return {
+      endpoint: parsed.origin + parsed.pathname.replace(/\/+$/, ""),
+      secret: parsed.searchParams.get(ONSHAPE_WEBHOOK_SECRET_PARAM),
+    };
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * Does this listed webhook deliver to this app (`withSecret: false`, whatever
+ * its secret) or to this app's current callback (`withSecret: true`)?
+ */
+function deliversTo(
+  callback: string,
+  url: string,
+  { withSecret }: { withSecret: boolean }
+): boolean {
+  const ours = callbackTarget(callback);
+  const listed = callbackTarget(url);
+  if (!ours || !listed || listed.endpoint !== ours.endpoint) return false;
+  return !withSecret || listed.secret === ours.secret;
 }
 
 /**
@@ -190,12 +207,21 @@ export function recheckOnshapeWebhooks(): Promise<void> {
     const tracked = new Set(rows.map((row) => row.webhook_id));
 
     for (const hook of listed)
-      if (!tracked.has(hook.id) && hook.url && pointsHere(settings, hook.url))
+      if (
+        !tracked.has(hook.id) &&
+        hook.url &&
+        deliversTo(callback, hook.url, { withSecret: false })
+      )
         await deleteWebhook(hook.id);
 
     for (const row of rows) {
       const hook = byId.get(row.webhook_id);
-      if (hook && (hook.url === undefined || hook.url === callback)) continue;
+      if (
+        hook &&
+        (hook.url === undefined ||
+          deliversTo(callback, hook.url, { withSecret: true }))
+      )
+        continue;
       if (hook) await deleteWebhook(hook.id);
       save(row.document_id, await register(settings, row.document_id));
     }

@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { onshapeThumbnailSrc } from "~/lib/api/onshape";
+import {
+  onshapeThumbnailSrc,
+  partMicroversionOf,
+  type OnshapePartsScope,
+} from "~/lib/api/onshape";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 interface PartCardThumbnailProps {
   part: BtPartMetadataInfo;
   /** The Part Studio the part was read from; keys the image by microversion. */
-  scope?: { documentId?: string; elementId?: string };
+  scope?: Partial<Pick<OnshapePartsScope, "documentId" | "elementId">>;
 }
 
 /**
@@ -21,12 +25,7 @@ export function PartCardThumbnail({ part, scope }: PartCardThumbnailProps) {
 
   // Use proxy endpoint for authenticated thumbnail access
   const thumbnailHref = rawThumbnailUrl
-    ? onshapeThumbnailSrc(rawThumbnailUrl, {
-        documentId: scope?.documentId,
-        elementId: scope?.elementId,
-        partId: part.partId,
-        microversionId: part.microversionId,
-      })
+    ? onshapeThumbnailSrc(rawThumbnailUrl, partMicroversionOf(scope, part))
     : null;
 
   const [thumbnailError, setThumbnailError] = useState(false);

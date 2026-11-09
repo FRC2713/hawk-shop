@@ -169,12 +169,12 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Each part in the parts list carries a `microversionId`.**
   - Label: documented
   - Source: Onshape OpenAPI spec, `BTPartMetadataInfo.microversionId` (`src/lib/onshapeApi/generated/types.gen.ts`)
-  - Relied on by: `syncWorkspaceCardMicroversions`, the release action (`onshape_microversion_id`), `partCacheKey`
+  - Relied on by: `syncWorkspaceCardMicroversions`, the release action (`onshape_microversion_id`), the thumbnail route's `partRowKey`
 
 - **A part's `microversionId` changes when that part changes and only then;** edits to other parts in the same Part Studio leave it alone.
   - Label: unverified
   - Source: #48 and FRCDesignApp's microversion-keyed caching (seen with OAuth)
-  - Relied on by: `partCacheKey`, the thumbnail route's microversion-keyed rows. If it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, cards would keep the old picture.
+  - Relied on by: the thumbnail route's microversion-keyed rows. If it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, cards would keep the old picture.
 
 - **The parts list is either a bare array or `{ parts: [...] }`.**
   - Label: unverified
@@ -260,7 +260,7 @@ How registration behaves (`src/lib/onshapeApi/webhooks.ts`, covered by `tests/on
 - After a successful **workspace** parts read, `ensureOnshapeWebhook(documentId)` registers a webhook if the `onshape_webhooks` table has no row for that document. It isn't awaited, so it never slows or fails the read. Later reads cost one SQLite lookup. A failed registration writes no row, so the next read tries again. Version and microversion reads register nothing: their cache entries never go stale.
 - The registration body is `{ events: ONSHAPE_DOCUMENT_CHANGE_EVENTS, filter: "{$DocumentId} = '<id>'", options: { collapseEvents: false }, url: <callback URL>, isTransient: false }`.
 - `startOnshapeWebhookChecks` runs `recheckOnshapeWebhooks` on boot (30 seconds after `src/server/startup.ts` loads, so the listener can answer Onshape's registration ping) and then every 24 hours. A check lists the key's webhooks (`GET /api/v6/webhooks`, following `next`) and then:
-  - registers again any tracked webhook that is missing, and replaces one whose URL carries an old secret or base URL (delete, then register);
+  - registers again any tracked webhook that is missing, and replaces one whose URL carries an old secret or base URL (delete, then register). URLs are compared by origin, path without a trailing slash, and `secret`, so an equivalent form of the same callback is left alone;
   - deletes listed webhooks that deliver to this app's webhook path but aren't tracked, such as duplicates left after a lost database;
   - leaves webhooks that deliver anywhere else alone;
   - sets `last_checked_at` on every row, only after the whole check succeeded.

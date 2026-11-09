@@ -105,7 +105,8 @@ export const KanbanCard = memo(function KanbanCard({
     if (hideImages) return undefined;
     if (!card.image_url && !card.onshape_document_id) return undefined;
     // The microversion is in the src so an edited part's new picture replaces
-    // the one the browser already showed.
+    // the one the browser already showed. It is only a cache-buster: the
+    // server ignores it and reads the microversion from the card row.
     const version = card.onshape_microversion_id
       ? `&microversionId=${encodeURIComponent(card.onshape_microversion_id)}`
       : "";

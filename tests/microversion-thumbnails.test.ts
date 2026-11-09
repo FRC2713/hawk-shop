@@ -295,3 +295,29 @@ test("a card from before microversions keeps its legacy proxy image_url and its 
   assert.equal(await thumbnail("cardId=legacy-proxy"), "image of P1 at mv-1");
   assert.equal(onshape.thumbnailFetches.length, 1);
 });
+
+test("a connector request whose part ids don't match its url can't replace another part's thumbnail", async (t) => {
+  const onshape = fakeOnshape(t, "doc-mismatch");
+  onshape.microversions.set("P1", "mv-1");
+  onshape.microversions.set("P2", "mv-2");
+  const parts = await readParts("doc-mismatch");
+  const p1 = parts.find((part) => part.partId === "P1")!;
+  const p2 = parts.find((part) => part.partId === "P2")!;
+
+  // P1's identity with P2's picture must not be stored as P1's thumbnail.
+  const mismatched = new URLSearchParams({
+    url: p2.thumbnailInfo.sizes[0].href,
+    documentId: "doc-mismatch",
+    elementId: "studio",
+    partId: "P1",
+    microversionId: "mv-1",
+  }).toString();
+  assert.equal(await thumbnail(mismatched), "image of P2 at mv-2");
+
+  assert.equal(
+    await thumbnail(connectorQuery("doc-mismatch", p1)),
+    "image of P1 at mv-1"
+  );
+  const card = await release("doc-mismatch", p1);
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
+});

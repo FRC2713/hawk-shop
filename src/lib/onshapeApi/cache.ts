@@ -21,7 +21,7 @@ import "virtual:hawk-shop/server-only";
  * rather than breaking.
  */
 
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { onshapeApiCache, onshapeApiUsage } from "~/server/db/schema";
 
@@ -78,36 +78,11 @@ const globalForCache = globalThis as unknown as {
 };
 const inflight = (globalForCache.__onshapeInflight ??= new Map());
 
+const KEY_SEPARATOR = "::";
+
 /** Build a stable cache key. Parts are ordered, so callers cannot transpose them. */
 export function cacheKey(label: string, ...parts: (string | number)[]): string {
-  return [label, ...parts].join("::");
-}
-
-/** What identifies one part's state in Onshape: it changes only when the part does. */
-export interface OnshapePartMicroversion {
-  documentId: string;
-  elementId: string;
-  partId: string;
-  microversionId: string;
-}
-
-/**
- * Key for data derived from one part at one microversion, such as its
- * thumbnail. A part's microversion changes only when the part does, so data
- * under this key never goes stale and needs no TTL, and an edit moves the
- * part to a new key instead of serving the old answer.
- */
-export function partCacheKey(
-  label: string,
-  part: OnshapePartMicroversion
-): string {
-  return cacheKey(
-    label,
-    part.documentId,
-    part.elementId,
-    part.partId,
-    part.microversionId
-  );
+  return [label, ...parts].join(KEY_SEPARATOR);
 }
 
 /** Drop the durable entry and detach reads that started before the edit. */
@@ -281,20 +256,18 @@ export async function withOnshapeCache<T>({
  * Called when an Onshape webhook reports that the document changed.
  */
 export function invalidateOnshapeCacheForDocument(documentId: string): void {
-  const isWorkspaceRead = (key: string) => {
-    const [, keyDocumentId, wvm] = key.split("::");
-    return keyDocumentId === documentId && wvm === "w";
-  };
+  // What follows the label in every workspace key of this document.
+  const tail = cacheKey(documentId, "w", "");
+  const afterLabel = (key: string) =>
+    key.slice(key.indexOf(KEY_SEPARATOR) + KEY_SEPARATOR.length);
   for (const key of [...inflight.keys()])
-    if (isWorkspaceRead(key)) inflight.delete(key);
-  const keys = db
-    .select({ cache_key: onshapeApiCache.cache_key })
-    .from(onshapeApiCache)
-    .all()
-    .map((row) => row.cache_key)
-    .filter(isWorkspaceRead);
-  if (keys.length > 0)
-    db.delete(onshapeApiCache)
-      .where(inArray(onshapeApiCache.cache_key, keys))
-      .run();
+    if (afterLabel(key).startsWith(tail)) inflight.delete(key);
+
+  const pattern = tail.replace(/[\\%_]/g, (char) => `\\${char}`) + "%";
+  const key = onshapeApiCache.cache_key;
+  db.delete(onshapeApiCache)
+    .where(
+      sql`substr(${key}, instr(${key}, ${KEY_SEPARATOR}) + ${KEY_SEPARATOR.length}) LIKE ${pattern} ESCAPE '\\'`
+    )
+    .run();
 }

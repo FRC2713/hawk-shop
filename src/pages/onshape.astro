@@ -11,7 +11,6 @@ import {
 import { onshapeWebhookStatus } from "../lib/onshapeApi/webhooks";
 const configured = isOnshapeConfigured();
 const webhooks = onshapeWebhookStatus();
-const whenOrNever = (value: string | null) => (value ? when(value) : "never");
 const { totals, byDay } = summarizeOnshapeUsage();
 const { rows, latest, warnAt, exhausted, low } = onshapeRemainingStatus();
 // Brand callout: Light Grey panel, 4px red rail, 12/14px padding.
@@ -141,8 +140,15 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
               {webhooks.registered === 1 ? "document" : "documents"}.
             </p>
             <ul class="text-muted-foreground text-sm">
-              <li>Last event: {whenOrNever(webhooks.lastEventAt)}</li>
-              <li>Last check: {whenOrNever(webhooks.lastCheckedAt)}</li>
+              {[
+                ["Last event", webhooks.lastEventAt],
+                ["Last check", webhooks.lastCheckedAt],
+              ].map(([label, at]) => (
+                <li>
+                  {label}:{" "}
+                  {at ? <span class="brand-figures">{when(at)}</span> : "never"}
+                </li>
+              ))}
             </ul>
           </>
         ) : (
