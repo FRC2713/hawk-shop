@@ -1,11 +1,50 @@
-import { useMemo } from "react";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { KanbanCard } from "~/components/mfg/kanban/cards/KanbanCard";
 import { useQuery } from "@tanstack/react-query";
 import { kanbanCardsQuery, kanbanConfigQuery, usersQuery } from "~/lib/api";
+import { Input } from "~/components/ui/input";
+import { buildSearchIndex } from "~/lib/search";
 
 export function DoneClient() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const restoreSearch = () =>
+      setSearchQuery(new URL(window.location.href).searchParams.get("q") || "");
+    restoreSearch();
+    const focusSearch = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        event.key !== "/" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        (target instanceof HTMLElement &&
+          (target.closest("input, textarea, select, [role='textbox']") ||
+            target.isContentEditable))
+      )
+        return;
+      event.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("popstate", restoreSearch);
+    window.addEventListener("keydown", focusSearch);
+    return () => {
+      window.removeEventListener("popstate", restoreSearch);
+      window.removeEventListener("keydown", focusSearch);
+    };
+  }, []);
+
+  const changeSearch = (query: string) => {
+    setSearchQuery(query);
+    const url = new URL(window.location.href);
+    if (query) url.searchParams.set("q", query);
+    else url.searchParams.delete("q");
+    window.history.replaceState(window.history.state, "", url);
+  };
   const { data: config } = useQuery(kanbanConfigQuery());
   const { data: cards = [], isLoading: isLoadingCards } =
     useQuery(kanbanCardsQuery());
@@ -33,14 +72,51 @@ export function DoneClient() {
     return map;
   }, [users]);
 
+  const searchIndex = useMemo(
+    () =>
+      buildSearchIndex(doneCards, [
+        { value: (card) => card.title, weight: 2 },
+        { value: (card) => card.content, weight: 2 },
+        {
+          value: (card) =>
+            card.assignee
+              ? usersMap.get(card.assignee)?.name || card.assignee
+              : null,
+        },
+        {
+          value: (card) =>
+            card.created_by
+              ? usersMap.get(card.created_by)?.name || card.created_by
+              : null,
+        },
+        { value: (card) => card.machine },
+        {
+          value: (card) =>
+            card.processes?.map((process) => process.name).join(" "),
+        },
+      ]),
+    [doneCards, usersMap]
+  );
+
+  const searchScores = useMemo(
+    () =>
+      new Map(
+        searchIndex.search(searchQuery).map(({ id, score }) => [id, score])
+      ),
+    [searchIndex, searchQuery]
+  );
+
+  // Keep the completed-card order within the search results.
   // Sort cards by date_updated (newest first)
   const sortedCards = useMemo(() => {
-    return [...doneCards].sort((a, b) => {
-      const dateA = new Date(a.date_updated).getTime();
-      const dateB = new Date(b.date_updated).getTime();
-      return dateB - dateA;
-    });
-  }, [doneCards]);
+    return doneCards
+      .filter((card) => searchScores.has(card.id))
+      .sort((a, b) => {
+        const dateA = new Date(a.date_updated).getTime();
+        const dateB = new Date(b.date_updated).getTime();
+        return dateB - dateA;
+      });
+  }, [doneCards, searchScores]);
 
   return (
     <main className="bg-background flex h-full flex-1 flex-col overflow-hidden">
@@ -72,6 +148,31 @@ export function DoneClient() {
                 </p>
               </div>
             </div>
+            <div className="relative w-full min-w-0 flex-1 sm:max-w-md">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <Input
+                ref={searchRef}
+                aria-label="Search completed cards"
+                aria-keyshortcuts="/"
+                type="text"
+                placeholder="Search by part number or name..."
+                value={searchQuery}
+                onChange={(e) => changeSearch(e.target.value)}
+                className="h-9 pr-9 pl-9"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1/2 right-0 size-8 -translate-y-1/2"
+                  onClick={() => changeSearch("")}
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  <X className="size-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -88,10 +189,15 @@ export function DoneClient() {
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
               <CheckCircle2 className="text-muted-foreground mx-auto mb-4 size-12" />
-              <h3 className="mb-2 text-lg font-semibold">No completed cards</h3>
+              <h3 className="mb-2 text-lg font-semibold">
+                {searchQuery.trim()
+                  ? "No matching completed cards"
+                  : "No completed cards"}
+              </h3>
               <p className="text-muted-foreground text-sm">
-                Cards that have been in the Done column for more than 24 hours
-                will appear here.
+                {searchQuery.trim()
+                  ? "Try another search or clear the search to see all completed cards."
+                  : "Cards that have been in the Done column for more than 24 hours will appear here."}
               </p>
             </div>
           </div>

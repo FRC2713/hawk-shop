@@ -682,6 +682,7 @@ test(
       cards.push(
         (
           await json("/api/kanban/cards", "POST", {
+            id: `warning-review-${cards.length}`,
             title,
             processIds: [process],
           })
@@ -770,6 +771,228 @@ test(
       await browser.close();
       for (const card of cards)
         await call(`/api/kanban/cards/${card.id}`, { method: "DELETE" });
+    }
+  }
+);
+
+test(
+  "Done search restores q and finds finished cards with shared fields and shortcuts",
+  { timeout: 30000 },
+  async () => {
+    const config = await (await call("/api/kanban/config")).json();
+    const first = (
+      await json("/api/kanban/cards", "POST", {
+        id: "done-search-bracket",
+        title: "2713-24-164 Finished bracket 0.5in",
+        processIds: ["process-cnc-milling"],
+      })
+    ).card;
+    const second = (
+      await json("/api/kanban/cards", "POST", {
+        id: "done-search-plate",
+        title: "2713-24-165 Finished plate",
+      })
+    ).card;
+    for (const card of [first, second]) {
+      await json(`/api/kanban/cards/${card.id}`, "PATCH", {
+        column_id: config.columns.at(-1).id,
+        machine: "Finished router",
+      });
+    }
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({
+        extraHTTPHeaders: identity,
+        viewport: { width: 390, height: 900 },
+        colorScheme: "dark",
+      });
+      await page.goto(origin + "/kanban/done?q=24-164&keep=yes#finished");
+      const search = page.getByRole("textbox", {
+        name: "Search completed cards",
+      });
+      const bracket = page.getByRole("heading", {
+        name: first.title,
+        exact: true,
+      });
+      const plate = page.getByRole("heading", {
+        name: second.title,
+        exact: true,
+      });
+      await expect(search).toHaveValue("24-164");
+      await expect(bracket).toBeVisible();
+      await expect(plate).toHaveCount(0);
+      await search.fill("1/2 router shop milling");
+      await expect(bracket).toBeVisible();
+      await expect(plate).toHaveCount(0);
+      await expect(page).toHaveURL(/q=1%2F2\+router\+shop\+milling/);
+      assert.equal(new URL(page.url()).searchParams.get("keep"), "yes");
+      assert.equal(new URL(page.url()).hash, "#finished");
+      await page.reload();
+      await expect(search).toHaveValue("1/2 router shop milling");
+      await expect(bracket).toBeVisible();
+      await search.fill("no-such-finished-part");
+      await expect(bracket).toHaveCount(0);
+      await expect(page.getByText("No matching completed cards")).toBeVisible();
+      await page.getByRole("button", { name: "Clear search" }).click();
+      await expect(bracket).toBeVisible();
+      await expect(plate).toBeVisible();
+      assert.equal(new URL(page.url()).searchParams.has("q"), false);
+      await search.blur();
+      await page.keyboard.press("/");
+      await expect(search).toBeFocused();
+      await expect(search).toHaveValue("");
+      await page.keyboard.type("/");
+      await expect(search).toHaveValue("/");
+      await page.evaluate(() => {
+        history.pushState(null, "", "?q=24-165");
+        dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await expect(search).toHaveValue("24-165");
+      await expect(plate).toBeVisible();
+      await expect(bracket).toHaveCount(0);
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth
+        )
+      );
+    } finally {
+      await browser.close();
+      for (const card of [first, second])
+        await call(`/api/kanban/cards/${card.id}`, { method: "DELETE" });
+    }
+  }
+);
+
+test(
+  "connector search shares dimension and part-number matching while retaining fuzzy and substring search",
+  { timeout: 30000 },
+  async () => {
+    // A second local server enables the connector island. Browser fixtures answer
+    // CAD requests, so these placeholder credentials never leave the machine.
+    const socket = createServer();
+    await new Promise<void>((resolve) =>
+      socket.listen(0, "127.0.0.1", resolve)
+    );
+    const address = socket.address();
+    assert.ok(address && typeof address === "object");
+    const port = address.port;
+    await new Promise<void>((resolve) => socket.close(() => resolve()));
+    const connectorOrigin = `http://127.0.0.1:${port}`;
+    const connectorServer = spawn(process.execPath, ["dist/server/entry.mjs"], {
+      env: {
+        ...process.env,
+        HOST: "127.0.0.1",
+        PORT: String(port),
+        NODE_ENV: "production",
+        DATA_DIR: data,
+        DATABASE_PATH: "",
+        APP_URL: connectorOrigin,
+        HAWK_SUITE_TRUST_PROXY: "true",
+        HAWK_SUITE_TEAM_ID: "TTEAM",
+        HAWK_SUITE_ISSUER: "https://suite.example/",
+        ONSHAPE_ACCESS_KEY: "local-browser-fixture",
+        ONSHAPE_SECRET_KEY: "local-browser-fixture",
+        ONSHAPE_WEBHOOK_SECRET: "",
+        ONSHAPE_WEBHOOK_BASE_URL: "",
+        SLACK_BOT_TOKEN: "",
+        SLACK_WORKSPACE_ID: "",
+      },
+      stdio: "ignore",
+    });
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+    try {
+      let ready = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          ready = (await fetch(connectorOrigin + "/api/health")).ok;
+        } catch {}
+        if (ready) break;
+        if (connectorServer.exitCode !== null)
+          throw new Error("Connector fixture server exited");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.ok(ready, "Connector fixture server started");
+      browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage({ extraHTTPHeaders: identity });
+      let bracketName = "Connector bracket 0.5";
+      await page.route("**/api/onshape/**", async (route) => {
+        assert.equal(
+          new URL(route.request().url()).pathname,
+          "/api/onshape/parts"
+        );
+        await route.fulfill({
+          json: [
+            { partId: "bracket", name: bracketName, partNumber: "2713-24-112" },
+            {
+              partId: "plate",
+              name: "Connector plate",
+              partNumber: "2713-24-113",
+            },
+            {
+              partId: "spacer",
+              name: "Connector spacer 1/2",
+              partNumber: "2713-24-114",
+            },
+          ],
+        });
+      });
+      await page.goto(
+        connectorOrigin +
+          "/onshape_connector?documentId=fixture&instanceId=fixture&elementId=fixture"
+      );
+      const search = page.getByPlaceholder("Search parts...");
+      const bracket = page.getByText("Connector bracket 0.5", { exact: true });
+      const plate = page.getByText("Connector plate", { exact: true });
+      const spacer = page.getByText("Connector spacer 1/2", { exact: true });
+      await expect(bracket).toBeVisible();
+      const searchFor = async (query: string) => {
+        await search.fill(query);
+        await expect(
+          page.getByText("Searching...", { exact: true })
+        ).toHaveCount(0);
+      };
+      await searchFor("1/2 bracket");
+      await expect(bracket).toBeVisible();
+      await expect(plate).toHaveCount(0);
+      await expect(spacer).toHaveCount(0);
+      await searchFor("0.5 spacer");
+      await expect(spacer).toBeVisible();
+      await expect(bracket).toHaveCount(0);
+      await searchFor("1/2");
+      await expect(bracket).toBeVisible();
+      await expect(spacer).toBeVisible();
+      await searchFor("24-112");
+      await expect(bracket).toBeVisible();
+      await expect(spacer).toHaveCount(0);
+      for (const query of ["braket", "RACKET", "112"]) {
+        await searchFor(query);
+        await expect(bracket).toBeVisible();
+        await expect(plate).toHaveCount(0);
+      }
+      await search.fill("no-such-connector-part");
+      await expect(bracket).toHaveCount(0);
+      await search.fill("   ");
+      await expect(bracket).toBeVisible();
+      await expect(plate).toBeVisible();
+      await page.getByRole("button", { name: "Clear search" }).click();
+      await expect(search).toHaveValue("");
+      await expect(spacer).toBeVisible();
+      // The server can return edited metadata without changing any part ids.
+      bracketName = "Renamed connector bracket 0.5";
+      await page.getByRole("button", { name: "Refresh data" }).click();
+      await expect(page.getByText(bracketName, { exact: true })).toBeVisible();
+      await search.fill("renamed");
+      await expect(page.getByText(bracketName, { exact: true })).toBeVisible();
+      await expect(plate).toHaveCount(0);
+    } finally {
+      await browser?.close();
+      if (connectorServer.exitCode === null) {
+        const exited = new Promise((resolve) =>
+          connectorServer.once("exit", resolve)
+        );
+        connectorServer.kill("SIGTERM");
+        await exited;
+      }
     }
   }
 );
