@@ -101,8 +101,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
       return {
         selectedParts: [],
         eligibleParts: [],
-        ineligibleParts: [],
-        allEligible: true,
+        allParts: [],
       };
     }
 
@@ -129,11 +128,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
       };
       partId: string;
     }> = [];
-    const ineligibleParts: Array<{
-      part: (typeof sortedParts)[0];
-      partKey: string;
-      reason: string;
-    }> = [];
+    const allParts: typeof eligibleParts = [];
 
     selectedParts.forEach((part) => {
       const partKey =
@@ -158,56 +153,40 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
 
       const isEligible = isPartEligibleForRelease(part, matchingCard);
 
-      if (isEligible) {
-        // Extract thumbnail URL
-        const thumbnailUrl =
-          part.thumbnailInfo?.sizes?.find((s) => s.size === "300x300")?.href ||
-          part.thumbnailInfo?.sizes?.[0]?.href ||
-          part.thumbnailInfo?.sizes?.find((s) => s.size === "600x340")?.href;
+      // Extract thumbnail URL
+      const thumbnailUrl =
+        part.thumbnailInfo?.sizes?.find((s) => s.size === "300x300")?.href ||
+        part.thumbnailInfo?.sizes?.[0]?.href ||
+        part.thumbnailInfo?.sizes?.find((s) => s.size === "600x340")?.href;
 
-        // Extract onshape params
-        const onshapeParams = queryParams.documentId
-          ? {
-              documentId: queryParams.documentId,
-              instanceType: queryParams.instanceType,
-              instanceId: queryParams.instanceId || "",
-              elementId: queryParams.elementId || "",
-            }
-          : undefined;
+      // Extract onshape params
+      const onshapeParams = queryParams.documentId
+        ? {
+            documentId: queryParams.documentId,
+            instanceType: queryParams.instanceType,
+            instanceId: queryParams.instanceId || "",
+            elementId: queryParams.elementId || "",
+          }
+        : undefined;
 
-        const partId = part.partId || part.id || "";
+      const partId = part.partId || part.id || "";
 
-        eligibleParts.push({
-          part,
-          partKey,
-          matchingCard,
-          thumbnailUrl,
-          onshapeParams,
-          partId,
-        });
-      } else {
-        let reason = "Unknown reason";
-        if (!part.material?.displayName) {
-          reason = "Missing material";
-        } else if (!part.partNumber) {
-          reason = "Missing part number";
-        } else if (matchingCard) {
-          reason = "Already in manufacturing tracker";
-        }
-
-        ineligibleParts.push({
-          part,
-          partKey,
-          reason,
-        });
-      }
+      const partInfo = {
+        part,
+        partKey,
+        matchingCard,
+        thumbnailUrl,
+        onshapeParams,
+        partId,
+      };
+      allParts.push(partInfo);
+      if (isEligible) eligibleParts.push(partInfo);
     });
 
     return {
       selectedParts,
+      allParts,
       eligibleParts,
-      ineligibleParts,
-      allEligible: ineligibleParts.length === 0 && eligibleParts.length > 0,
     };
   }, [selectedPartKeys, sortedParts, cardByPartNumber, queryParams]);
 
@@ -596,7 +575,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
         <BulkReleaseDialog
           open={bulkReleaseDialogOpen}
           onOpenChange={setBulkReleaseDialogOpen}
-          selectedParts={selectedPartsInfo.eligibleParts}
+          selectedParts={selectedPartsInfo.allParts}
           onSubmit={handleBulkRelease}
           isSubmitting={isBulkReleasing}
         />
@@ -605,40 +584,17 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
         {selectedPartKeys.size > 0 && (
           <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center p-4 pb-8">
             <div className="bg-card border-border flex items-center gap-4 rounded-lg border px-4 py-3 shadow-lg">
-              {selectedPartsInfo.allEligible ? (
-                <>
-                  <Button
-                    onClick={() => setBulkReleaseDialogOpen(true)}
-                    disabled={isBulkReleasing}
-                  >
-                    Release {selectedPartKeys.size} part
-                    {selectedPartKeys.size !== 1 ? "s" : ""} to manufacturing
-                  </Button>
-                  {isBulkReleasing && (
-                    <span className="text-muted-foreground text-sm">
-                      Releasing parts...
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="text-destructive h-5 w-5 shrink-0" />
-                  <div>
-                    <p className="font-medium">Some parts are not eligible</p>
-                    <p className="text-muted-foreground text-sm">
-                      {selectedPartsInfo.ineligibleParts.length} card
-                      {selectedPartsInfo.ineligibleParts.length !== 1
-                        ? "s"
-                        : ""}{" "}
-                      {selectedPartsInfo.ineligibleParts.length !== 1
-                        ? "are"
-                        : "is"}{" "}
-                      not eligible for release. Ensure all selected parts have a
-                      material, part number, and are not already in the
-                      manufacturing tracker.
-                    </p>
-                  </div>
-                </>
+              <Button
+                onClick={() => setBulkReleaseDialogOpen(true)}
+                disabled={isBulkReleasing}
+              >
+                Release {selectedPartKeys.size} part
+                {selectedPartKeys.size !== 1 ? "s" : ""} to manufacturing
+              </Button>
+              {isBulkReleasing && (
+                <span className="text-muted-foreground text-sm">
+                  Releasing parts...
+                </span>
               )}
             </div>
           </div>

@@ -1,3 +1,8 @@
+import {
+  checkPartForRelease,
+  type ReleaseCheckContext,
+} from "~/onshape_connector/utils/partEligibility";
+import { ReleaseIssues } from "./ReleaseIssues";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -39,6 +44,7 @@ interface BulkReleaseDialogProps {
   onOpenChange: (open: boolean) => void;
   selectedParts: Array<{
     part: BtPartMetadataInfo;
+    matchingCard?: ReleaseCheckContext["matchingCard"];
     partKey: string;
     thumbnailUrl?: string;
     onshapeParams?: {
@@ -65,6 +71,22 @@ export function BulkReleaseDialog({
     dueDate: undefined,
     partQuantities: [],
   });
+  const checkedParts = selectedParts.map((selectedPart) => {
+    const quantities = formData.partQuantities.find(
+      (pq) => pq.partKey === selectedPart.partKey
+    );
+    const issues = checkPartForRelease(selectedPart.part, {
+      ...quantities,
+      matchingCard: selectedPart.matchingCard,
+      instanceType: selectedPart.onshapeParams?.instanceType,
+    });
+    return {
+      ...selectedPart,
+      issues,
+      blocked: issues.some((issue) => issue.severity === "error"),
+    };
+  });
+  const releasableParts = checkedParts.filter((part) => !part.blocked);
   const [processesOpen, setProcessesOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [errors, setErrors] = useState<{
@@ -152,22 +174,28 @@ export function BulkReleaseDialog({
       { quantityPerRobot?: string; quantityToMake?: string }
     > = {};
 
-    formData.partQuantities.forEach((pq) => {
-      const partErrors: { quantityPerRobot?: string; quantityToMake?: string } =
-        {};
+    formData.partQuantities
+      .filter((pq) =>
+        releasableParts.some((part) => part.partKey === pq.partKey)
+      )
+      .forEach((pq) => {
+        const partErrors: {
+          quantityPerRobot?: string;
+          quantityToMake?: string;
+        } = {};
 
-      if (pq.quantityPerRobot === "" || pq.quantityPerRobot <= 0) {
-        partErrors.quantityPerRobot =
-          "Quantity per robot must be greater than 0";
-      }
-      if (pq.quantityToMake === "" || pq.quantityToMake <= 0) {
-        partErrors.quantityToMake = "Quantity to make must be greater than 0";
-      }
+        if (pq.quantityPerRobot === "" || pq.quantityPerRobot <= 0) {
+          partErrors.quantityPerRobot =
+            "Quantity per robot must be greater than 0";
+        }
+        if (pq.quantityToMake === "" || pq.quantityToMake <= 0) {
+          partErrors.quantityToMake = "Quantity to make must be greater than 0";
+        }
 
-      if (Object.keys(partErrors).length > 0) {
-        partQuantityErrors[pq.partKey] = partErrors;
-      }
-    });
+        if (Object.keys(partErrors).length > 0) {
+          partQuantityErrors[pq.partKey] = partErrors;
+        }
+      });
 
     if (Object.keys(partQuantityErrors).length > 0) {
       newErrors.partQuantities = partQuantityErrors;
@@ -178,7 +206,13 @@ export function BulkReleaseDialog({
       return;
     }
 
-    onSubmit(formData);
+    if (releasableParts.length === 0) return;
+    onSubmit({
+      ...formData,
+      partQuantities: formData.partQuantities.filter((pq) =>
+        releasableParts.some((part) => part.partKey === pq.partKey)
+      ),
+    });
   };
 
   const handleClose = (open: boolean) => {
@@ -342,7 +376,7 @@ export function BulkReleaseDialog({
               <div className="space-y-4">
                 <Label>Part Quantities</Label>
                 <div className="space-y-4">
-                  {selectedParts.map((selectedPart) => {
+                  {checkedParts.map((selectedPart) => {
                     const partQuantity = formData.partQuantities.find(
                       (pq) => pq.partKey === selectedPart.partKey
                     );
@@ -381,6 +415,7 @@ export function BulkReleaseDialog({
                             )}
                           </div>
                         </div>
+                        <ReleaseIssues issues={selectedPart.issues} />
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-2">
                             <Label
@@ -407,7 +442,7 @@ export function BulkReleaseDialog({
                               }}
                               placeholder="Enter quantity"
                               aria-invalid={!!partErrors?.quantityPerRobot}
-                              disabled={isSubmitting}
+                              disabled={isSubmitting || selectedPart.blocked}
                             />
                             {partErrors?.quantityPerRobot && (
                               <p className="text-destructive text-xs">
@@ -438,7 +473,7 @@ export function BulkReleaseDialog({
                               }}
                               placeholder="Enter quantity"
                               aria-invalid={!!partErrors?.quantityToMake}
-                              disabled={isSubmitting}
+                              disabled={isSubmitting || selectedPart.blocked}
                             />
                             {partErrors?.quantityToMake && (
                               <p className="text-destructive text-xs">
@@ -463,10 +498,13 @@ export function BulkReleaseDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              disabled={isSubmitting || releasableParts.length === 0}
+            >
               {isSubmitting
-                ? `Releasing ${selectedParts.length} parts...`
-                : `Release ${selectedParts.length} Parts`}
+                ? `Releasing ${releasableParts.length} parts...`
+                : `Release ${releasableParts.length} Parts`}
             </Button>
           </DialogFooter>
         </form>
