@@ -4,13 +4,11 @@ import {
   type ReleaseCheckContext,
 } from "~/onshape_connector/utils/partEligibility";
 import { ReleaseIssues } from "./ReleaseIssues";
-import { useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { CalendarIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
+import { format, nextFriday, nextMonday, parseISO } from "date-fns";
+import { Image as ImageIcon, Minus, Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -19,14 +17,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
-import { Calendar } from "~/components/ui/calendar";
+import { ProcessChips } from "~/components/mfg/processes/ProcessChips";
+import { equipmentQuery, needsMaintenance, processesQuery } from "~/lib/api";
+import { ROBOT_COUNT, quantityToMake } from "~/lib/robots";
 import { cn } from "~/lib/utils";
-import { processesQuery } from "~/lib/api";
 
 export interface AddCardFormData {
   processIds: string[];
@@ -37,6 +31,10 @@ export interface AddCardFormData {
 
 interface AddCardDialogProps {
   part?: BtPartMetadataInfo;
+  partNumber?: string;
+  thumbnailUrl?: string;
+  /** "Version V14", "Main workspace" and so on. */
+  sourceLabel?: string;
   matchingCard?: ReleaseCheckContext["matchingCard"];
   instanceType?: string;
   open: boolean;
@@ -45,8 +43,80 @@ interface AddCardDialogProps {
   isSubmitting?: boolean;
 }
 
+function swatch(part?: BtPartMetadataInfo) {
+  const color = part?.appearance?.color;
+  if (
+    color?.red === undefined ||
+    color.green === undefined ||
+    color.blue === undefined
+  )
+    return null;
+  return `rgb(${color.red} ${color.green} ${color.blue})`;
+}
+
+function Stepper({
+  id,
+  label,
+  value,
+  min,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  min: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) {
+  const set = (next: number) => onChange(Math.max(min, next));
+  return (
+    <div className="flex flex-[1_1_150px] flex-col gap-1">
+      <label htmlFor={id} className="text-sm font-semibold">
+        {label}
+      </label>
+      <div className="flex h-9">
+        <button
+          type="button"
+          aria-label={`Decrease ${label.toLowerCase()}`}
+          onClick={() => set(value - 1)}
+          disabled={disabled || value <= min}
+          className="border-input bg-card hover:bg-muted focus-visible:ring-ring/50 flex w-9 items-center justify-center rounded-l-md border outline-none focus-visible:ring-[3px] disabled:opacity-50"
+        >
+          <Minus className="size-4" aria-hidden="true" />
+        </button>
+        <input
+          id={id}
+          type="number"
+          inputMode="numeric"
+          min={min}
+          value={value}
+          disabled={disabled}
+          onChange={(event) => {
+            const parsed = parseInt(event.target.value, 10);
+            set(Number.isNaN(parsed) ? min : parsed);
+          }}
+          className="border-input bg-card brand-figures focus-visible:ring-ring/50 w-16 [appearance:textfield] border-y text-center text-sm font-bold outline-none focus-visible:ring-[3px] [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        <button
+          type="button"
+          aria-label={`Increase ${label.toLowerCase()}`}
+          onClick={() => set(value + 1)}
+          disabled={disabled}
+          className="border-input bg-card hover:bg-muted focus-visible:ring-ring/50 flex w-9 items-center justify-center rounded-r-md border outline-none focus-visible:ring-[3px] disabled:opacity-50"
+        >
+          <Plus className="size-4" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AddCardDialog({
   part,
+  partNumber,
+  thumbnailUrl,
+  sourceLabel,
   matchingCard,
   instanceType,
   open,
@@ -54,282 +124,274 @@ export function AddCardDialog({
   onSubmit,
   isSubmitting = false,
 }: AddCardDialogProps) {
-  const [formData, setFormData] = useState<AddCardFormData>({
-    processIds: [],
-    quantityPerRobot: "",
-    quantityToMake: "",
-    dueDate: undefined,
+  const ids = useId();
+  const [processIds, setProcessIds] = useState<string[]>([]);
+  const [perRobot, setPerRobot] = useState(1);
+  const [spares, setSpares] = useState(0);
+  const [due, setDue] = useState("");
+  const [tried, setTried] = useState(false);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setProcessIds([]);
+    setPerRobot(1);
+    setSpares(0);
+    setDue("");
+    setTried(false);
+  }, [open]);
+
+  const { data: processes = [] } = useQuery(processesQuery());
+  const { data: equipment = [] } = useQuery({
+    ...equipmentQuery(),
+    enabled: open,
   });
+
+  const toMake = quantityToMake(perRobot, spares);
   const issues = checkPartForRelease(part, {
     matchingCard,
     instanceType,
-    ...formData,
+    quantityPerRobot: perRobot,
+    quantityToMake: toMake,
   });
-  const hasReleaseErrors = issues.some((issue) => issue.severity === "error");
-  const [processesOpen, setProcessesOpen] = useState(false);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [errors, setErrors] = useState<{
-    processes?: string;
-    quantityPerRobot?: string;
-    quantityToMake?: string;
-  }>({});
+  const blocked = issues.some((issue) => issue.severity === "error");
+  const noProcess = processIds.length === 0;
 
-  // Fetch processes
-  const { data: processes = [] } = useQuery(processesQuery());
-
-  const selectedProcesses = processes.filter((p) =>
-    formData.processIds.includes(p.id)
+  const capable = useMemo(
+    () =>
+      equipment
+        .filter((item) =>
+          item.processes?.some((process) => processIds.includes(process.id))
+        )
+        .sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { numeric: true })
+        )
+        .map((item) =>
+          needsMaintenance(item)
+            ? `${item.name} (needs maintenance)`
+            : item.name
+        ),
+    [equipment, processIds]
   );
 
-  const handleProcessToggle = (processId: string) => {
-    const newIds = formData.processIds.includes(processId)
-      ? formData.processIds.filter((id) => id !== processId)
-      : [...formData.processIds, processId];
-    setFormData({ ...formData, processIds: newIds });
-    if (errors.processes) {
-      setErrors({ ...errors, processes: undefined });
-    }
+  const duePresets = useMemo(() => {
+    const today = new Date();
+    return [nextFriday(today), nextMonday(today)].map((date) => ({
+      value: format(date, "yyyy-MM-dd"),
+      label: format(date, "EEE, MMM d"),
+    }));
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const thumbnail =
+    thumbnailUrl && !thumbnailFailed
+      ? `/api/onshape/thumbnail?url=${encodeURIComponent(thumbnailUrl)}`
+      : null;
+  const color = swatch(part);
+  const title = partNumber || part?.partNumber || part?.name || "This part";
+  const subtitle = part?.description || part?.name;
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    setTried(true);
+    if (noProcess || blocked || isSubmitting) return;
+    onSubmit({
+      processIds,
+      quantityPerRobot: perRobot,
+      quantityToMake: toMake,
+      dueDate: due ? parseISO(due) : undefined,
+    });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Validate form
-    const newErrors: typeof errors = {};
-    if (formData.processIds.length === 0) {
-      newErrors.processes = "At least one process is required";
-    }
-    if (formData.quantityPerRobot === "" || formData.quantityPerRobot <= 0) {
-      newErrors.quantityPerRobot = "Quantity per robot must be greater than 0";
-    }
-    if (formData.quantityToMake === "" || formData.quantityToMake <= 0) {
-      newErrors.quantityToMake = "Quantity to make must be greater than 0";
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-
-    if (!hasReleaseErrors) onSubmit(formData);
-  };
-
-  const handleClose = (open: boolean) => {
-    if (!open && !isSubmitting) {
-      // Reset form when closing
-      setFormData({
-        processIds: [],
-        quantityPerRobot: "",
-        quantityToMake: "",
-        dueDate: undefined,
-      });
-      setErrors({});
-    }
-    onOpenChange(open);
-  };
+  const presetClass = (active: boolean) =>
+    cn(
+      "focus-visible:ring-ring/50 h-8 rounded-full border px-2.5 text-xs outline-none focus-visible:ring-[3px]",
+      active
+        ? "border-foreground bg-foreground text-background"
+        : "bg-card hover:bg-muted"
+    );
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add to Manufacturing Tracker</DialogTitle>
-          <DialogDescription>
-            Provide the required information to add this part to the
-            manufacturing tracker.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4 py-4">
-            <ReleaseIssues issues={issues} />
-            {/* Process Selection */}
-            <div className="space-y-2">
-              <Label htmlFor="processes">
-                Processes <span className="text-destructive">*</span>
-              </Label>
-              <Popover open={processesOpen} onOpenChange={setProcessesOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={processesOpen}
-                    className="w-full justify-between"
-                    aria-invalid={!!errors.processes}
-                  >
-                    <span className="truncate">
-                      {selectedProcesses.length === 0
-                        ? "Select processes..."
-                        : selectedProcesses.length === 1
-                          ? selectedProcesses[0]?.name
-                          : `${selectedProcesses.length} processes selected`}
-                    </span>
-                    <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-full p-0" align="start">
-                  <div className="max-h-60 overflow-auto p-1">
-                    {processes.length === 0 ? (
-                      <div className="text-muted-foreground px-2 py-1.5 text-sm">
-                        No processes available
-                      </div>
-                    ) : (
-                      processes.map((process) => {
-                        const isSelected = formData.processIds.includes(
-                          process.id
-                        );
-                        return (
-                          <div
-                            key={process.id}
-                            className="hover:bg-accent hover:text-accent-foreground relative flex cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none select-none"
-                            onClick={() => handleProcessToggle(process.id)}
-                          >
-                            <div
-                              className={cn(
-                                "border-primary mr-2 flex size-4 items-center justify-center rounded-sm border",
-                                isSelected
-                                  ? "bg-primary text-primary-foreground"
-                                  : "opacity-50"
-                              )}
-                            >
-                              {isSelected && <CheckIcon className="size-4" />}
-                            </div>
-                            <span>{process.name}</span>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              {errors.processes && (
-                <p className="text-destructive text-sm">{errors.processes}</p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] gap-0 overflow-y-auto p-0 sm:max-w-[600px]">
+        <form onSubmit={submit} noValidate>
+          <DialogHeader className="border-b px-6 py-4 text-left">
+            <DialogTitle className="font-heading text-xl font-semibold">
+              Release to manufacturing
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Creates a card for this part in the first Kanban column.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="bg-muted flex items-center gap-4 border-b px-6 py-4">
+            <div className="bg-card flex size-[72px] shrink-0 items-center justify-center overflow-hidden rounded-lg border">
+              {thumbnail ? (
+                <img
+                  src={thumbnail}
+                  alt=""
+                  className="size-full object-contain"
+                  onError={() => setThumbnailFailed(true)}
+                />
+              ) : (
+                <ImageIcon
+                  className="text-muted-foreground size-6"
+                  aria-hidden="true"
+                />
               )}
             </div>
-
-            {/* Quantity Per Robot */}
-            <div className="space-y-2">
-              <Label htmlFor="quantityPerRobot">
-                Quantity per Robot <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="quantityPerRobot"
-                type="number"
-                min="1"
-                value={formData.quantityPerRobot}
-                onChange={(e) => {
-                  const value =
-                    e.target.value === "" ? "" : Number(e.target.value);
-                  setFormData({ ...formData, quantityPerRobot: value });
-                  if (errors.quantityPerRobot) {
-                    setErrors({ ...errors, quantityPerRobot: undefined });
-                  }
-                }}
-                placeholder="Enter quantity per robot"
-                aria-invalid={!!errors.quantityPerRobot}
-                disabled={isSubmitting}
-              />
-              {errors.quantityPerRobot && (
-                <p className="text-destructive text-sm">
-                  {errors.quantityPerRobot}
-                </p>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <p className="brand-figures truncate text-base font-bold">
+                {title}
+              </p>
+              {subtitle && subtitle !== title && (
+                <p className="truncate font-semibold">{subtitle}</p>
               )}
-            </div>
-
-            {/* Quantity to Make */}
-            <div className="space-y-2">
-              <Label htmlFor="quantityToMake">
-                Quantity to Make <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="quantityToMake"
-                type="number"
-                min="1"
-                value={formData.quantityToMake}
-                onChange={(e) => {
-                  const value =
-                    e.target.value === "" ? "" : Number(e.target.value);
-                  setFormData({ ...formData, quantityToMake: value });
-                  if (errors.quantityToMake) {
-                    setErrors({ ...errors, quantityToMake: undefined });
-                  }
-                }}
-                placeholder="Enter quantity to make"
-                aria-invalid={!!errors.quantityToMake}
-                disabled={isSubmitting}
-              />
-              {errors.quantityToMake && (
-                <p className="text-destructive text-sm">
-                  {errors.quantityToMake}
-                </p>
+              {sourceLabel && (
+                <p className="text-muted-foreground text-xs">{sourceLabel}</p>
               )}
-            </div>
-
-            {/* Due Date (Optional) */}
-            <div className="space-y-2">
-              <Label htmlFor="dueDate">Due Date (Optional)</Label>
-              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !formData.dueDate && "text-muted-foreground"
-                    )}
-                    disabled={isSubmitting}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.dueDate ? (
-                      format(formData.dueDate, "PPP")
-                    ) : (
-                      <span>Pick a date</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={formData.dueDate}
-                    onSelect={(date) => {
-                      setFormData({ ...formData, dueDate: date });
-                      setDatePickerOpen(false);
-                    }}
-                    disabled={isSubmitting}
-                    initialFocus
-                  />
-                  {formData.dueDate && (
-                    <div className="border-t p-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => {
-                          setFormData({ ...formData, dueDate: undefined });
-                          setDatePickerOpen(false);
-                        }}
-                        disabled={isSubmitting}
-                      >
-                        Clear date
-                      </Button>
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
+              <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
+                <span className="bg-card rounded-full border px-2 leading-5">
+                  {part?.material?.displayName || "No material"}
+                </span>
+                {color && (
+                  <span className="bg-card inline-flex items-center gap-1.5 rounded-full border px-2 leading-5">
+                    <span
+                      className="size-2.5 rounded-full border"
+                      style={{ backgroundColor: color }}
+                      aria-hidden="true"
+                    />
+                    Appearance
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleClose(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || hasReleaseErrors}>
-              {isSubmitting ? "Adding..." : "Add to Tracker"}
-            </Button>
+
+          <div className="flex flex-col gap-5 px-6 py-5">
+            <ReleaseIssues issues={issues} />
+
+            <fieldset className="flex flex-col gap-2">
+              <legend className="font-heading mb-1 text-sm font-semibold">
+                Processes
+              </legend>
+              <ProcessChips
+                processes={processes}
+                selectedIds={processIds}
+                onChange={setProcessIds}
+                disabled={isSubmitting}
+                invalid={tried && noProcess}
+                describedBy={
+                  tried && noProcess ? `${ids}-process-error` : undefined
+                }
+              />
+              {tried && noProcess && (
+                <span
+                  id={`${ids}-process-error`}
+                  className="text-xs text-[var(--emphasis)]"
+                >
+                  Pick at least one process.
+                </span>
+              )}
+              {capable.length > 0 && (
+                <p className="bg-muted rounded-r-lg border-l-4 border-[var(--hawk-teal)] px-3.5 py-2 text-xs">
+                  <span className="font-semibold">Can be made on: </span>
+                  {capable.join(", ")}
+                </p>
+              )}
+            </fieldset>
+
+            <div className="flex flex-wrap items-end gap-4">
+              <Stepper
+                id={`${ids}-per-robot`}
+                label="Per robot"
+                value={perRobot}
+                min={1}
+                onChange={setPerRobot}
+                disabled={isSubmitting}
+              />
+              <Stepper
+                id={`${ids}-spares`}
+                label="Spares"
+                value={spares}
+                min={0}
+                onChange={setSpares}
+                disabled={isSubmitting}
+              />
+              <div className="flex flex-[1_1_120px] flex-col gap-1">
+                <span className="font-heading text-sm font-semibold">
+                  To make
+                </span>
+                <div aria-live="polite" className="flex min-h-9 flex-col">
+                  <span className="brand-figures text-base leading-5 font-bold">
+                    {toMake}
+                  </span>
+                  <span className="text-muted-foreground text-xs">
+                    {perRobot} × {ROBOT_COUNT} robots
+                    {spares > 0 &&
+                      ` + ${spares} ${spares === 1 ? "spare" : "spares"}`}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`${ids}-due`} className="text-sm font-semibold">
+                Due{" "}
+                <span className="text-muted-foreground font-sans text-xs font-normal">
+                  optional
+                </span>
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  id={`${ids}-due`}
+                  type="date"
+                  value={due}
+                  onChange={(event) => setDue(event.target.value)}
+                  disabled={isSubmitting}
+                  className="border-input bg-card focus-visible:ring-ring/50 h-9 rounded-md border px-2.5 text-sm outline-none focus-visible:ring-[3px]"
+                />
+                {duePresets.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    aria-pressed={due === preset.value}
+                    onClick={() => setDue(preset.value)}
+                    className={presetClass(due === preset.value)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-pressed={due === ""}
+                  onClick={() => setDue("")}
+                  className={presetClass(due === "")}
+                >
+                  No date
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="bg-muted flex-row flex-wrap items-center justify-between gap-3 border-t px-6 py-4 sm:justify-between">
+            <span className="text-muted-foreground flex-[1_1_200px] text-xs">
+              {blocked
+                ? "Fix the error above in Onshape to release."
+                : "Creates a card in the first Kanban column. Assign equipment from the card."}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting || blocked}>
+                {isSubmitting ? "Releasing..." : "Release"}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

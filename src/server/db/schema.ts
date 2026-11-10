@@ -44,7 +44,12 @@ export const equipment = sqliteTable("equipment", {
   name: text("name").notNull(),
   description: text("description"),
   location: text("location"),
+  // "maintenance" flags the equipment; anything else means it is usable.
   status: text("status"),
+  // Set together with status = "maintenance"; cleared with the flag.
+  maintenance_note: text("maintenance_note"),
+  maintenance_reported_by: text("maintenance_reported_by"),
+  maintenance_reported_at: text("maintenance_reported_at"),
   documentation_url: text("documentation_url"),
   image_urls: text("image_urls", { mode: "json" }).$type<string[]>(),
   created_at: text("created_at").notNull().$defaultFn(now),

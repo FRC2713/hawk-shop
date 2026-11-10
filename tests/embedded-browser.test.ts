@@ -237,14 +237,16 @@ test(
         .first()
         .click();
       await expect(frame.getByRole("dialog")).toBeVisible();
-      await frame.getByRole("combobox").click();
-      await frame.getByText("Fixture machining", { exact: true }).click();
-      await frame.locator("body").press("Escape");
-      await frame.getByLabel("Quantity per Robot").fill("2");
-      await frame.getByLabel("Quantity to Make").fill("4");
+      await frame
+        .getByRole("button", { name: "Fixture machining", exact: true })
+        .click();
+      await frame.getByLabel("Per robot", { exact: true }).fill("2");
+      await expect(
+        frame.getByText("2 × 2 robots", { exact: true })
+      ).toBeVisible();
       await frame
         .getByRole("dialog")
-        .getByRole("button", { name: "Add to Tracker" })
+        .getByRole("button", { name: "Release", exact: true })
         .click();
       await expect
         .poll(async () => {
@@ -252,14 +254,18 @@ test(
           try {
             return database
               .prepare(
-                "SELECT created_by FROM kanban_cards WHERE title='IFRAME-001'"
+                "SELECT created_by, quantity_per_robot, quantity_to_make FROM kanban_cards WHERE title='IFRAME-001'"
               )
               .get();
           } finally {
             database.close();
           }
         })
-        .toEqual({ created_by: "slack:TTEAM:UMEMBER" });
+        .toEqual({
+          created_by: "slack:TTEAM:UMEMBER",
+          quantity_per_robot: 2,
+          quantity_to_make: 4,
+        });
       await page.reload();
       await expect(
         frame.getByText("Iframe bracket", { exact: true })
