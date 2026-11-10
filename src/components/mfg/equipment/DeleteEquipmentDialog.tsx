@@ -16,27 +16,33 @@ import {
   queryKeys,
   type EquipmentWithProcesses,
 } from "~/lib/api";
-import { EquipmentImage } from "./shared/EquipmentImage";
-import { EquipmentStatusBadge } from "./shared/EquipmentStatusBadge";
 
 interface DeleteEquipmentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   equipment: EquipmentWithProcesses | null;
+  assignedCount: number;
+  onDeleted?: () => void;
 }
 
 export function DeleteEquipmentDialog({
   open,
   onOpenChange,
   equipment,
+  assignedCount,
+  onDeleted,
 }: DeleteEquipmentDialogProps) {
   const queryClient = useQueryClient();
 
   const deleteEquipment = useMutation({
     mutationFn: deleteEquipmentRequest,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
-      toast.success("Equipment deleted successfully");
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() }),
+      ]);
+      toast.success(`${equipment?.name ?? "Equipment"} deleted`);
+      onDeleted?.();
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -44,74 +50,40 @@ export function DeleteEquipmentDialog({
     },
   });
 
-  if (!equipment) {
-    return null;
-  }
+  if (!equipment) return null;
 
-  const firstImageUrl = Array.isArray(equipment.image_urls)
-    ? equipment.image_urls[0]
-    : null;
+  const photos = equipment.image_urls?.length ?? 0;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Equipment</AlertDialogTitle>
+          <AlertDialogTitle>Delete {equipment.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete this equipment? This action cannot
-            be undone and will also delete all associated images.
+            {assignedCount > 0
+              ? `${assignedCount} ${assignedCount === 1 ? "card goes" : "cards go"} back to no machine. The parts stay on the Kanban board.`
+              : "No parts are assigned to it."}
+            {photos > 0 &&
+              ` Its ${photos === 1 ? "photo is" : `${photos} photos are`} deleted too.`}{" "}
+            This can't be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="my-4 space-y-4">
-          <div className="flex items-start gap-4">
-            <EquipmentImage
-              imageUrl={firstImageUrl}
-              alt={equipment.name}
-              size="thumbnail"
-              className="w-24 flex-shrink-0"
-            />
-            <div className="flex-1 space-y-2">
-              <h3 className="font-semibold">{equipment.name}</h3>
-              {equipment.processes && equipment.processes.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {equipment.processes.map((process) => (
-                    <span
-                      key={process.id}
-                      className="text-muted-foreground text-sm"
-                    >
-                      {process.name}
-                      {equipment.processes &&
-                        equipment.processes.indexOf(process) <
-                          equipment.processes.length - 1 &&
-                        ", "}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {equipment.status && (
-                <EquipmentStatusBadge
-                  status={
-                    equipment.status as
-                      "available" | "in-use" | "maintenance" | "retired" | null
-                  }
-                />
-              )}
-            </div>
-          </div>
-        </div>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={deleteEquipment.isPending}>
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
-            onClick={() => deleteEquipment.mutate(equipment.id)}
+            onClick={(event) => {
+              event.preventDefault();
+              deleteEquipment.mutate(equipment.id);
+            }}
             disabled={deleteEquipment.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="bg-primary text-primary-foreground hover:bg-primary/80"
           >
             {deleteEquipment.isPending && (
-              <Loader2 className="mr-2 size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             )}
-            Delete
+            Delete equipment
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

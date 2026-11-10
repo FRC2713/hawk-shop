@@ -365,6 +365,61 @@ test("card creation, assignment, updates, status, due dates, quantities and dele
   );
 });
 
+test("equipment maintenance flags and renames and deletes keep assigned cards in sync", async () => {
+  const equipment = (
+    await json("/api/equipment", "POST", { name: "Fixture router" })
+  ).equipment;
+  const card = (
+    await json("/api/kanban/cards", "POST", {
+      title: "Fixture router part",
+      machine: "Fixture router",
+    })
+  ).card;
+  const machineOf = async () =>
+    (await (await call(`/api/kanban/cards/${card.id}`)).json()).card.machine;
+
+  assert.equal(
+    (
+      await call(`/api/equipment/${equipment.id}/maintenance`, {
+        method: "POST",
+        body: JSON.stringify({ note: "  " }),
+        headers: { "Content-Type": "application/json" },
+      })
+    ).status,
+    400
+  );
+  const flagged = (
+    await json(`/api/equipment/${equipment.id}/maintenance`, "POST", {
+      note: "Spindle grinds above 2000 RPM",
+    })
+  ).equipment;
+  assert.equal(flagged.status, "maintenance");
+  assert.equal(flagged.maintenance_note, "Spindle grinds above 2000 RPM");
+  assert.equal(flagged.maintenance_reported_by, identity["x-token-user-name"]);
+  assert.ok(flagged.maintenance_reported_at);
+
+  const cleared = (
+    await json(`/api/equipment/${equipment.id}/maintenance`, "DELETE", {})
+  ).equipment;
+  assert.equal(cleared.status, null);
+  assert.equal(cleared.maintenance_note, null);
+
+  await json(`/api/equipment/${equipment.id}`, "PUT", {
+    name: "Fixture router 2",
+  });
+  assert.equal(await machineOf(), "Fixture router 2");
+
+  assert.equal(
+    (await call(`/api/equipment/${equipment.id}`, { method: "DELETE" })).status,
+    200
+  );
+  assert.equal(await machineOf(), null);
+  assert.equal(
+    (await call(`/api/kanban/cards/${card.id}`, { method: "DELETE" })).status,
+    200
+  );
+});
+
 test("equipment, processes, upload storage and image deletion survive the routing migration", async () => {
   const process = (
     await json("/api/processes", "POST", { name: "Fixture process" })

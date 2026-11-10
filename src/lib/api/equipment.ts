@@ -9,27 +9,28 @@ export type EquipmentWithProcesses = EquipmentRow & {
 };
 
 /**
- * The fields `/api/equipment` accepts on create and update. Blank strings are
- * normalized away here rather than at each call site, because the dialogs bind
- * their inputs to `""` and the handler wants them absent.
+ * The fields `/api/equipment` accepts on create and update. Blank optional
+ * strings are sent as `null` so an edit can clear them; the handler stores
+ * `null` for them on create too.
  */
 export interface EquipmentInput {
   name: string;
   description?: string;
   processIds?: string[];
   location?: string;
-  status?: string;
   documentationUrl?: string;
 }
+
+const blankToNull = (value: string | undefined) =>
+  value && value.trim() ? value.trim() : null;
 
 function toPayload(input: EquipmentInput) {
   return {
     name: input.name,
-    description: input.description || undefined,
+    description: blankToNull(input.description),
     processIds: input.processIds || [],
-    location: input.location || undefined,
-    status: input.status || undefined,
-    documentationUrl: input.documentationUrl || undefined,
+    location: blankToNull(input.location),
+    documentationUrl: blankToNull(input.documentationUrl),
   };
 }
 
@@ -107,4 +108,27 @@ export async function deleteEquipmentImage(
     `/api/equipment/${id}/image?imageUrl=${encodeURIComponent(imageUrl)}`,
     { method: "DELETE", fallbackError: "Failed to delete image" }
   );
+}
+
+/** Equipment flagged for maintenance stays assignable; the flag is information. */
+export function needsMaintenance(item: Pick<EquipmentRow, "status">): boolean {
+  return item.status === "maintenance";
+}
+
+export async function flagEquipmentMaintenance(
+  id: string,
+  note: string
+): Promise<void> {
+  await apiFetch(`/api/equipment/${id}/maintenance`, {
+    method: "POST",
+    json: { note },
+    fallbackError: "Failed to flag equipment",
+  });
+}
+
+export async function clearEquipmentMaintenance(id: string): Promise<void> {
+  await apiFetch(`/api/equipment/${id}/maintenance`, {
+    method: "DELETE",
+    fallbackError: "Failed to clear the maintenance flag",
+  });
 }

@@ -67,7 +67,7 @@ test("single and bulk dialogs list all issues and block only error parts", async
       .waitFor();
     assert.equal(
       await page
-        .getByRole("button", { name: "Add to Tracker", exact: true })
+        .getByRole("button", { name: "Release", exact: true })
         .isDisabled(),
       true
     );

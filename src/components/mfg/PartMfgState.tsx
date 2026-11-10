@@ -121,6 +121,15 @@ export function PartMfgState({
         )}
         <AddCardDialog
           part={part}
+          partNumber={partNumber}
+          thumbnailUrl={thumbnailUrl}
+          sourceLabel={
+            onshapeParams?.instanceType === "w"
+              ? "Workspace"
+              : versionQuery.data?.name
+                ? `Version ${versionQuery.data.name}`
+                : undefined
+          }
           matchingCard={matchingCard}
           instanceType={onshapeParams?.instanceType}
           open={dialogOpen}
