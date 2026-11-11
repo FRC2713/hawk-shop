@@ -63,7 +63,7 @@
     "@playwright/test": "^1.65.0",
     "@tailwindcss/vite": "^4.1.13",
     "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "^22",
+    "@types/node": "^26",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "drizzle-kit": "^0.31.10",
