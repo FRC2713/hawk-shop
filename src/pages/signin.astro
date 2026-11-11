@@ -33,6 +33,13 @@ Astro.response.status = configured ? 200 : 503;
         <p role="alert">
           Hawk Suite authentication is not configured. Set the trusted gateway,
           workspace, and issuer settings before using Shop.
+          {import.meta.env.DEV && (
+            <>
+              {" "}
+              For local development, set <code>HAWK_SHOP_DEV_SIGNIN=true</code>
+              and open the app from this computer.
+            </>
+          )}
         </p>
       )
     }

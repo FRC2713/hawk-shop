@@ -45,6 +45,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
   return requestContext.run(context, async () => {
     try {
       context.locals.identity = suiteIdentity(context.request);
+      // `astro dev` only: Vite replaces import.meta.env.DEV with false in a
+      // build, which drops this branch and the module it imports.
+      if (import.meta.env.DEV && !context.locals.identity) {
+        const { devIdentity } = await import("./server/dev-identity");
+        let clientAddress: string | undefined;
+        try {
+          clientAddress = context.clientAddress;
+        } catch {}
+        context.locals.identity = devIdentity(process.env, clientAddress);
+      }
     } catch {
       return Response.json(
         { error: "Hawk Suite authentication is not configured correctly." },
