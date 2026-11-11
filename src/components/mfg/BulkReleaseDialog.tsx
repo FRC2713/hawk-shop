@@ -348,7 +348,7 @@ export function BulkReleaseDialog({
                           setDatePickerOpen(false);
                         }}
                         disabled={isSubmitting}
-                        initialFocus
+                        autoFocus
                       />
                       {formData.dueDate && (
                         <div className="border-t p-3">
