@@ -20,11 +20,11 @@ test("a member report reaches the report channel with safe diagnostics and a rec
     const body = JSON.parse(String(init?.body));
     if (method === "auth.test")
       return Response.json({ ok: true, team_id: "TRHR", bot_id: "B1" });
-    if (method === "users.lookupByEmail")
+    if (method === "users.info" || method === "users.lookupByEmail")
       return Response.json({
         ok: true,
         user: {
-          id: "UALICE",
+          id: body.user ?? "UALICE",
           team_id: "TRHR",
           deleted: false,
           is_bot: false,

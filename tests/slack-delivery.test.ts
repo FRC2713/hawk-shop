@@ -20,11 +20,11 @@ function transport() {
     const body = JSON.parse(String(init?.body));
     if (method === "auth.test")
       return Response.json({ ok: true, team_id: "TRHR", bot_id: "B1" });
-    if (method === "users.lookupByEmail")
+    if (method === "users.info" || method === "users.lookupByEmail")
       return Response.json({
         ok: true,
         user: {
-          id: "UALICE",
+          id: body.user ?? "UALICE",
           team_id: "TRHR",
           deleted: false,
           is_bot: false,
@@ -173,7 +173,7 @@ test("startup drains existing pending work without an incoming request", async (
         const method=new URL(String(input)).pathname.split('/').at(-1);
         const body=JSON.parse(init.body);
         if(method==='auth.test') return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
-        if(method==='users.lookupByEmail') return Response.json({ok:true,user:{id:'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
+        if(method==='users.info'||method==='users.lookupByEmail') return Response.json({ok:true,user:{id:body.user??'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
         if(method==='chat.postMessage') {console.log(body.text);return Response.json({ok:true,channel:body.channel,ts:'123'});}
         throw Error('unexpected');
       };
@@ -342,35 +342,72 @@ test("outages back off, preserve per-card order, and recover without delaying bo
     assert.match(String(posts[start].text), /Backlog → Review/);
     assert.match(String(posts[start + 1].text), /Review → Backlog/);
   }));
-test("missing and unmatched email fall back to recorded names and legacy cards use Unknown submitter", async () =>
+test("Suite submitters are mentioned by Slack ID, legacy cards fall back to email, then to names", async () =>
   atHour(8, async () => {
-    const owner = await signIn(null, "legacy");
+    const owner = await signIn(null, "suite");
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
     await release("no-email", owner, "No email");
     const { db } = await import("../src/server/db/client");
-    const { kanbanCards } = await import("../src/server/db/schema");
-    // Legacy pre-OAuth fixture, arranged directly because new HTTP releases always bind an owner.
+    const { kanbanCards, users } = await import("../src/server/db/schema");
+    // Legacy pre-Suite fixtures, arranged directly because new HTTP releases always bind a Suite owner.
+    db.insert(users)
+      .values({
+        onshape_user_id: "onshape-123",
+        name: "Legacy",
+        email: "legacy@example.com",
+      })
+      .run();
+    db.insert(kanbanCards)
+      .values({
+        id: "onshape-owned",
+        title: "Onshape-era plate",
+        column_id: "backlog",
+        created_by: "onshape-123",
+      })
+      .run();
     db.insert(kanbanCards)
       .values({ id: "unknown", title: "Legacy plate", column_id: "backlog" })
       .run();
+    const lookups: Array<{ method: string; body: Record<string, unknown> }> =
+      [];
+    const controlled = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const method = new URL(String(input)).pathname.split("/").at(-1)!;
+      if (method.startsWith("users."))
+        lookups.push({ method, body: JSON.parse(String(init?.body)) });
+      return controlled(input, init);
+    };
     await move("no-email", { column_id: "done" });
+    await move("onshape-owned", { column_id: "done" });
     await move("unknown", { column_id: "review" });
     const start = posts.length;
     await tick();
     await tick();
-    assert.equal(posts.length, start + 2);
-    assert.match(String(posts[start].text), /^legacy:/);
-    assert.match(String(posts[start + 1].text), /^Unknown submitter:/);
+    await tick();
+    assert.equal(posts.length, start + 3);
+    const texts = posts.slice(start).map((post) => String(post.text));
+    assert.ok(texts.some((text) => /^<@USUITE>: Backlog → Done/.test(text)));
+    assert.ok(
+      texts.some((text) => /^<@UALICE>:.*\nOnshape-era plate/.test(text))
+    );
+    assert.ok(texts.some((text) => /^Unknown submitter:/.test(text)));
+    assert.deepEqual(
+      lookups.map((x) => [x.method, x.body.user ?? x.body.email]).sort(),
+      [
+        ["users.info", "USUITE"],
+        ["users.lookupByEmail", "legacy@example.com"],
+      ]
+    );
+    globalThis.fetch = controlled;
     const unmatched = await signIn("absent@example.com", "absent");
     await release("unmatched", unmatched);
     await move("unmatched", { column_id: "done" });
-    const original = globalThis.fetch;
     globalThis.fetch = async (input, init) =>
-      String(input).endsWith("users.lookupByEmail")
-        ? Response.json({ ok: false, error: "users_not_found" })
-        : original(input, init);
+      String(input).endsWith("users.info")
+        ? Response.json({ ok: false, error: "user_not_found" })
+        : controlled(input, init);
     await tick();
     assert.match(String(posts.at(-1)?.text), /^absent:/);
     transport();
@@ -674,7 +711,7 @@ async function restartedDelivery(at: number) {
       const method=new URL(String(input)).pathname.split('/').at(-1);
       const body=JSON.parse(init.body);
       if(method==='auth.test') return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
-      if(method==='users.lookupByEmail') return Response.json({ok:true,user:{id:'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
+      if(method==='users.info'||method==='users.lookupByEmail') return Response.json({ok:true,user:{id:body.user??'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
       if(method==='chat.postMessage') { posts.push(body); return Response.json({ok:true,channel:body.channel,ts:'123'}); }
       throw Error('unexpected');
     };
@@ -705,8 +742,8 @@ test("restart during collection retains the original deadline and separates know
     const second = await restartedDelivery(now + 12000);
     assert.equal(first.length, 1);
     assert.equal(second.length, 1);
-    assert.match(String(first[0].text), /^one:.*\nOne's part/);
-    assert.match(String(second[0].text), /^two:.*\nTwo's part/);
+    assert.match(String(first[0].text), /^<@UONE>:.*\nOne's part/);
+    assert.match(String(second[0].text), /^<@UTWO>:.*\nTwo's part/);
   }));
 
 test("repeated and backward transitions preserve per-card order across conflicting bulk groups", async () =>

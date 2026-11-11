@@ -30,11 +30,47 @@ export class SlackError extends Error {
     super(`Slack: ${code}`);
   }
 }
+// The bot's workspace is normally the Suite workspace, so its ID is the default.
 export function slackEnvironment() {
   const token = process.env.SLACK_BOT_TOKEN;
-  const workspace = process.env.SLACK_WORKSPACE_ID;
+  const workspace =
+    process.env.SLACK_WORKSPACE_ID || process.env.HAWK_SUITE_TEAM_ID;
   if (!token || !workspace) throw new SlackError("not_configured");
   return { token, workspace };
+}
+
+// Suite subjects are `slack:<team>:<user>`. Only a member of the bot's
+// workspace yields an ID; legacy Onshape IDs and other workspaces do not.
+export function slackUserFromSubject(
+  subject: string | null | undefined,
+  workspace: string
+) {
+  const match = /^slack:(T[A-Z0-9]+):([UW][A-Z0-9]+)$/.exec(subject ?? "");
+  return match && match[1] === workspace ? match[2] : undefined;
+}
+
+export type SlackMember = {
+  id?: string;
+  team_id?: string;
+  deleted?: boolean;
+  is_bot?: boolean;
+  is_app_user?: boolean;
+  is_admin?: boolean;
+  is_owner?: boolean;
+  is_primary_owner?: boolean;
+};
+export function isActiveHuman(
+  user: SlackMember | undefined,
+  workspace: string
+): user is SlackMember & { id: string } {
+  return Boolean(
+    user?.id &&
+    /^[UW][A-Z0-9]+$/.test(user.id) &&
+    user.team_id === workspace &&
+    user.deleted === false &&
+    user.is_bot === false &&
+    user.is_app_user !== true
+  );
 }
 const safeCodes = new Set([
   "invalid_auth",
@@ -45,6 +81,7 @@ const safeCodes = new Set([
   "not_in_channel",
   "is_archived",
   "users_not_found",
+  "user_not_found",
   "restricted_action",
   "no_permission",
   "ratelimited",
