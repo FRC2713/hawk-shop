@@ -17,7 +17,9 @@ test("a member report reaches the report channel with safe diagnostics and a rec
   const posts: Record<string, unknown>[] = [];
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = String(input).split("/").at(-1);
-    const body = JSON.parse(String(init?.body));
+    const body = Object.fromEntries(
+      new URLSearchParams(String(init?.body ?? ""))
+    );
     if (method === "auth.test")
       return Response.json({ ok: true, team_id: "TRHR", bot_id: "B1" });
     if (method === "users.info" || method === "users.lookupByEmail")
@@ -118,7 +120,9 @@ test("Slack rate limits defer a report and it still arrives after a day", async 
     "fetch",
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = String(input).split("/").at(-1);
-      const body = JSON.parse(String(init?.body));
+      const body = Object.fromEntries(
+        new URLSearchParams(String(init?.body ?? ""))
+      );
       if (method === "auth.test")
         return Response.json({ ok: true, team_id: "TRHR", bot_id: "B1" });
       if (method === "chat.postMessage") {

@@ -17,7 +17,9 @@ let cookie = "";
 function transport() {
   globalThis.fetch = async (input, init) => {
     const method = new URL(String(input)).pathname.split("/").at(-1);
-    const body = JSON.parse(String(init?.body));
+    const body = Object.fromEntries(
+      new URLSearchParams(String(init?.body ?? ""))
+    );
     if (method === "auth.test")
       return Response.json({ ok: true, team_id: "TRHR", bot_id: "B1" });
     if (method === "users.info" || method === "users.lookupByEmail")
@@ -103,7 +105,7 @@ test("a trusted other person moving a card delivers the transition snapshot with
     /http:\/\/localhost\/kanban\?cardId=first/
   );
   assert.equal(posts[0].parse, "none");
-  assert.equal(posts[0].unfurl_links, false);
+  assert.equal(posts[0].unfurl_links, "false");
   await runSlackDelivery({ now: () => now + 2000 });
   assert.equal(posts.length, 1);
 });
@@ -171,7 +173,7 @@ test("startup drains existing pending work without an incoming request", async (
       Date.now=()=>${now + 10100};
       globalThis.fetch=async(input,init)=>{
         const method=new URL(String(input)).pathname.split('/').at(-1);
-        const body=JSON.parse(init.body);
+        const body=Object.fromEntries(new URLSearchParams(String(init?.body??'')));
         if(method==='auth.test') return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
         if(method==='users.info'||method==='users.lookupByEmail') return Response.json({ok:true,user:{id:body.user??'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
         if(method==='chat.postMessage') {console.log(body.text);return Response.json({ok:true,channel:body.channel,ts:'123'});}
@@ -376,7 +378,12 @@ test("Suite submitters are mentioned by Slack ID, legacy cards fall back to emai
     globalThis.fetch = async (input, init) => {
       const method = new URL(String(input)).pathname.split("/").at(-1)!;
       if (method.startsWith("users."))
-        lookups.push({ method, body: JSON.parse(String(init?.body)) });
+        lookups.push({
+          method,
+          body: Object.fromEntries(
+            new URLSearchParams(String(init?.body ?? ""))
+          ),
+        });
       return controlled(input, init);
     };
     await move("no-email", { column_id: "done" });
@@ -709,7 +716,7 @@ async function restartedDelivery(at: number) {
     const posts=[];
     globalThis.fetch=async(input,init)=>{
       const method=new URL(String(input)).pathname.split('/').at(-1);
-      const body=JSON.parse(init.body);
+      const body=Object.fromEntries(new URLSearchParams(String(init?.body??'')));
       if(method==='auth.test') return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
       if(method==='users.info'||method==='users.lookupByEmail') return Response.json({ok:true,user:{id:body.user??'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
       if(method==='chat.postMessage') { posts.push(body); return Response.json({ok:true,channel:body.channel,ts:'123'}); }

@@ -86,6 +86,15 @@ const safeCodes = new Set([
   "no_permission",
   "ratelimited",
 ]);
+// Slack reads JSON bodies only on some write methods. Read methods such as
+// users.info ignore them and report the argument missing, so every call is
+// sent as a form, which all methods accept. Arguments are flat values.
+export function slackForm(body: Record<string, unknown>) {
+  const form = new URLSearchParams();
+  for (const [key, value] of Object.entries(body))
+    if (value !== undefined && value !== null) form.set(key, String(value));
+  return form;
+}
 export async function slackCall<T>(
   method: string,
   body: Record<string, unknown> = {},
@@ -104,9 +113,9 @@ export async function slackCall<T>(
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json; charset=utf-8",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: JSON.stringify(body),
+      body: slackForm(body),
     });
     if (response.status === 429) {
       const delay = Number(response.headers.get("Retry-After"));

@@ -27,7 +27,14 @@ function controlSlack() {
     const url = new URL(String(input));
     assert.equal(url.origin, "https://slack.com");
     const method = url.pathname.split("/").at(-1)!;
-    const body = JSON.parse(String(init?.body));
+    // Real Slack ignores JSON bodies on read methods such as users.info.
+    assert.equal(
+      new Headers(init?.headers).get("content-type"),
+      "application/x-www-form-urlencoded"
+    );
+    const body = Object.fromEntries(
+      new URLSearchParams(String(init?.body ?? ""))
+    );
     upstream.push({ method, body });
     if (failure) return Response.json({ ok: false, error: failure });
     if (method === "auth.test")
@@ -194,7 +201,7 @@ test("channel discovery follows empty pages and test messages only target the sa
     assert.equal(post.body.channel, "C123");
     assert.doesNotMatch(String(post.body.text), /<@|<!/);
     assert.equal(post.body.parse, "none");
-    assert.equal(post.body.unfurl_links, false);
+    assert.equal(post.body.unfurl_links, "false");
     role = { is_admin: false };
     assert.equal(
       (
