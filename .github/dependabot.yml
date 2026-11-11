@@ -1,18 +1,26 @@
 version: 2
 updates:
-  # Minor and patch updates arrive as one weekly PR; each major gets its own.
+  # Every npm update, majors included, arrives as one weekly PR.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
     groups:
-      npm-minor-and-patch:
-        update-types: [minor, patch]
+      npm:
+        patterns: ["*"]
+    ignore:
+      # astro check refuses TypeScript 7. Remove this once it supports 7.
+      - dependency-name: typescript
+        versions: [">=7"]
 
+  # Every GitHub Actions update arrives as one weekly PR.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
 
   # The Dockerfile's node base image. Node majors are left out: CI's
   # setup-node and package.json engines pin the same major, and Dependabot
