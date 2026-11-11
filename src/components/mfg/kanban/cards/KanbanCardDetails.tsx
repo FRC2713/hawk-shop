@@ -51,6 +51,7 @@ import {
 } from "~/lib/api";
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
+import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 
 /**
  * Format a date string for display
@@ -573,8 +574,12 @@ export function KanbanCardDetails({
                             <Badge
                               key={process.id}
                               variant="secondary"
-                              className="text-xs"
+                              className="gap-1 text-xs"
                             >
+                              <ProcessIcon
+                                process={process}
+                                className="size-3.5"
+                              />
                               {process.name}
                             </Badge>
                           ))}
