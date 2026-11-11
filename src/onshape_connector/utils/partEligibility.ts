@@ -17,6 +17,21 @@ export interface ReleaseCheckContext {
   placeholderMaterials?: readonly string[];
 }
 
+/**
+ * Parts are released only from an Onshape version. A workspace may still be
+ * changing, so the shop could build a part that no longer matches the design.
+ */
+export const NOT_A_VERSION_ISSUE: ReleaseIssue = {
+  code: "not-a-version",
+  severity: "error",
+  message: "Parts can only be released from an Onshape version.",
+  fix: "In Onshape, open a version of this Part Studio (or create one), then release from there.",
+};
+
+export function isVersionInstance(instanceType: string | undefined): boolean {
+  return instanceType === "v";
+}
+
 export function checkPartForRelease(
   part: BtPartMetadataInfo | undefined,
   context: ReleaseCheckContext = {}
@@ -31,14 +46,9 @@ type ReleaseRule = (
 
 const releaseRules: ReleaseRule[] = [
   (_, context) =>
-    context.instanceType === "w"
-      ? {
-          code: "released-from-workspace",
-          severity: "warning",
-          message:
-            "This part is being released from a workspace that may still change.",
-          fix: "Release from a version to freeze the design.",
-        }
+    context.instanceType !== undefined &&
+    !isVersionInstance(context.instanceType)
+      ? NOT_A_VERSION_ISSUE
       : undefined,
 
   (part) =>
@@ -109,9 +119,10 @@ const releaseRules: ReleaseRule[] = [
 
 export function isPartEligibleForRelease(
   part: BtPartMetadataInfo | undefined,
-  matchingCard: ReleaseCheckContext["matchingCard"]
+  matchingCard: ReleaseCheckContext["matchingCard"],
+  instanceType?: string
 ): boolean {
-  return !checkPartForRelease(part, { matchingCard }).some(
+  return !checkPartForRelease(part, { matchingCard, instanceType }).some(
     (issue) => issue.severity === "error"
   );
 }

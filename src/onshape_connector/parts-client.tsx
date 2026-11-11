@@ -25,7 +25,11 @@ import {
 } from "./hooks/usePartsSort";
 import { OnshapeConnectorToolbar } from "./OnshapeConnectorToolbar";
 import type { PartsPageSearchParams } from "./utils/types";
-import { isPartEligibleForRelease } from "./utils/partEligibility";
+import {
+  isPartEligibleForRelease,
+  isVersionInstance,
+} from "./utils/partEligibility";
+import { VersionRequiredNotice } from "~/components/mfg/VersionRequiredNotice";
 import { extractVersionId, getPartVersionKey } from "./utils/versionUtils";
 
 interface MfgPartsClientProps {
@@ -151,7 +155,11 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
           })()
         : undefined;
 
-      const isEligible = isPartEligibleForRelease(part, matchingCard);
+      const isEligible = isPartEligibleForRelease(
+        part,
+        matchingCard,
+        queryParams.instanceType
+      );
 
       // Extract thumbnail URL
       const thumbnailUrl =
@@ -327,6 +335,8 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
     }
   };
 
+  const canRelease = isVersionInstance(queryParams.instanceType);
+
   // Determine if we should show loading state
   const showLoading = isLoading && queryParams?.documentId;
 
@@ -398,6 +408,10 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
               </Button>
             </AlertDescription>
           </Alert>
+        )}
+
+        {!canRelease && (
+          <VersionRequiredNotice instanceType={queryParams.instanceType} />
         )}
 
         {/* Search and Sort Controls */}
@@ -590,7 +604,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
             <div className="bg-card border-border flex items-center gap-4 rounded-lg border px-4 py-3 shadow-lg">
               <Button
                 onClick={() => setBulkReleaseDialogOpen(true)}
-                disabled={isBulkReleasing}
+                disabled={isBulkReleasing || !canRelease}
               >
                 Release {selectedPartKeys.size} part
                 {selectedPartKeys.size !== 1 ? "s" : ""} to manufacturing

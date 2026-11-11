@@ -110,12 +110,12 @@ function fakeOnshape(
   };
 }
 
-async function readParts(documentId: string) {
+async function readParts(documentId: string, instanceType = "w") {
   invalidateOnshapeCacheForDocument(documentId);
   const query = new URLSearchParams({
     documentId,
-    instanceType: "w",
-    instanceId: "ws",
+    instanceType,
+    instanceId: instanceType === "v" ? "version" : "ws",
     elementId: "studio",
   });
   const response = await endpoint(
@@ -134,7 +134,7 @@ async function readParts(documentId: string) {
   }>;
 }
 
-/** Release a part the way the connector does, from the part it just read. */
+/** Release a part from a version the way the connector does, from the part it just read. */
 async function release(
   documentId: string,
   part: Awaited<ReturnType<typeof readParts>>[number]
@@ -144,8 +144,8 @@ async function release(
     action: "addCard",
     partNumber: `PN-${documentId}-${part.partId}`,
     documentId,
-    instanceType: "w",
-    instanceId: "ws",
+    instanceType: "v",
+    instanceId: "version",
     elementId: "studio",
     partId: part.partId,
     microversionId: part.microversionId,
@@ -167,6 +167,31 @@ async function release(
   const result = await response.json();
   assert.equal(result.success, true, result.error);
   return result.data as { id: string; onshape_microversion_id: string | null };
+}
+
+/**
+ * A card released from a workspace before releases required a version, stored
+ * as the release action stored it. A workspace parts read still moves these.
+ */
+async function workspaceCard(
+  documentId: string,
+  part: Awaited<ReturnType<typeof readParts>>[number]
+) {
+  const { createCard } = await import("../src/server/kanbanApi/cards");
+  return createCard(
+    {
+      title: `PN-${documentId}-${part.partId}`,
+      imageUrl: `/api/onshape/thumbnail?url=${encodeURIComponent(part.thumbnailInfo.sizes[0].href)}`,
+      onshapeDocumentId: documentId,
+      onshapeInstanceType: "w",
+      onshapeInstanceId: "ws",
+      onshapeElementId: "studio",
+      onshapePartId: part.partId,
+      onshapeVersionId: "ws",
+      onshapeMicroversionId: part.microversionId,
+    },
+    { onshape_user_id: "student", email: null }
+  );
 }
 
 /** Follow the thumbnail route's redirect and return the image body. */
@@ -211,7 +236,7 @@ async function thumbnailCalls() {
 test("a released card saves the part's microversion without another Onshape call", async (t) => {
   const onshape = fakeOnshape(t, "doc-release");
   onshape.microversions.set("P1", "mv-1");
-  const [part] = await readParts("doc-release");
+  const [part] = await readParts("doc-release", "v");
   const readsBefore = onshape.partsReads;
   const card = await release("doc-release", part);
   assert.equal(card.onshape_microversion_id, "mv-1");
@@ -223,7 +248,7 @@ test("a changed microversion fetches exactly one new thumbnail and the card serv
   const onshape = fakeOnshape(t, "doc-change");
   onshape.microversions.set("P1", "mv-1");
   const [part] = await readParts("doc-change");
-  const card = await release("doc-change", part);
+  const card = await workspaceCard("doc-change", part);
 
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
@@ -281,7 +306,7 @@ test("when Onshape gives an edited part a new thumbnail href, its card follows i
   const onshape = fakeOnshape(t, "doc-new-href", { contentAddressed: true });
   onshape.microversions.set("P1", "mv-1");
   const [part] = await readParts("doc-new-href");
-  const card = await release("doc-new-href", part);
+  const card = await workspaceCard("doc-new-href", part);
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
 
   onshape.microversions.set("P1", "mv-2");
@@ -314,7 +339,7 @@ test("two parts reads with the same microversions cost one thumbnail fetch per p
 
   // A card released from that read shares the connector's image.
   const [part] = await readParts("doc-same");
-  const card = await release("doc-same", part);
+  const card = await workspaceCard("doc-same", part);
   await thumbnail(`cardId=${card.id}`);
   assert.equal(onshape.thumbnailFetches.length, 2);
 });
@@ -336,7 +361,7 @@ test("a legacy thumbnail row with no microversion is served without a refetch", 
     await thumbnail(connectorQuery("doc-legacy", part)),
     "image of P1 at mv-old"
   );
-  const card = await release("doc-legacy", part);
+  const card = await workspaceCard("doc-legacy", part);
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-old");
   assert.equal(onshape.thumbnailFetches.length, 1);
 
@@ -399,6 +424,6 @@ test("a connector request whose part ids don't match its url can't replace anoth
     await thumbnail(connectorQuery("doc-mismatch", p1)),
     "image of P1 at mv-1"
   );
-  const card = await release("doc-mismatch", p1);
+  const card = await workspaceCard("doc-mismatch", p1);
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
 });
