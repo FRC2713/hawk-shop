@@ -23,6 +23,15 @@ export type KanbanColumnConfig = KanbanColumn;
  */
 const now = () => new Date().toISOString();
 
+export type SlackReleasePayload = {
+  quantity_per_robot: number | null;
+  machine: string | null;
+  due_date: string | null;
+  processes: string[];
+  issues: Array<{ severity: string; message: string }>;
+  onshape_url: string | null;
+};
+
 export const users = sqliteTable("users", {
   onshape_user_id: text("onshape_user_id").primaryKey(),
   name: text("name"),
@@ -353,7 +362,31 @@ export const slackPending = sqliteTable("slack_pending", {
   next_attempt_at: text("next_attempt_at").notNull(),
   attempts: integer("attempts").notNull().default(0),
   error_code: text("error_code"),
+  // "release" (the part's own message), "status" (a reply in its thread) or
+  // "removed" (a reply when the card is deleted).
+  kind: text("kind").notNull().default("status"),
+  // Who made the change, as shown in Slack. Not a mention.
+  actor_name: text("actor_name"),
+  // Release snapshot: part details captured with the card, so later edits or
+  // deletion cannot change what the release message says.
+  payload: text("payload", { mode: "json" }).$type<SlackReleasePayload>(),
+  // Slack file ID of the uploaded thumbnail, "none" when the message goes out
+  // without one. Uploading and posting happen on separate worker passes.
+  file_id: text("file_id"),
 });
+
+// The Slack message each card's updates are threaded under, per channel.
+// Kept while the card exists so later moves reply in the same thread.
+export const slackThreads = sqliteTable(
+  "slack_threads",
+  {
+    card_id: text("card_id").notNull(),
+    channel_id: text("channel_id").notNull(),
+    ts: text("ts").notNull(),
+    created_at: text("created_at").notNull().$defaultFn(now),
+  },
+  (table) => [primaryKey({ columns: [table.card_id, table.channel_id] })]
+);
 
 // Shared by administrator test posts and automatic delivery; survives restart.
 export const slackPostGate = sqliteTable("slack_post_gate", {

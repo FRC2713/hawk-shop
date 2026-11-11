@@ -71,6 +71,13 @@
       "when": 1794344249139,
       "tag": "0009_equipment_maintenance_note",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794366740395,
+      "tag": "0010_slack_release_threads",
+      "breakpoints": true
     }
   ]
 }

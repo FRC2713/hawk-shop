@@ -99,7 +99,7 @@ test(
       const method=new URL(String(input)).pathname.split('/').at(-1),body=Object.fromEntries(new URLSearchParams(String(init?.body??'')));
       if(method==='auth.test')return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
       if(method==='users.info'||method==='users.lookupByEmail')return Response.json({ok:true,user:{id:body.user??'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
-      if(method==='chat.postMessage'){process.send?.({text:body.text});return Response.json({ok:true,channel:body.channel,ts:'123'});}
+      if(method==='chat.postMessage'){process.send?.({text:body.text+'\\n'+(body.blocks??'')});return Response.json({ok:true,channel:body.channel,ts:'123'});}
       throw Error('Unexpected method');
     };
   `

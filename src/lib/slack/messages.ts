@@ -6,7 +6,11 @@ const state = globalThis as typeof globalThis & {
 };
 const postState = (state.__hawkSlackPostState ??= { posting: false });
 // The worker and test route share this gate. The worker persists retry deadlines.
-export async function postSlackMessage(channel: string, text: string) {
+export async function postSlackMessage(
+  channel: string,
+  text: string,
+  options: { blocks?: unknown[]; thread_ts?: string } = {}
+) {
   const nextPostAt = Math.max(
     slackCooldown("post_spacing"),
     slackCooldown("method:chat.postMessage")
@@ -27,6 +31,8 @@ export async function postSlackMessage(channel: string, text: string) {
         parse: "none",
         unfurl_links: false,
         unfurl_media: false,
+        blocks: options.blocks,
+        thread_ts: options.thread_ts,
       }
     );
     if (

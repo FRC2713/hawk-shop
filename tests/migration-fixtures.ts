@@ -284,6 +284,20 @@ export const migrationFixtures: SeedFixture = {
     },
   ],
   slack_post_gate: [{ id: "default", next_post_at: updated }],
+  slack_threads: [
+    {
+      card_id: "card-a",
+      channel_id: "C123",
+      ts: "1700000000.000100",
+      created_at: created,
+    },
+    {
+      card_id: "card-b",
+      channel_id: "C456",
+      ts: "1700000001.000200",
+      created_at: updated,
+    },
+  ],
   onshape_api_remaining: [
     { label: "parts", remaining: 998, observed_at: created, last_status: 200 },
     {

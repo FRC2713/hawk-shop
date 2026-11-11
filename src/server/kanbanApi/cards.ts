@@ -1,7 +1,11 @@
 import "virtual:hawk-shop/server-only";
 import { logServerError } from "~/server/errors";
 
-import { captureSlackTransition } from "~/lib/slack/queue";
+import {
+  captureSlackRelease,
+  captureSlackRemoval,
+  captureSlackTransition,
+} from "~/lib/slack/queue";
 import type { SessionActor } from "~/lib/sessionActor";
 import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
@@ -236,6 +240,15 @@ export async function createCard(
         .returning()
         .get();
       captureStatusHistory(tx, null, inserted, actor);
+      const processNames = cardData.processIds?.length
+        ? tx
+            .select({ name: processesTable.name })
+            .from(processesTable)
+            .where(inArray(processesTable.id, cardData.processIds))
+            .all()
+            .map((row) => row.name)
+        : [];
+      captureSlackRelease(tx, inserted, actor, processNames);
       return inserted;
     });
   } catch (error) {
@@ -313,13 +326,21 @@ export async function updateCard(
  * Delete a Kanban card. The caller is responsible for removing the card's image
  * from storage — it needs the row we return to know the URL.
  */
-export async function deleteCard(cardId: string): Promise<KanbanCardRow> {
+export async function deleteCard(
+  cardId: string,
+  actor: SessionActor | null = null
+): Promise<KanbanCardRow> {
   let card: KanbanCardRow | undefined;
   try {
-    [card] = await db
-      .delete(kanbanCards)
-      .where(eq(kanbanCards.id, cardId))
-      .returning();
+    card = db.transaction((tx) => {
+      const deleted = tx
+        .delete(kanbanCards)
+        .where(eq(kanbanCards.id, cardId))
+        .returning()
+        .get();
+      if (deleted) captureSlackRemoval(tx, deleted, actor);
+      return deleted;
+    });
   } catch (error) {
     console.error("[KANBAN CARDS] Error deleting card:", error);
     const message = error instanceof Error ? error.message : "unknown error";

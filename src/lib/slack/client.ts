@@ -85,14 +85,22 @@ const safeCodes = new Set([
   "restricted_action",
   "no_permission",
   "ratelimited",
+  "invalid_blocks",
+  "thread_not_found",
+  "message_not_found",
 ]);
 // Slack reads JSON bodies only on some write methods. Read methods such as
 // users.info ignore them and report the argument missing, so every call is
-// sent as a form, which all methods accept. Arguments are flat values.
+// sent as a form, which all methods accept. Structured arguments (blocks,
+// files) travel as JSON strings inside the form, as Slack documents.
 export function slackForm(body: Record<string, unknown>) {
   const form = new URLSearchParams();
   for (const [key, value] of Object.entries(body))
-    if (value !== undefined && value !== null) form.set(key, String(value));
+    if (value !== undefined && value !== null)
+      form.set(
+        key,
+        typeof value === "object" ? JSON.stringify(value) : String(value)
+      );
   return form;
 }
 export async function slackCall<T>(
