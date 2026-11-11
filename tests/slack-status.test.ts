@@ -16,7 +16,9 @@ let channelError: string | null = null;
 function transport() {
   globalThis.fetch = async (input, init) => {
     const method = String(input).split("/").at(-1);
-    const body = JSON.parse(String(init?.body ?? "{}"));
+    const body = Object.fromEntries(
+      new URLSearchParams(String(init?.body ?? ""))
+    );
     if (roleFailure) throw Error("xoxb-secret raw upstream body");
     if (method === "auth.test")
       return Response.json({ ok: true, team_id: "TRHR", bot_id: "BBOT" });
@@ -213,7 +215,7 @@ test("pending health shows retry guidance and expiry, then removes delivered, ca
         `
     import {endpoint} from './tests/http-fixture.ts';
     import * as Route from './src/pages/api/slack/status.ts';
-    globalThis.fetch=async(input,init)=>Response.json(String(input).endsWith('auth.test')?{ok:true,team_id:'TRHR',bot_id:'B1'}:String(input).endsWith('users.info')?{ok:true,user:{id:JSON.parse(init.body).user,team_id:'TRHR',deleted:false,is_bot:false,is_owner:true}}:{ok:true,channel:{id:'C123',name:'manufacturing',is_member:true,is_archived:false,is_channel:true}});
+    globalThis.fetch=async(input,init)=>Response.json(String(input).endsWith('auth.test')?{ok:true,team_id:'TRHR',bot_id:'B1'}:String(input).endsWith('users.info')?{ok:true,user:{id:Object.fromEntries(new URLSearchParams(String(init?.body??''))).user,team_id:'TRHR',deleted:false,is_bot:false,is_owner:true}}:{ok:true,channel:{id:'C123',name:'manufacturing',is_member:true,is_archived:false,is_channel:true}});
     const response=await endpoint(Route,'GET')(new Request('http://localhost/api/slack/status',{headers:{Cookie:process.env.TEST_COOKIE}}),{});
     console.log(JSON.stringify({status:response.status,body:await response.json()}));
   `,

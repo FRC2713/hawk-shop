@@ -40,7 +40,7 @@ before(async () => {
       if (url === "https://slack.com/api/auth.test")
         return Response.json({ok:true,team_id:"TTEAM",bot_id:"BFIXTURE"});
       if (url === "https://slack.com/api/chat.postMessage") {
-        const body = JSON.parse(init.body);
+        const body = Object.fromEntries(new URLSearchParams(String(init?.body??'')));
         appendFileSync(process.env.DATA_DIR + "/slack-posts.jsonl", JSON.stringify(body) + "\\n");
         return Response.json({ok:true,channel:body.channel,ts:"123"});
       }
