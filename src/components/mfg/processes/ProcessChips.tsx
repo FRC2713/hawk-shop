@@ -1,7 +1,6 @@
 import { Check } from "lucide-react";
 import type { ProcessRow } from "~/server/db/types";
 import { cn } from "~/lib/utils";
-import { ProcessIcon } from "./ProcessIcon";
 
 interface ProcessChipsProps {
   processes: ProcessRow[];
@@ -53,11 +52,8 @@ export function ProcessChips({
               invalid && !selected && "border-destructive"
             )}
           >
-            <ProcessIcon process={process} className="size-4 shrink-0" />
+            {selected && <Check className="size-3.5" aria-hidden="true" />}
             {process.name}
-            {selected && (
-              <Check className="size-3.5 shrink-0" aria-hidden="true" />
-            )}
           </button>
         );
       })}

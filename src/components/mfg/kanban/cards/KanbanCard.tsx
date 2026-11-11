@@ -16,7 +16,6 @@ import {
 } from "~/lib/api";
 import { KanbanCardHeader } from "./KanbanCardHeader";
 import { KanbanCardDetails } from "./KanbanCardDetails";
-import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 
 /**
  * Format a date string for display
@@ -272,7 +271,6 @@ export const KanbanCard = memo(function KanbanCard({
                       variant="secondary"
                       className="bg-muted text-foreground gap-1 text-xs font-normal"
                     >
-                      <ProcessIcon process={process} className="size-3.5" />
                       {process.name}
                     </Badge>
                   ))}

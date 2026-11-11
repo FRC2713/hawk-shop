@@ -15,7 +15,6 @@ import {
   type KanbanCardWithProcesses,
 } from "~/lib/api";
 import { EquipmentImageLightbox } from "./EquipmentImageLightbox";
-import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 
 interface EquipmentDetailPanelProps {
   equipment: EquipmentWithProcesses;
@@ -180,9 +179,8 @@ export function EquipmentDetailPanel({
             {equipment.processes!.map((process) => (
               <li
                 key={process.id}
-                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs"
+                className="rounded-full border px-2.5 py-0.5 text-xs"
               >
-                <ProcessIcon process={process} className="size-3.5" />
                 {process.name}
               </li>
             ))}

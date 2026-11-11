@@ -9,7 +9,6 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import type { ProcessRow } from "~/server/db/types";
-import { ProcessIcon } from "./ProcessIcon";
 
 interface ProcessCardProps {
   process: ProcessRow;
@@ -22,12 +21,9 @@ export function ProcessCard({ process, onEdit, onDelete }: ProcessCardProps) {
     <Card className="hover:border-primary/50 transition-all">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <ProcessIcon process={process} className="size-5 shrink-0" />
-            <h3 className="line-clamp-2 text-base leading-tight font-semibold">
-              {process.name}
-            </h3>
-          </div>
+          <h3 className="line-clamp-2 flex-1 text-base leading-tight font-semibold">
+            {process.name}
+          </h3>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="size-8">

@@ -22,7 +22,6 @@ import {
   DropdownMenuSeparator,
 } from "~/components/ui/dropdown-menu";
 import { processesQuery } from "~/lib/api";
-import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 
 interface KanbanBoardControlsProps {
   isEditMode: boolean;
@@ -119,7 +118,6 @@ export function KanbanBoardControls({
                 onCheckedChange={() => toggleProcess(process.id)}
                 onSelect={(e) => e.preventDefault()}
               >
-                <ProcessIcon process={process} className="size-4" />
                 {process.name}
               </DropdownMenuCheckboxItem>
             ))
