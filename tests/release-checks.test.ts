@@ -26,6 +26,8 @@ for (const [code, part, context] of [
   ["missing-material", { ...clean, material: undefined }, {}],
   ["missing-part-number", { ...clean, partNumber: undefined }, {}],
   ["already-on-board", clean, { matchingCard: { id: "existing" } }],
+  ["not-a-version", clean, { instanceType: "w" }],
+  ["not-a-version", clean, { instanceType: "m" }],
 ] as const) {
   test(`${code} blocks release and preserves legacy eligibility`, () => {
     const issues = checkPartForRelease(part, context);
@@ -35,7 +37,14 @@ for (const [code, part, context] of [
     );
     assert.ok(issues[0].message);
     assert.ok(issues[0].fix);
-    assert.equal(isPartEligibleForRelease(part, context.matchingCard), false);
+    assert.equal(
+      isPartEligibleForRelease(
+        part,
+        "matchingCard" in context ? context.matchingCard : undefined,
+        "instanceType" in context ? context.instanceType : undefined
+      ),
+      false
+    );
   });
 }
 
@@ -51,7 +60,6 @@ for (const [code, part, context] of [
     { quantityPerRobot: 4, quantityToMake: 2 },
   ],
   ["missing-description", { ...clean, description: "  " }, {}],
-  ["released-from-workspace", clean, { instanceType: "w" }],
 ] as const) {
   test(`${code} warns without blocking release`, () => {
     const issues = checkPartForRelease(part, context);
@@ -97,7 +105,7 @@ test("all issues are returned together, and absent quantities do not warn", () =
       "missing-description",
       "missing-material",
       "missing-part-number",
-      "released-from-workspace",
+      "not-a-version",
     ]
   );
   assert.equal(isPartEligibleForRelease(clean, undefined), true);
@@ -106,7 +114,7 @@ test("all issues are returned together, and absent quantities do not warn", () =
     checkPartForRelease(clean, {
       quantityPerRobot: 4,
       quantityToMake: 4,
-      instanceType: "m",
+      instanceType: "v",
     }),
     []
   );

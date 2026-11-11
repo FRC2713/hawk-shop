@@ -11,6 +11,7 @@ import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { KanbanCardRow, ProcessRow } from "~/server/db/types";
 
 import { extractVersionId } from "~/onshape_connector/utils/versionUtils";
+import { isVersionInstance } from "~/onshape_connector/utils/partEligibility";
 import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 import { type AddCardFormData, AddCardDialog } from "./AddCardDialog";
 import { ManufacturingStateBadge } from "./ManufacturingStateBadge";
@@ -91,7 +92,10 @@ export function PartMfgState({
 
   // If card not found, show part properties and "Add to manufacturing tracker" button
   if (!matchingCard) {
-    const isButtonDisabled = isSubmitting;
+    // Parts from a workspace may still change; only a version can be released.
+    const notAVersion =
+      !!onshapeParams && !isVersionInstance(onshapeParams.instanceType);
+    const isButtonDisabled = isSubmitting || notAVersion;
 
     return (
       <div className="space-y-2">
@@ -147,6 +151,11 @@ export function PartMfgState({
         >
           Release
         </Button>
+        {notAVersion && (
+          <p className="text-muted-foreground text-xs">
+            Open a version in Onshape to release.
+          </p>
+        )}
         {result && !result.success && result.error && (
           <ErrorMessage error={result.error} errorId={result.errorId} />
         )}

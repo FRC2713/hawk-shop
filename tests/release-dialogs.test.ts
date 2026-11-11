@@ -25,8 +25,8 @@ test("single and bulk dialogs list all issues and block only error parts", async
     window.show = (bulk) => createRoot(document.getElementById('root')).render(
       <QueryClientProvider client={client}>{bulk ?
       <BulkReleaseDialog open onOpenChange={()=>{}} selectedParts={[
-        {part: blocked, partKey: 'blocked', partId:'blocked', onshapeParams:{instanceType:'w'}},
-        {part: warning, partKey: 'warning', partId:'warning', onshapeParams:{instanceType:'w'}}
+        {part: blocked, partKey: 'blocked', partId:'blocked', onshapeParams:{instanceType:'v'}},
+        {part: warning, partKey: 'warning', partId:'warning', onshapeParams:{instanceType:'v'}}
       ]} onSubmit={data=>window.submitted=data} /> :
       <AddCardDialog open onOpenChange={()=>{}} part={blocked} instanceType="w" onSubmit={data=>window.submitted=data} />}
       </QueryClientProvider>);
@@ -60,10 +60,9 @@ test("single and bulk dialogs list all issues and block only error parts", async
       .getByText("This part has no description.", { exact: true })
       .waitFor();
     await page
-      .getByText(
-        "This part is being released from a workspace that may still change.",
-        { exact: true }
-      )
+      .getByText("Parts can only be released from an Onshape version.", {
+        exact: true,
+      })
       .waitFor();
     assert.equal(
       await page

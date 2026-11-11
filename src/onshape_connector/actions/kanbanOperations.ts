@@ -7,6 +7,8 @@ import type { SessionActor } from "~/lib/sessionActor";
 import type { ActionResponse } from "../utils/types";
 import {
   checkPartForRelease,
+  isVersionInstance,
+  NOT_A_VERSION_ISSUE,
   type ReleaseIssue,
 } from "../utils/partEligibility";
 import { fetchPartsFromOnshape } from "../utils/partsQuery.server";
@@ -177,6 +179,9 @@ export async function handleAddKanbanCard(
           error: "A complete Onshape part scope is required for release.",
         };
       }
+      // Checked before the parts read so a refused release costs no Onshape call.
+      if (!isVersionInstance(data.instanceType))
+        return { success: false, error: NOT_A_VERSION_ISSUE.message };
       const parts = await fetchPartsFromOnshape(queryParams);
       const part = parts.find(
         (part) => (part.partId || part.id) === data.partId

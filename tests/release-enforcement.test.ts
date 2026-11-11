@@ -200,7 +200,24 @@ test("a clean release stores null warnings, including when a caller submits forg
   );
 });
 
-test("workspace edits and card updates preserve the release warning snapshot", async (t) => {
+test("a workspace or history release is refused before any Onshape call", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("A refused release must not reach Onshape");
+  });
+  for (const instanceType of ["w", "m"]) {
+    const response = await release("clean", {
+      documentId: "unversioned-doc",
+      instanceType,
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      success: false,
+      error: "Parts can only be released from an Onshape version.",
+    });
+  }
+});
+
+test("workspace edits and card updates preserve a legacy workspace card's warning snapshot", async (t) => {
   let part = {
     partId: "snapshot",
     partNumber: "SNAPSHOT",
@@ -214,18 +231,31 @@ test("workspace edits and card updates preserve the release warning snapshot", a
     documentId: "snapshot-doc",
     instanceType: "w" as const,
   };
-  const response = await release("snapshot", workspace);
-  assert.equal(response.status, 200);
-  const created = (await response.json()).data;
-  assert.deepEqual(
-    created.release_issues.map((issue: { code: string }) => issue.code),
-    [
-      "released-from-workspace",
-      "missing-description",
-      "quantity-below-per-robot",
-      "placeholder-material",
-    ]
+  // Workspace releases are refused now, but cards released before that remain.
+  const { createCard } = await import("../src/server/kanbanApi/cards");
+  const releaseIssues = [
+    {
+      code: "released-from-workspace",
+      severity: "warning" as const,
+      message:
+        "This part is being released from a workspace that may still change.",
+    },
+  ];
+  const created = await createCard(
+    {
+      title: "SNAPSHOT",
+      releaseIssues,
+      onshapeDocumentId: workspace.documentId,
+      onshapeInstanceType: "w",
+      onshapeInstanceId: workspace.instanceId,
+      onshapeElementId: workspace.elementId,
+      onshapePartId: "snapshot",
+      onshapeVersionId: workspace.instanceId,
+      onshapeMicroversionId: "before",
+    },
+    { onshape_user_id: "student", email: null }
   );
+  assert.deepEqual(created.release_issues, releaseIssues);
   part = {
     ...part,
     description: "Fixed description",
