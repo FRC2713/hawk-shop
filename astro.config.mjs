@@ -34,7 +34,11 @@ export default defineConfig({
   ],
   session: false,
   security: {
-    checkOrigin: true,
+    // src/middleware.ts checks Origin against APP_URL on every mutation at
+    // runtime. Astro's own check reads allowedDomains at build time, and the
+    // Docker build has no APP_URL, so behind the gateway it rejected every
+    // bodyless DELETE as cross-site.
+    checkOrigin: false,
     allowedDomains: process.env.APP_URL
       ? [
           {
