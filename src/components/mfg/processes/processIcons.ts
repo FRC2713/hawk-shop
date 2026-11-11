@@ -33,19 +33,26 @@ const laserBase: Node = [
   ["path", { d: "M7 12h.01", strokeWidth: 4 }],
 ];
 
-export const CncMilling = icon("cnc-milling", [
-  [
-    "g",
-    { transform: "rotate(45 12 12)" },
-    [
-      ["rect", { x: 10.5, y: 2, width: 3, height: 7, rx: 1, key: "a" }],
-      ["rect", { x: 9.5, y: 9, width: 5, height: 12, rx: 1.5, key: "b" }],
-      ["path", { d: "M9.5 12.5l5-2", key: "c" }],
-      ["path", { d: "M9.5 16l5-2", key: "d" }],
-      ["path", { d: "M9.5 19.5l5-2", key: "e" }],
-    ],
-  ],
-]);
+/**
+ * lucide-react renders only top-level nodes (no <g> children), so a tilted
+ * icon carries its rotation on every shape instead.
+ */
+const rotated = (deg: number, node: Node): Node =>
+  node.map(([tag, attrs]) => [
+    tag,
+    { ...attrs, transform: `rotate(${deg} 12 12)` },
+  ]) as Node;
+
+export const CncMilling = icon(
+  "cnc-milling",
+  rotated(45, [
+    rect(10.5, 2, 3, 7, 1),
+    rect(9.5, 9, 5, 12, 1.5),
+    path("M9.5 12.5l5-2"),
+    path("M9.5 16l5-2"),
+    path("M9.5 19.5l5-2"),
+  ])
+);
 
 export const ThreeDPrinting = icon("3d-printing", [
   path("M3 3h18"),
@@ -165,16 +172,26 @@ export const Riveting = icon("riveting", [
   path("M10 19l-1 2h6l-1-2"),
 ]);
 
-export const Deburring = icon("deburring", [
-  [
-    "g",
-    { transform: "rotate(-45 12 12)" },
-    [
-      ["rect", { x: 10, y: 11, width: 4, height: 11, rx: 2, key: "a" }],
-      ["path", { d: "M12 11V6", key: "b" }],
-      ["path", { d: "M12 6V4.5a2 2 0 0 1 4 0V6", key: "c" }],
-    ],
-  ],
+export const Deburring = icon(
+  "deburring",
+  rotated(-45, [
+    rect(10, 11, 4, 11, 2),
+    path("M12 11V6"),
+    path("M12 6V4.5a2 2 0 0 1 4 0V6"),
+  ])
+);
+
+/** A hex nut seen from the end. */
+export const Fastening = icon("fastening", [
+  path("M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z"),
+  ["circle", { cx: 12, cy: 12, r: 3.5 }],
+]);
+
+/** Bar stock stacked for prep. */
+export const MaterialProcessing = icon("material-processing", [
+  rect(3, 15, 18, 5, 1),
+  rect(5, 9, 14, 5, 1),
+  rect(7, 3, 10, 5, 1),
 ]);
 
 /**
@@ -256,6 +273,17 @@ const PROCESS_ICONS: Array<{
     icon: Deburring,
     names: ["deburring", "deburr", "finishing"],
   },
+  {
+    key: "fastening",
+    icon: Fastening,
+    names: ["fastening", "assembly", "fasteners", "hardware"],
+  },
+  {
+    key: "material-processing",
+    icon: MaterialProcessing,
+    names: ["material processing", "material prep", "stock", "raw material"],
+  },
+  { key: "other", icon: Cog, names: ["other"] },
 ];
 
 const byKey = new Map(PROCESS_ICONS.map((entry) => [entry.key, entry.icon]));
@@ -272,7 +300,7 @@ const normalize = (name: string) =>
 /**
  * The icon for a process: by seeded id first, then by name, so a process the
  * team created by hand (random id) still gets the matching icon. Anything
- * unrecognised gets a generic cog.
+ * unrecognised (and the seeded "Other") gets a generic cog.
  */
 export function processIcon(process: { id: string; name: string }): LucideIcon {
   const key = process.id.startsWith("process-")
