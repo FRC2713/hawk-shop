@@ -13,8 +13,8 @@ The design and ticket breakdown are approved for implementation. GitHub issues #
 
 ## Identity
 
-- Persist the email received from Onshape at sign-in and use it to look up the matching Slack member.
-- Existing users acquire a saved email on their next sign-in. Do not add Onshape API calls solely to backfill emails.
+- Hawk Suite sign-in identifies each person by Slack member ID (subject `slack:<team>:<user>`). Cards record that subject as the submitter, so mentions and the administrator check use the member ID directly with `users.info`.
+- Cards released before Suite sign-in record an Onshape ID. For those, look up the Slack member by the email saved for that person.
 - If no Slack match is available, publish the update with the submitter's name and no mention. Do not guess by name.
 - For legacy cards with no recorded submitter, publish the update labeled "Unknown submitter" without a mention.
 
@@ -48,6 +48,8 @@ No product decisions remain open from this interview. Reporting every intermedia
 
 ## Implementation findings
 
+These notes predate the move to Hawk Suite sign-in and an Onshape API key. Identity now comes from the Suite gateway, as described under Identity above.
+
 The existing users table stores Onshape ID and name, but no email or Slack ID. The OAuth callback already receives an optional email from its existing user-info request. Card ownership is recorded separately from the manufacturing assignee.
 
 The shared card update function is the natural place to capture column transitions. The current in-memory event bus has neither transition details nor durable delivery. Capture the card change and pending notification in one database transaction so a restart cannot split them.
@@ -66,4 +68,4 @@ The current Onshape user-ID cookie is unsigned and explicitly is not a security 
 
 ## Deployment setup
 
-See [Slack setup](slack-setup.md) and the [outbound app manifest](slack-app-manifest.yaml). The `/slack` page manages durable channel selection and enabled state. The server requires a verified Hawk Suite identity and checks current Slack workspace authority for every settings, channel, save, and test request. `SLACK_BOT_TOKEN` and the trusted Red Hawk Robotics `SLACK_WORKSPACE_ID` stay in deployment configuration.
+See [Slack setup](slack-setup.md) and the [outbound app manifest](slack-app-manifest.yaml). The `/slack` page manages durable channel selection and enabled state. The server requires a verified Hawk Suite identity and checks current Slack workspace authority for every settings, channel, save, and test request. `SLACK_BOT_TOKEN` stays in deployment configuration. The workspace pin defaults to `HAWK_SUITE_TEAM_ID`; `SLACK_WORKSPACE_ID` overrides it.

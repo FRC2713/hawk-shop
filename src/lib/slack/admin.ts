@@ -1,12 +1,19 @@
 import "virtual:hawk-shop/server-only";
 import { requireSessionActor } from "~/lib/sessionActor";
-import { SlackError, slackCall, slackEnvironment } from "./client";
+import {
+  SlackError,
+  isActiveHuman,
+  slackCall,
+  slackEnvironment,
+  slackUserFromSubject,
+  type SlackMember,
+} from "./client";
 
 export function slackFailure(error: unknown) {
   const code = error instanceof SlackError ? error.code : "unavailable";
   const messages: Record<string, string> = {
     not_configured:
-      "Slack is not configured. Ask the deployment operator to set SLACK_BOT_TOKEN and SLACK_WORKSPACE_ID.",
+      "Slack is not configured. Ask the deployment operator to set SLACK_BOT_TOKEN.",
     channel_not_found:
       "Slack cannot access this channel. Invite the Hawk Shop bot and choose the channel again.",
     not_in_channel: "Invite the Hawk Shop bot to the selected channel.",
@@ -24,66 +31,45 @@ export function slackFailure(error: unknown) {
     { status: 503, headers: { "Cache-Control": "no-store" } }
   );
 }
+// Admin authority comes from the Slack member ID in the verified Suite identity,
+// rechecked with Slack on every call. Email plays no part.
 export async function requireSlackAdmin() {
   const actor = await requireSessionActor();
   if (actor instanceof Response) return actor;
-  if (!actor.email)
-    return Response.json(
+  const denied = () =>
+    Response.json(
       {
         error:
-          "Sign in with a Hawk Suite account whose email matches an active Slack workspace administrator.",
+          "Only active Red Hawk Robotics Slack workspace administrators and owners can manage this integration.",
       },
       { status: 403 }
     );
   try {
     const { workspace } = slackEnvironment();
+    const memberId = slackUserFromSubject(actor.onshape_user_id, workspace);
+    if (!memberId) return denied();
     const auth = await slackCall<{ team_id?: string; bot_id?: string }>(
       "auth.test"
     );
     if (auth.team_id !== workspace || !auth.bot_id)
       throw new SlackError("workspace_mismatch");
-    const { user } = await slackCall<{
-      user?: {
-        id?: string;
-        team_id?: string;
-        deleted?: boolean;
-        is_bot?: boolean;
-        is_app_user?: boolean;
-        is_admin?: boolean;
-        is_owner?: boolean;
-        is_primary_owner?: boolean;
-      };
-    }>("users.lookupByEmail", { email: actor.email });
+    const { user } = await slackCall<{ user?: SlackMember }>("users.info", {
+      user: memberId,
+    });
     if (
-      !user?.id ||
-      user.team_id !== workspace ||
-      user.deleted !== false ||
-      user.is_bot !== false ||
-      user.is_app_user === true ||
+      !isActiveHuman(user, workspace) ||
+      user.id !== memberId ||
       !(
         user.is_admin === true ||
         user.is_owner === true ||
         user.is_primary_owner === true
       )
-    ) {
-      return Response.json(
-        {
-          error:
-            "Only active Red Hawk Robotics Slack workspace administrators and owners can manage this integration.",
-        },
-        { status: 403 }
-      );
-    }
+    )
+      return denied();
     return actor;
   } catch (error) {
-    if (error instanceof SlackError && error.code === "users_not_found")
-      return Response.json(
-        {
-          error:
-            "Your Hawk Suite email does not match an active Slack workspace administrator.",
-        },
-        { status: 403 }
-      );
+    if (error instanceof SlackError && error.code === "user_not_found")
+      return denied();
     return slackFailure(error);
   }
 }

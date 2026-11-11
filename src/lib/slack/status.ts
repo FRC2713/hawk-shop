@@ -8,8 +8,7 @@ import type { SlackDeliveryIssue, SlackStatus } from "./types";
 
 function issue(code: string): SlackDeliveryIssue {
   const actions: Record<string, string> = {
-    not_configured:
-      "Ask the deployment operator to set SLACK_BOT_TOKEN and SLACK_WORKSPACE_ID.",
+    not_configured: "Ask the deployment operator to set SLACK_BOT_TOKEN.",
     workspace_mismatch:
       "Ask the deployment operator to check the workspace ID and bot installation.",
     invalid_auth: "Ask the deployment operator to replace the Slack bot token.",

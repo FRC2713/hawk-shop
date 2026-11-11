@@ -4,9 +4,12 @@ import { db } from "~/server/db/client";
 import { slackPending } from "~/server/db/schema";
 import {
   SlackError,
+  isActiveHuman,
   slackCall,
   slackEnvironment,
   slackCooldown,
+  slackUserFromSubject,
+  type SlackMember,
 } from "./client";
 import { postSlackMessage } from "./messages";
 import { slackAppBaseUrl } from "./appUrl";
@@ -36,32 +39,27 @@ function cardLink(id: string) {
   return new URL(`/kanban?cardId=${encodeURIComponent(id)}`, slackAppBaseUrl())
     .href;
 }
+// Suite submitters carry their Slack member ID. Cards released before Suite
+// sign-in only have an Onshape ID, so they fall back to the saved email.
 async function mention(row: PendingSlackNotification, workspace: string) {
-  if (!row.submitter_id || !row.submitter_email)
-    return escape(row.submitter_name);
+  const memberId = slackUserFromSubject(row.submitter_id, workspace);
+  if (!memberId && !row.submitter_email) return escape(row.submitter_name);
   try {
-    const { user } = await slackCall<{
-      user?: {
-        id?: string;
-        team_id?: string;
-        deleted?: boolean;
-        is_bot?: boolean;
-        is_app_user?: boolean;
-      };
-    }>("users.lookupByEmail", { email: row.submitter_email });
-    if (
-      user?.id &&
-      /^[UW][A-Z0-9]+$/.test(user.id) &&
-      user.team_id === workspace &&
-      user.deleted === false &&
-      user.is_bot === false &&
-      user.is_app_user !== true
-    )
+    const { user } = memberId
+      ? await slackCall<{ user?: SlackMember }>("users.info", {
+          user: memberId,
+        })
+      : await slackCall<{ user?: SlackMember }>("users.lookupByEmail", {
+          email: row.submitter_email,
+        });
+    if (isActiveHuman(user, workspace) && (!memberId || user.id === memberId))
       return `<@${user.id}>`;
   } catch (error) {
     if (
       !(error instanceof SlackError) ||
-      !["users_not_found", "missing_scope"].includes(error.code)
+      !["users_not_found", "user_not_found", "missing_scope"].includes(
+        error.code
+      )
     )
       throw error;
   }

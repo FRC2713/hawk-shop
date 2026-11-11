@@ -38,11 +38,11 @@ function controlSlack() {
         user_id: "UBOT",
         ...authFields,
       });
-    if (method === "users.lookupByEmail")
+    if (method === "users.info" || method === "users.lookupByEmail")
       return Response.json({
         ok: true,
         user: {
-          id: "UALICE",
+          id: body.user ?? "UALICE",
           team_id: "TRHR",
           deleted: false,
           is_bot: false,
@@ -103,18 +103,21 @@ async function read(cookie: string) {
     {}
   );
 }
-test("each configuration read checks current workspace admin authority using only verified email", async () => {
+test("each configuration read checks current workspace admin authority using the verified Suite Slack ID", async () => {
   const cookie = await signIn();
   const original = fetch;
   controlSlack();
   try {
+    upstream.length = 0;
     assert.equal((await read(cookie)).status, 200);
     assert.equal(
-      upstream.find((x) => x.method === "users.lookupByEmail")?.body.email,
-      "alice@example.com"
+      upstream.find((x) => x.method === "users.info")?.body.user,
+      "UALICE"
     );
+    assert.ok(!upstream.some((x) => x.method === "users.lookupByEmail"));
     for (const denied of [
       { is_admin: false, is_owner: false, is_channel_manager: true },
+      { is_admin: true, id: "UOTHER" },
       { is_admin: true, deleted: true },
       { is_admin: true, team_id: "TOTHER" },
       { is_admin: true, is_bot: true },
@@ -277,7 +280,7 @@ test("configuration survives a new server process using the same data volume", a
   assert.equal(result.body.channel_id, "C123");
 });
 
-test("missing deployment token, unmatched email, forged identity, and upstream outages fail closed without leaking secrets", async () => {
+test("missing deployment token, unknown member, forged identity, and upstream outages fail closed without leaking secrets", async () => {
   const cookie = await signIn();
   const original = fetch;
   controlSlack();
@@ -290,7 +293,7 @@ test("missing deployment token, unmatched email, forged identity, and upstream o
         .status,
       401
     );
-    failure = "users_not_found";
+    failure = "user_not_found";
     assert.equal((await read(cookie)).status, 403);
     failure = null;
     globalThis.fetch = async () => {
@@ -306,10 +309,11 @@ test("missing deployment token, unmatched email, forged identity, and upstream o
     process.env.SLACK_BOT_TOKEN = "xoxb-test-secret";
     failure = null;
   }
+  // Email is not part of admin authority; the Suite Slack ID is enough.
   const noEmail = await signIn(null);
   controlSlack();
   try {
-    assert.equal((await read(noEmail)).status, 403);
+    assert.equal((await read(noEmail)).status, 200);
   } finally {
     globalThis.fetch = original;
   }
