@@ -6,6 +6,13 @@ on:
   workflow_call:
   pull_request:
 
+# A new push to a PR cancels that PR's older run. Non-PR runs, including the
+# publish workflow's verify call, each get their own group, so they never cancel
+# or queue behind each other.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -40,6 +47,9 @@ jobs:
           platforms: linux/amd64
           tags: hawk-candidate:pr
           build-args: APP_REVISION=${{ github.sha }}
+          # Read-only: reuse the layers hawk_suite's publish-app.yml caches from
+          # main. That relies on it keeping the default gha scope.
+          cache-from: type=gha
       - name: Verify fresh startup and prior-release upgrade
         env:
           IMAGE: hawk-candidate:pr
