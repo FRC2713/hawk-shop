@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Loader2, Upload, X } from "lucide-react";
+import { Camera, Check, Loader2, Upload, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -89,6 +89,7 @@ export function EquipmentDialog({
   const queryClient = useQueryClient();
   const { data: processes = [] } = useQuery(processesQuery());
   const fileInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [copyFrom, setCopyFrom] = useState("");
@@ -470,8 +471,34 @@ export function EquipmentDialog({
                       <kbd className="brand-figures text-xs">Ctrl</kbd>/
                       <kbd className="brand-figures text-xs">⌘</kbd>+
                       <kbd className="brand-figures text-xs">V</kbd> anywhere in
-                      this dialog. On a phone, choosing opens the camera.
+                      this dialog.
                     </span>
+                    {/* Android's photo picker offers no camera for a plain
+                        image input, so touch screens get a direct camera button. */}
+                    <button
+                      type="button"
+                      onClick={() => cameraInput.current?.click()}
+                      className="mt-1 hidden items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-semibold pointer-coarse:inline-flex"
+                    >
+                      <Camera className="size-4" aria-hidden="true" />
+                      Take photo
+                    </button>
+                    <input
+                      ref={cameraInput}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="sr-only"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      onChange={(event) => {
+                        addPhotos(
+                          imagesFrom(event.target.files ?? []),
+                          "added"
+                        );
+                        event.target.value = "";
+                      }}
+                    />
                     <input
                       ref={fileInput}
                       type="file"
