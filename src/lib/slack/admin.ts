@@ -36,18 +36,28 @@ export function slackFailure(error: unknown) {
 export async function requireSlackAdmin() {
   const actor = await requireSessionActor();
   if (actor instanceof Response) return actor;
-  const denied = () =>
-    Response.json(
+  // Say which check failed so an administrator can fix it. Member and
+  // workspace IDs are the caller's own and carry no secret.
+  const denied = (reason: string, detail: string) => {
+    console.warn(`[SLACK] Admin access denied: ${reason}`);
+    return Response.json(
       {
-        error:
-          "Only active Red Hawk Robotics Slack workspace administrators and owners can manage this integration.",
+        error: `Only active Red Hawk Robotics Slack workspace administrators and owners can manage this integration. ${detail}`,
+        code: reason,
       },
-      { status: 403 }
+      { status: 403, headers: { "Cache-Control": "no-store" } }
     );
+  };
+  let memberId: string | undefined;
+  let workspace = "";
   try {
-    const { workspace } = slackEnvironment();
-    const memberId = slackUserFromSubject(actor.onshape_user_id, workspace);
-    if (!memberId) return denied();
+    workspace = slackEnvironment().workspace;
+    memberId = slackUserFromSubject(actor.onshape_user_id, workspace);
+    if (!memberId)
+      return denied(
+        "other_workspace",
+        `Your Hawk Suite sign-in is not for the bot's Slack workspace (${workspace}).`
+      );
     const auth = await slackCall<{ team_id?: string; bot_id?: string }>(
       "auth.test"
     );
@@ -56,20 +66,35 @@ export async function requireSlackAdmin() {
     const { user } = await slackCall<{ user?: SlackMember }>("users.info", {
       user: memberId,
     });
-    if (
-      !isActiveHuman(user, workspace) ||
-      user.id !== memberId ||
-      !(
-        user.is_admin === true ||
-        user.is_owner === true ||
-        user.is_primary_owner === true
-      )
-    )
-      return denied();
+    const who = `Slack member ${memberId} in workspace ${workspace}`;
+    if (!user || user.id !== memberId)
+      return denied("member_mismatch", `Slack did not return ${who}.`);
+    if (user.team_id !== workspace)
+      return denied(
+        "member_other_workspace",
+        `Slack reports ${memberId} belongs to workspace ${user.team_id ?? "unknown"}, not ${workspace}.`
+      );
+    if (!isActiveHuman(user, workspace))
+      return denied(
+        "inactive_member",
+        `Slack reports ${who} is deactivated, a bot, or an app user.`
+      );
+    if (!(
+      user.is_admin === true ||
+      user.is_owner === true ||
+      user.is_primary_owner === true
+    ))
+      return denied(
+        "not_admin",
+        `Slack reports ${who} is not a workspace administrator or owner.`
+      );
     return actor;
   } catch (error) {
     if (error instanceof SlackError && error.code === "user_not_found")
-      return denied();
+      return denied(
+        "unknown_member",
+        `Slack cannot find member ${memberId} in workspace ${workspace}.`
+      );
     return slackFailure(error);
   }
 }

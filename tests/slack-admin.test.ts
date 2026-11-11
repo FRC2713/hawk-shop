@@ -456,3 +456,32 @@ test("only Slack administrators can manage report settings and channels", async 
     role = { is_admin: true };
   }
 });
+
+test("admin denials name the failed check without exposing credentials", async () => {
+  const cookie = await signIn();
+  const original = fetch;
+  controlSlack();
+  try {
+    for (const [fields, code] of [
+      [{ is_admin: false, is_owner: false }, "not_admin"],
+      [{ is_admin: true, deleted: true }, "inactive_member"],
+      [{ is_admin: true, team_id: "TOTHER" }, "member_other_workspace"],
+      [{ is_admin: true, id: "UOTHER" }, "member_mismatch"],
+    ] as const) {
+      role = fields;
+      const response = await read(cookie);
+      assert.equal(response.status, 403);
+      const body = await response.json();
+      assert.equal(body.code, code);
+      assert.match(body.error, /UALICE|UOTHER|TOTHER/);
+      assert.doesNotMatch(JSON.stringify(body), /xoxb-test-secret/);
+    }
+    role = { is_admin: true };
+    failure = "user_not_found";
+    assert.equal((await (await read(cookie)).json()).code, "unknown_member");
+  } finally {
+    globalThis.fetch = original;
+    role = { is_admin: true };
+    failure = null;
+  }
+});
