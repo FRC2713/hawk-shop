@@ -134,7 +134,11 @@ export function SlackSettingsClient() {
               >
                 <p className="font-medium">{row.title}</p>
                 <p>
-                  {row.old_status} → {row.new_status}
+                  {row.kind === "release"
+                    ? `Released into ${row.new_status}`
+                    : row.kind === "removed"
+                      ? "Removed from the board"
+                      : `${row.old_status} → ${row.new_status}`}
                 </p>
                 <p className="text-sm">Submitter: {row.submitter_name}</p>
                 <p className="text-muted-foreground text-sm">

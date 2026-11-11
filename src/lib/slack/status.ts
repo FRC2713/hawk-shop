@@ -70,6 +70,7 @@ export async function getSlackStatus(): Promise<SlackStatus> {
   cleanupSlackPending();
   const pending = getPendingSlackNotifications().map((row) => ({
     id: row.id,
+    kind: row.kind as "release" | "status" | "removed",
     card_id: row.card_id,
     title: row.title,
     submitter_name: row.submitter_name,

@@ -19,6 +19,7 @@ export type SlackStatus = {
   pending_count: number;
   pending: Array<{
     id: number;
+    kind: "release" | "status" | "removed";
     card_id: string;
     title: string;
     submitter_name: string;

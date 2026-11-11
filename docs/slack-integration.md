@@ -7,7 +7,7 @@ The design and ticket breakdown are approved for implementation. GitHub issues #
 - One integration installed in the Red Hawk Robotics Slack workspace. Individuals do not install or link the app.
 - Publish messages in one configurable channel and mention the original submitter, regardless of the current assignee.
 - Notification messages link back to Hawk Shop. Commands and status-changing buttons are outside the first version.
-- Each grouped notification is a new channel post containing the submitter mention, old and new statuses, and each part's name, quantity to make, and Hawk Shop link. Thumbnails and per-part threads are outside the first version.
+- Each released part gets one channel message with its details and thumbnail; later status changes reply in that message's thread. This replaced the first version's grouped posts; see [ADR-0003](adr/0003-part-threads.md).
 - Links use the existing Hawk Shop address. Readers may need the shop network or VPN to open them; this integration does not introduce remote access.
 - Submitters must belong to the destination channel for Slack app mentions to notify them.
 
@@ -18,7 +18,9 @@ The design and ticket breakdown are approved for implementation. GitHub issues #
 - If no Slack match is available, publish the update with the submitter's name and no mention. Do not guess by name.
 - For legacy cards with no recorded submitter, publish the update labeled "Unknown submitter" without a mention.
 
-## Triggers and grouping
+## Triggers
+
+These are the first version's rules. ADR-0003 changed them: releases post a part message, every move replies in its thread whoever made it, deletion replies, and grouping is gone.
 
 - Notify on every move between columns, including backward moves.
 - Reordering within a column and edits to other fields are silent.

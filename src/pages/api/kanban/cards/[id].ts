@@ -1,6 +1,6 @@
 import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
-import { requireSessionActor } from "~/lib/sessionActor";
+import { getSessionActor, requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
 import {
   deleteCard,
@@ -82,7 +82,7 @@ export const DELETE: APIRoute = async ({ params }) => {
 
   const id = params.id!;
   try {
-    const deletedCard = await deleteCard(id);
+    const deletedCard = await deleteCard(id, await getSessionActor());
     // Self-hosted installs own their disk, so reclaim the card's image too.
     await deleteCardImage(deletedCard.image_url);
     return Response.json({ card: deletedCard });

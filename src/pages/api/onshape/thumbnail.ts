@@ -1,11 +1,17 @@
-import { createHash } from "node:crypto";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { kanbanCards, partThumbnails } from "~/server/db/schema";
 import { recordOnshapeUsage } from "~/lib/onshapeApi/cache";
 import type { OnshapePartMicroversion } from "~/lib/api/onshape";
+import {
+  findStoredThumbnail,
+  partFrom,
+  partRowKey,
+  resolveImageUrl,
+  thumbnailStoragePath,
+} from "~/server/thumbnails";
 import {
   publicUrlForStoragePath,
   saveFile,
@@ -19,165 +25,12 @@ import {
 } from "~/lib/onshapeApi/auth";
 
 /**
- * If image_url was stored as our proxy URL (/api/onshape/thumbnail?url=...), extract the real
- * Onshape URL so we can fetch and cache by it. Otherwise return as-is.
- */
-function resolveImageUrl(imageUrl: string): string {
-  const trimmed = imageUrl.trim();
-  if (
-    !trimmed.includes("/api/onshape/thumbnail") ||
-    !trimmed.includes("url=")
-  ) {
-    return trimmed;
-  }
-  try {
-    const idx = trimmed.indexOf("?");
-    if (idx === -1) return trimmed;
-    const params = new URLSearchParams(trimmed.slice(idx));
-    const real = params.get("url");
-    if (real) return real;
-  } catch {
-    // ignore
-  }
-  return trimmed;
-}
-
-/**
  * A same-origin relative redirect. The app sits behind a TLS-terminating
  * gateway, so request.url's scheme is http; a relative Location keeps the
  * browser on its own origin.
  */
 function redirectTo(path: string): Response {
   return new Response(null, { status: 307, headers: { Location: path } });
-}
-
-/** The part and microversion a request names, when it names all four. */
-function partFrom(fields: {
-  documentId?: string | null;
-  elementId?: string | null;
-  partId?: string | null;
-  microversionId?: string | null;
-}): OnshapePartMicroversion | null {
-  const { documentId, elementId, partId, microversionId } = fields;
-  if (!documentId || !elementId || !partId || !microversionId) return null;
-  return { documentId, elementId, partId, microversionId };
-}
-
-type PartThumbnailKey = {
-  document_id: string;
-  instance_type: string;
-  instance_id: string;
-  element_id: string;
-  part_id: string;
-};
-
-/**
- * The `part_thumbnails` primary key for a microversion-keyed row. This is the
- * one definition of a part thumbnail's key; the stored file's name hashes it.
- */
-function partRowKey(part: OnshapePartMicroversion): PartThumbnailKey {
-  return {
-    document_id: part.documentId,
-    instance_type: "m",
-    instance_id: part.microversionId,
-    element_id: part.elementId,
-    part_id: part.partId,
-  };
-}
-
-/** Where a fetched image is stored: one file per row key or source URL. */
-function thumbnailStoragePath(key: PartThumbnailKey | null, imageUrl: string) {
-  const name = key
-    ? // Same string the files were first named by, so existing paths hold.
-      [
-        "thumbnail",
-        key.document_id,
-        key.element_id,
-        key.part_id,
-        key.instance_id,
-      ].join("::")
-    : imageUrl;
-  const hash = createHash("sha256").update(name).digest("hex").slice(0, 32);
-  return { hash, path: `thumbnails/${hash}.png` };
-}
-
-/** Matches the one `part_thumbnails` row with this primary key. */
-function rowIs(key: PartThumbnailKey) {
-  return and(
-    eq(partThumbnails.document_id, key.document_id),
-    eq(partThumbnails.instance_type, key.instance_type),
-    eq(partThumbnails.instance_id, key.instance_id),
-    eq(partThumbnails.element_id, key.element_id),
-    eq(partThumbnails.part_id, key.part_id)
-  );
-}
-
-/**
- * Find a stored thumbnail for this request.
- *
- * With a microversion, only that microversion's row fetched from this same URL
- * counts. Onshape's part thumbnail href may stay the same when the part
- * changes, so matching by URL alone could serve the old shape; requiring the
- * URL as well means caller-supplied ids can't pin another part's picture. A legacy row (stored before microversion keys, so with
- * no `microversion_id`) for the same URL is adopted once as this
- * microversion's image, so upgrading refetches nothing.
- *
- * Without a microversion (old card, old client) the lookup is by URL, as it
- * always was.
- */
-function findStoredThumbnail(
-  imageUrl: string,
-  part: OnshapePartMicroversion | null
-): string | null {
-  if (!part) {
-    const row = db
-      .select({ storage_path: partThumbnails.storage_path })
-      .from(partThumbnails)
-      .where(eq(partThumbnails.source_url, imageUrl))
-      .orderBy(desc(partThumbnails.created_at))
-      .limit(1)
-      .get();
-    return row?.storage_path ?? null;
-  }
-
-  const key = partRowKey(part);
-  return db.transaction((tx) => {
-    const current = tx
-      .select({ storage_path: partThumbnails.storage_path })
-      .from(partThumbnails)
-      .where(and(rowIs(key), eq(partThumbnails.source_url, imageUrl)))
-      .get();
-    if (current) return current.storage_path;
-
-    const legacy = tx
-      .select()
-      .from(partThumbnails)
-      .where(
-        and(
-          eq(partThumbnails.source_url, imageUrl),
-          isNull(partThumbnails.microversion_id)
-        )
-      )
-      .limit(1)
-      .get();
-    if (!legacy) return null;
-
-    // Claim it, so the part's next microversion can't adopt the same old image.
-    tx.update(partThumbnails)
-      .set({ microversion_id: part.microversionId })
-      .where(rowIs(legacy))
-      .run();
-    tx.insert(partThumbnails)
-      .values({
-        ...key,
-        storage_path: legacy.storage_path,
-        source_url: imageUrl,
-        microversion_id: part.microversionId,
-      })
-      .onConflictDoNothing()
-      .run();
-    return legacy.storage_path;
-  });
 }
 
 /**

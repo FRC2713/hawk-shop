@@ -12,6 +12,7 @@ oauth_config:
       - groups:read
       - users:read
       - users:read.email
+      - files:write
 settings:
   org_deploy_enabled: false
   socket_mode_enabled: false

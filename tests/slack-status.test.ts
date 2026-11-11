@@ -153,8 +153,11 @@ test("pending health shows retry guidance and expiry, then removes delivered, ca
     await create("health-first");
     let view = await (await read(actor)).json();
     assert.equal(view.health.state, "pending");
-    assert.equal(view.pending_count, 1);
-    assert.equal(view.pending[0].old_status, "Backlog");
+    // The release message, then the move that replies in its thread.
+    assert.equal(view.pending_count, 2);
+    assert.equal(view.pending[0].kind, "release");
+    assert.equal(view.pending[1].kind, "status");
+    assert.equal(view.pending[1].old_status, "Backlog");
     assert.equal(
       Date.parse(view.pending[0].expires_at) -
         Date.parse(view.pending[0].created_at),
@@ -188,6 +191,8 @@ test("pending health shows retry guidance and expiry, then removes delivered, ca
     assert.equal(Date.parse(view.pending[0].next_attempt_at) - clock, 900000);
     transport();
     clock += 900001;
+    await runSlackDelivery();
+    clock += 2000; // posts are spaced a second apart
     await runSlackDelivery();
     view = await (await read(actor)).json();
     assert.equal(view.pending_count, 0);

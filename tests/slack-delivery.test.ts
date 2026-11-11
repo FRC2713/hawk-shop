@@ -11,15 +11,36 @@ const { endpoint, signIn, jsonRequest } = await import("./http-fixture");
 const cards = await import("../src/pages/api/kanban/cards/index");
 const card = await import("../src/pages/api/kanban/cards/[id]");
 const config = await import("../src/pages/api/slack/config");
-const posts: Array<Record<string, unknown>> = [];
+
+type Post = {
+  channel: string;
+  text: string;
+  thread_ts?: string;
+  blocks?: Array<Record<string, any>>;
+  ts: string;
+};
+const posts: Post[] = [];
+const calls: string[] = [];
+let ts = 1000;
 let now = Date.now();
 let cookie = "";
+
+function slackBody(init?: RequestInit) {
+  return Object.fromEntries(new URLSearchParams(String(init?.body ?? "")));
+}
+// A stand-in for Slack's Web API. Read methods only see form fields, as on
+// the real service, and every post gets its own timestamp.
 function transport() {
   globalThis.fetch = async (input, init) => {
-    const method = new URL(String(input)).pathname.split("/").at(-1);
-    const body = Object.fromEntries(
-      new URLSearchParams(String(init?.body ?? ""))
-    );
+    const url = new URL(String(input));
+    if (url.hostname === "files.slack.com") {
+      calls.push("upload-bytes");
+      return new Response("OK");
+    }
+    assert.equal(url.origin, "https://slack.com", `unexpected host ${url}`);
+    const method = url.pathname.split("/").at(-1)!;
+    calls.push(method);
+    const body = slackBody(init);
     if (method === "auth.test")
       return Response.json({ ok: true, team_id: "TRHR", bot_id: "B1" });
     if (method === "users.info" || method === "users.lookupByEmail")
@@ -44,9 +65,24 @@ function transport() {
           is_channel: true,
         },
       });
+    if (method === "files.getUploadURLExternal")
+      return Response.json({
+        ok: true,
+        upload_url: "https://files.slack.com/upload/v1/fixture",
+        file_id: "FTHUMB",
+      });
+    if (method === "files.completeUploadExternal")
+      return Response.json({ ok: true, files: [{ id: "FTHUMB" }] });
     if (method === "chat.postMessage") {
-      posts.push(body);
-      return Response.json({ ok: true, channel: body.channel, ts: "123.456" });
+      const post: Post = {
+        channel: body.channel,
+        text: body.text,
+        thread_ts: body.thread_ts,
+        blocks: body.blocks ? JSON.parse(body.blocks) : undefined,
+        ts: `${ts++}.000100`,
+      };
+      posts.push(post);
+      return Response.json({ ok: true, channel: body.channel, ts: post.ts });
     }
     throw Error(`Unexpected transport ${method}`);
   };
@@ -58,14 +94,14 @@ async function save(enabled = true, channel_id = "C123") {
   );
   assert.equal(response.status, 200);
 }
-async function release(id: string, owner: string, title = "Bracket <@UFAKE>") {
+async function release(
+  id: string,
+  owner: string,
+  title = "Bracket <@UFAKE>",
+  extra: Record<string, unknown> = {}
+) {
   const response = await endpoint(cards, "POST")(
-    jsonRequest("/api/kanban/cards", "POST", owner, {
-      id,
-      title,
-      quantityToMake: 3,
-      assignee: "bob",
-    }),
+    jsonRequest("/api/kanban/cards", "POST", owner, { id, title, ...extra }),
     {}
   );
   assert.equal(response.status, 201);
@@ -81,40 +117,98 @@ async function move(
   );
   assert.equal(response.status, 200);
 }
-test("a trusted other person moving a card delivers the transition snapshot without Slack in the request", async () => {
-  const owner = await signIn();
-  cookie = await signIn("bob@example.com", "bob");
-  transport();
-  await save();
-  await release("first", owner);
-  await move("first", {
-    column_id: "in-progress",
-    quantity_to_make: 3,
-    actor: "alice",
-  });
-  assert.equal(posts.length, 0);
-  now = Date.now() + 10100;
+async function remove(id: string) {
+  const response = await endpoint(card, "DELETE", { id })(
+    new Request(`http://localhost/api/kanban/cards/${id}`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    }),
+    {}
+  );
+  assert.equal(response.status, 200);
+}
+async function atHour(hour: number, action: () => Promise<void>) {
+  const originalNow = Date.now;
+  now = originalNow() + hour * 3600000;
+  Date.now = () => now;
+  try {
+    await action();
+  } finally {
+    Date.now = originalNow;
+  }
+}
+// One worker pass. Slack posts are spaced a second apart, so each pass sends
+// at most one message.
+async function tick(seconds = 10) {
+  now += seconds * 1000;
   const { runSlackDelivery } = await import("../src/lib/slack/worker");
   await runSlackDelivery({ now: () => now });
-  assert.equal(posts.length, 1);
-  assert.match(String(posts[0].text), /<@UALICE>/);
-  assert.match(String(posts[0].text), /Bracket &lt;@UFAKE&gt;/);
-  assert.match(String(posts[0].text), /3/);
-  assert.match(
-    String(posts[0].text),
-    /http:\/\/localhost\/kanban\?cardId=first/
-  );
-  assert.equal(posts[0].parse, "none");
-  assert.equal(posts[0].unfurl_links, "false");
-  await runSlackDelivery({ now: () => now + 2000 });
-  assert.equal(posts.length, 1);
-});
+}
+async function drain(passes = 8) {
+  for (let i = 0; i < passes; i++) await tick();
+}
+// Every mrkdwn string in a message: the places Slack would parse mentions.
+function mrkdwn(post: Post) {
+  const found: string[] = [post.text];
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) value.forEach(visit);
+    else if (value && typeof value === "object") {
+      const node = value as Record<string, unknown>;
+      if (node.type === "mrkdwn" && typeof node.text === "string")
+        found.push(node.text);
+      Object.values(node).forEach(visit);
+    }
+  };
+  visit(post.blocks);
+  return found.join("\n");
+}
+const partMessages = (from: number) =>
+  posts.slice(from).filter((post) => !post.thread_ts);
+const replies = (from: number, parent: Post) =>
+  posts.slice(from).filter((post) => post.thread_ts === parent.ts);
+
+test("a release posts the part's own message, and every later move replies in its thread", async () =>
+  atHour(1, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const start = posts.length;
+    await release("first", owner, "Bracket <@UFAKE>", {
+      machine: "Laser",
+      dueDate: "2026-12-01",
+    });
+    await tick();
+    assert.equal(posts.length, start + 1, "the release posts on its own");
+    const parent = posts[start];
+    assert.equal(parent.thread_ts, undefined);
+    assert.equal(parent.text, "New part released: Bracket &lt;@UFAKE&gt;");
+    assert.equal(parent.blocks?.[0].type, "header");
+    assert.equal(parent.blocks?.[0].text.text, "Bracket <@UFAKE>");
+    const details = mrkdwn(parent);
+    assert.match(details, /Released by <@UALICE>/);
+    assert.match(details, /\*Machine\*\nLaser/);
+    assert.match(details, /\*Due date\*\n2026-12-01/);
+    assert.match(details, /\*Quantity to make\*\nNot specified/);
+    assert.match(details, /http:\/\/localhost\/kanban\?cardId=first/);
+    assert.ok(!details.includes("<@UFAKE>"), "titles cannot mention anyone");
+
+    await move("first", { column_id: "review" });
+    await move("first", { column_id: "backlog" }, owner); // the submitter's own move
+    await move("first", { title: "Renamed only" }); // no column change: silent
+    await drain(3);
+    const thread = replies(start, parent);
+    assert.equal(thread.length, 2);
+    assert.match(thread[0].text, /^<@UALICE>: .+ → .+ · moved by bob$/);
+    assert.match(thread[1].text, /^<@UALICE>: .+ → .+ · moved by Alice$/);
+    assert.equal(partMessages(start).length, 1);
+  }));
 
 test("Slack Retry-After is durable and shared with test posts across process restart", async () => {
   const { spawnSync } = await import("node:child_process");
   const { postSlackMessage } = await import("../src/lib/slack/messages");
   const originalNow = Date.now;
-  now = originalNow() + 10000;
+  now = originalNow() + 2 * 3600000;
   Date.now = () => now;
   try {
     globalThis.fetch = async () =>
@@ -151,7 +245,7 @@ test("Slack Retry-After is durable and shared with test posts across process res
 test("startup drains existing pending work without an incoming request", async () => {
   const { spawnSync } = await import("node:child_process");
   const originalNow = Date.now;
-  now = originalNow() + 3 * 60 * 60 * 1000;
+  now = originalNow() + 5 * 60 * 60 * 1000;
   Date.now = () => now;
   try {
     cookie = await signIn("bob@example.com", "bob");
@@ -159,7 +253,6 @@ test("startup drains existing pending work without an incoming request", async (
     transport();
     await save();
     await release("startup", owner, "Restart bracket");
-    await move("startup", { column_id: "review" });
     const result = spawnSync(
       process.execPath,
       [
@@ -170,13 +263,13 @@ test("startup drains existing pending work without an incoming request", async (
         "--input-type=module",
         "-e",
         `
-      Date.now=()=>${now + 10100};
+      Date.now=()=>${now + 1000};
       globalThis.fetch=async(input,init)=>{
         const method=new URL(String(input)).pathname.split('/').at(-1);
         const body=Object.fromEntries(new URLSearchParams(String(init?.body??'')));
         if(method==='auth.test') return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
         if(method==='users.info'||method==='users.lookupByEmail') return Response.json({ok:true,user:{id:body.user??'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
-        if(method==='chat.postMessage') {console.log(body.text);return Response.json({ok:true,channel:body.channel,ts:'123'});}
+        if(method==='chat.postMessage') {console.log(body.text);return Response.json({ok:true,channel:body.channel,ts:'123.1'});}
         throw Error('unexpected');
       };
       const { startSlackWorker, stopSlackWorker }=await import('./src/lib/slack/worker.ts');
@@ -187,65 +280,58 @@ test("startup drains existing pending work without an incoming request", async (
       { cwd: process.cwd(), env: process.env, encoding: "utf8" }
     );
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Restart bracket/);
+    assert.match(result.stdout, /New part released: Restart bracket/);
   } finally {
     Date.now = originalNow;
   }
 });
 
-test("untrusted long part and status text cannot truncate the card link or create Slack mentions", async () => {
-  const originalNow = Date.now;
-  now = originalNow() + 4 * 60 * 60 * 1000;
-  Date.now = () => now;
-  try {
+test("long untrusted titles stay within Slack limits and cannot mention anyone", async () =>
+  atHour(6, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    await release("long", owner, "<@UEVERYONE>" + "x".repeat(8000));
-    await move("long", { column_id: "review" });
-    const { runSlackDelivery } = await import("../src/lib/slack/worker");
-    now += 10000;
-    await runSlackDelivery();
-    const text = String(posts.at(-1)?.text);
-    assert.ok(text.length < 4000, `message was ${text.length} characters`);
-    assert.match(text, /cardId=long/);
-    assert.ok(!text.includes("<@UEVERYONE>"));
-  } finally {
-    Date.now = originalNow;
-  }
-});
-
-async function atHour(hour: number, action: () => Promise<void>) {
-  const originalNow = Date.now;
-  now = originalNow() + hour * 3600000;
-  Date.now = () => now;
-  try {
-    await action();
-  } finally {
-    Date.now = originalNow;
-  }
-}
-async function tick(seconds = 10) {
-  now += seconds * 1000;
-  const { runSlackDelivery } = await import("../src/lib/slack/worker");
-  await runSlackDelivery({ now: () => now });
-}
-test("all entry points preserve backward/intermediate snapshots and deletion does not erase pending work", async () =>
-  atHour(5, async () => {
-    const owner = await signIn();
-    cookie = await signIn("bob@example.com", "bob");
-    transport();
-    await save();
-    await release("order", owner, "Original plate");
     const start = posts.length;
+    await release("long", owner, "<!channel> <@UEVERYONE>" + "x".repeat(8000));
+    await move("long", { column_id: "review" });
+    await drain(2);
+    const [parent] = partMessages(start);
+    assert.ok(parent.blocks![0].text.text.length <= 150);
+    assert.ok(parent.text.length < 4000);
+    for (const post of posts.slice(start)) {
+      assert.ok(!mrkdwn(post).includes("<@UEVERYONE>"));
+      assert.ok(!mrkdwn(post).includes("<!channel>"));
+    }
+    assert.match(mrkdwn(parent), /cardId=long/);
+  }));
+
+test("every move and the deletion reply in order in the part's thread", async () =>
+  atHour(7, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const columns = await import("../src/pages/api/kanban/config/index");
+    const response = await endpoint(columns, "PUT")(
+      jsonRequest("/api/kanban/config", "PUT", cookie, {
+        columns: [
+          { id: "backlog", title: "Queued", position: 0 },
+          { id: "review", title: "Review", position: 1 },
+          { id: "done", title: "Done", position: 2 },
+        ],
+      }),
+      {}
+    );
+    assert.equal(response.status, 200);
+    const start = posts.length;
+    await release("order", owner, "Original plate");
     const actions = await import("../src/pages/api/mfg/parts/actions");
     const form = new FormData();
     form.set("action", "moveCard");
     form.set("cardId", "order");
     form.set("columnId", "review");
-    form.set("actor", "alice");
-    const response = await endpoint(actions, "POST")(
+    const moved = await endpoint(actions, "POST")(
       new Request("http://localhost/api/mfg/parts/actions", {
         method: "POST",
         headers: { Cookie: cookie },
@@ -253,104 +339,89 @@ test("all entry points preserve backward/intermediate snapshots and deletion doe
       }),
       {}
     );
-    assert.equal(response.status, 200);
-    await move("order", {
-      column_id: "backlog",
-      title: "Revised plate",
-      quantity_to_make: 7,
-    });
-    await move("order", {
-      column_id: "done",
-      title: "Final plate",
-      quantity_to_make: 9,
-    });
-    const removed = await endpoint(card, "DELETE", { id: "order" })(
-      new Request("http://localhost/api/kanban/cards/order", {
-        method: "DELETE",
-        headers: { Cookie: cookie },
-      }),
-      {}
+    assert.equal(moved.status, 200);
+    await move("order", { column_id: "backlog" });
+    await move("order", { column_id: "done" });
+    await remove("order");
+    await drain(6);
+    const [parent] = partMessages(start);
+    assert.equal(partMessages(start).length, 1);
+    assert.deepEqual(
+      replies(start, parent).map((post) => post.text),
+      [
+        "<@UALICE>: Queued → Review · moved by bob",
+        "<@UALICE>: Review → Queued · moved by bob",
+        "<@UALICE>: Queued → Done · moved by bob",
+        "<@UALICE>: Original plate was removed from the board by bob.",
+      ]
     );
-    assert.equal(removed.status, 200);
-    for (let i = 0; i < 4; i++) await tick();
-    const sent = posts.slice(start).map((post) => String(post.text));
-    assert.equal(sent.length, 3);
-    assert.match(sent[0], /Backlog → Review\nOriginal plate/);
-    assert.match(
-      sent[1],
-      /Review → Backlog\nRevised plate · Quantity to make: 7/
-    );
-    assert.match(sent[2], /Backlog → Done\nFinal plate · Quantity to make: 9/);
   }));
-test("silent actions and pre-enable moves never produce notifications, even with forged actor data", async () =>
-  atHour(6, async () => {
+
+test("changes while notifications are off are dropped; a later move starts the part's message first", async () =>
+  atHour(8, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save(false);
-    await release("silent", owner);
-    await move("silent", { column_id: "review" });
-    await save(true);
-    await move("silent", { column_id: "done", actor: "bob" }, owner);
-    await move("silent", {
-      column_id: "done",
-      title: "Edited without move",
-      assignee: "someone",
-    });
-    const denied = await endpoint(card, "PATCH", { id: "silent" })(
-      jsonRequest("/api/kanban/cards/silent", "PATCH", "", {
-        column_id: "review",
+    await release("quiet", owner, "Quiet plate");
+    await move("quiet", { column_id: "review" });
+    await release("quiet-removed", owner);
+    await remove("quiet-removed");
+    const denied = await endpoint(card, "PATCH", { id: "quiet" })(
+      jsonRequest("/api/kanban/cards/quiet", "PATCH", "", {
+        column_id: "done",
       }),
       {}
     );
     assert.equal(denied.status, 401);
-    await release("silent-release", owner);
-    await endpoint(card, "DELETE", { id: "silent-release" })(
-      new Request("http://localhost/api/kanban/cards/silent-release", {
-        method: "DELETE",
-        headers: { Cookie: cookie },
-      }),
-      {}
-    );
+    await save(true);
     const start = posts.length;
-    await tick();
-    assert.equal(posts.length, start);
+    await drain(2);
+    assert.equal(posts.length, start, "nothing is replayed after enabling");
+    await move("quiet", { column_id: "done" });
+    await drain(3);
+    const [parent] = partMessages(start);
+    assert.match(mrkdwn(parent), /Released by <@UALICE>/);
+    assert.equal(replies(start, parent).length, 1);
+    assert.equal(posts.length, start + 2);
   }));
-test("outages back off, preserve per-card order, and recover without delaying board updates", async () =>
-  atHour(7, async () => {
+
+test("outages back off, keep each part's order, and recover without delaying board updates", async () =>
+  atHour(9, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    await release("outage", owner, "Outage plate");
     const start = posts.length;
     globalThis.fetch = async () => {
       throw Error("secret transport failure");
     };
+    await release("outage", owner, "Outage plate");
     await move("outage", { column_id: "review" });
     await move("outage", { column_id: "backlog" });
     await tick();
-    let calls = 0;
+    let attempts = 0;
     globalThis.fetch = async () => {
-      calls++;
+      attempts++;
       throw Error("still unavailable");
     };
     await tick(0);
-    assert.equal(calls, 0);
+    assert.equal(attempts, 0, "the failed event waits for its backoff");
     transport();
-    await tick(2);
-    await tick(2);
-    assert.equal(posts.length, start + 2);
-    assert.match(String(posts[start].text), /Backlog → Review/);
-    assert.match(String(posts[start + 1].text), /Review → Backlog/);
+    await drain(4);
+    const [parent] = partMessages(start);
+    assert.equal(parent.text, "New part released: Outage plate");
+    const thread = replies(start, parent);
+    assert.equal(thread.length, 2);
+    assert.ok(thread[0].ts < thread[1].ts);
   }));
+
 test("Suite submitters are mentioned by Slack ID, legacy cards fall back to email, then to names", async () =>
-  atHour(8, async () => {
+  atHour(10, async () => {
     const owner = await signIn(null, "suite");
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    await release("no-email", owner, "No email");
     const { db } = await import("../src/server/db/client");
     const { kanbanCards, users } = await import("../src/server/db/schema");
     // Legacy pre-Suite fixtures, arranged directly because new HTTP releases always bind a Suite owner.
@@ -372,60 +443,181 @@ test("Suite submitters are mentioned by Slack ID, legacy cards fall back to emai
     db.insert(kanbanCards)
       .values({ id: "unknown", title: "Legacy plate", column_id: "backlog" })
       .run();
-    const lookups: Array<{ method: string; body: Record<string, unknown> }> =
-      [];
+    const lookups: string[] = [];
     const controlled = globalThis.fetch;
     globalThis.fetch = async (input, init) => {
       const method = new URL(String(input)).pathname.split("/").at(-1)!;
+      const body = slackBody(init);
       if (method.startsWith("users."))
-        lookups.push({
-          method,
-          body: Object.fromEntries(
-            new URLSearchParams(String(init?.body ?? ""))
-          ),
-        });
+        lookups.push(`${method} ${body.user ?? body.email}`);
       return controlled(input, init);
     };
-    await move("no-email", { column_id: "done" });
+    const start = posts.length;
+    await release("no-email", owner, "No email");
     await move("onshape-owned", { column_id: "done" });
     await move("unknown", { column_id: "review" });
-    const start = posts.length;
-    await tick();
-    await tick();
-    await tick();
-    assert.equal(posts.length, start + 3);
-    const texts = posts.slice(start).map((post) => String(post.text));
-    assert.ok(texts.some((text) => /^<@USUITE>: Backlog → Done/.test(text)));
-    assert.ok(
-      texts.some((text) => /^<@UALICE>:.*\nOnshape-era plate/.test(text))
-    );
-    assert.ok(texts.some((text) => /^Unknown submitter:/.test(text)));
-    assert.deepEqual(
-      lookups.map((x) => [x.method, x.body.user ?? x.body.email]).sort(),
-      [
-        ["users.info", "USUITE"],
-        ["users.lookupByEmail", "legacy@example.com"],
-      ]
-    );
+    await drain(5);
+    const texts = posts.slice(start).map((post) => mrkdwn(post));
+    assert.ok(texts.some((text) => /Released by <@USUITE>/.test(text)));
+    assert.ok(texts.some((text) => /^<@UALICE>: .+ → .+/m.test(text)));
+    assert.ok(texts.some((text) => /^Unknown submitter: /m.test(text)));
+    assert.ok(lookups.includes("users.info USUITE"));
+    assert.ok(lookups.includes("users.lookupByEmail legacy@example.com"));
     globalThis.fetch = controlled;
     const unmatched = await signIn("absent@example.com", "absent");
-    await release("unmatched", unmatched);
-    await move("unmatched", { column_id: "done" });
+    const before = posts.length;
     globalThis.fetch = async (input, init) =>
       String(input).endsWith("users.info")
         ? Response.json({ ok: false, error: "user_not_found" })
         : controlled(input, init);
+    await release("unmatched", unmatched);
     await tick();
-    assert.match(String(posts.at(-1)?.text), /^absent:/);
+    assert.match(mrkdwn(posts[before]), /Released by absent/);
     transport();
   }));
-test("disable and destination changes cancel retrying work; late failures cannot revive it", async () =>
-  atHour(9, async () => {
+
+test("a stored thumbnail is uploaded to Slack and shown on the part's message", async () =>
+  atHour(11, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const { saveFile } = await import("../src/server/storage/files");
+    const url = await saveFile(
+      "thumbnails/fixture-part.png",
+      Buffer.from("fixture image bytes")
+    );
+    assert.ok(url);
+    const start = posts.length;
+    calls.length = 0;
+    await release("pictured", owner, "Pictured plate", { imageUrl: url });
+    await tick();
+    assert.equal(posts.length, start, "upload first, post on a later pass");
+    assert.deepEqual(
+      calls.filter(
+        (call) => call.startsWith("files") || call === "upload-bytes"
+      ),
+      [
+        "files.getUploadURLExternal",
+        "upload-bytes",
+        "files.completeUploadExternal",
+      ]
+    );
+    await tick();
+    const [parent] = partMessages(start);
+    assert.deepEqual(parent.blocks![1].accessory.slack_file, { id: "FTHUMB" });
+    await tick();
+    assert.equal(
+      calls.filter((call) => call === "files.getUploadURLExternal").length,
+      1,
+      "a retry never uploads twice"
+    );
+  }));
+
+test("a thumbnail that is not stored yet is never fetched from Onshape for Slack", async () =>
+  atHour(12, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const start = posts.length;
+    calls.length = 0;
+    await release("unpictured", owner, "Unpictured plate", {
+      imageUrl:
+        "/api/onshape/thumbnail?url=" +
+        encodeURIComponent(
+          "https://cad.onshape.com/api/thumbnails/abc/s/300x300"
+        ),
+    });
+    await tick();
+    const [parent] = partMessages(start);
+    assert.equal(parent.blocks![1].accessory, undefined);
+    assert.ok(!calls.some((call) => call.startsWith("files")));
+  }));
+
+test("a failed upload, such as a missing files:write scope, posts without the image", async () =>
+  atHour(13, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const { saveFile } = await import("../src/server/storage/files");
+    const url = await saveFile("thumbnails/scope.png", Buffer.from("bytes"));
+    const controlled = globalThis.fetch;
+    globalThis.fetch = async (input, init) =>
+      String(input).endsWith("files.getUploadURLExternal")
+        ? Response.json({ ok: false, error: "missing_scope" })
+        : controlled(input, init);
+    const start = posts.length;
+    await release("no-scope", owner, "No scope plate", { imageUrl: url });
+    await tick();
+    const [parent] = partMessages(start);
+    assert.equal(parent.text, "New part released: No scope plate");
+    assert.equal(parent.blocks![1].accessory, undefined);
+    transport();
+  }));
+
+test("Slack rejecting the image block retries the message without it", async () =>
+  atHour(14, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const { saveFile } = await import("../src/server/storage/files");
+    const url = await saveFile("thumbnails/broken.png", Buffer.from("bytes"));
+    const start = posts.length;
+    await release("broken-image", owner, "Broken image", { imageUrl: url });
+    await tick(); // upload
+    const controlled = globalThis.fetch;
+    globalThis.fetch = async (input, init) =>
+      String(input).endsWith("chat.postMessage") &&
+      String(init?.body).includes("slack_file")
+        ? Response.json({ ok: false, error: "invalid_blocks" })
+        : controlled(input, init);
+    await drain(3);
+    const [parent] = partMessages(start);
+    assert.equal(parent.blocks![1].accessory, undefined);
+    transport();
+  }));
+
+test("a part message deleted in Slack is replaced on the next update", async () =>
+  atHour(15, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const start = posts.length;
+    await release("deleted-thread", owner, "Lost thread");
+    await tick();
+    const controlled = globalThis.fetch;
+    let failed = false;
+    globalThis.fetch = async (input, init) => {
+      if (
+        !failed &&
+        String(input).endsWith("chat.postMessage") &&
+        slackBody(init).thread_ts
+      ) {
+        failed = true;
+        return Response.json({ ok: false, error: "thread_not_found" });
+      }
+      return controlled(input, init);
+    };
+    await move("deleted-thread", { column_id: "review" });
+    await drain(4);
+    const parents = partMessages(start);
+    assert.equal(parents.length, 2);
+    assert.equal(replies(start, parents[1]).length, 1);
+    transport();
+  }));
+
+test("disable and channel changes cancel queued work; later updates start a new message in the new channel", async () =>
+  atHour(16, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
     await release("cancel", owner);
+    await tick();
     await move("cancel", { column_id: "review" });
     const original = globalThis.fetch;
     let releasePost!: () => void;
@@ -451,15 +643,17 @@ test("disable and destination changes cancel retrying work; late failures cannot
     await delivery;
     transport();
     const start = posts.length;
-    await tick(10);
-    assert.equal(posts.length, start);
-    // New changes follow the new generation and channel.
+    await drain(2);
+    assert.equal(posts.length, start, "canceled work is not revived");
     await move("cancel", { column_id: "done" });
-    await tick();
-    assert.equal(posts.at(-1)?.channel, "C456");
+    await drain(3);
+    const [parent] = partMessages(start);
+    assert.equal(parent.channel, "C456");
+    assert.equal(replies(start, parent)[0].channel, "C456");
   }));
+
 test("expired pending work is removed on restart even without deployment credentials", async () =>
-  atHour(10, async () => {
+  atHour(17, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
@@ -491,13 +685,12 @@ test("expired pending work is removed on restart even without deployment credent
     assert.equal(posts.length, start);
   }));
 
-test("custom column labels are captured at transition time and never looked up at delivery", async () =>
-  atHour(11, async () => {
+test("column labels are captured at the move and never looked up at delivery", async () =>
+  atHour(18, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    await release("custom", owner);
     const columns = await import("../src/pages/api/kanban/config/index");
     const custom = [
       { id: "backlog", title: "Queued & ready", position: 0 },
@@ -508,6 +701,7 @@ test("custom column labels are captured at transition time and never looked up a
       {}
     );
     assert.equal(response.status, 200);
+    await release("custom", owner);
     await move("custom", { column_id: "laser" });
     response = await endpoint(columns, "PUT")(
       jsonRequest("/api/kanban/config", "PUT", cookie, {
@@ -516,51 +710,51 @@ test("custom column labels are captured at transition time and never looked up a
       {}
     );
     assert.equal(response.status, 200);
-    await tick();
+    await drain(2);
     assert.match(
-      String(posts.at(-1)?.text),
+      posts.at(-1)!.text,
       /Queued &amp; ready → Laser &lt;@UFAKE&gt;/
     );
   }));
+
 test("worker refuses unconfigured and mismatched workspaces and backs off configuration errors", async () =>
-  atHour(12, async () => {
+  atHour(19, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
     await release("workspace", owner);
-    await move("workspace", { column_id: "review" });
     const start = posts.length;
-    let calls = 0;
+    let attempts = 0;
     delete process.env.SLACK_WORKSPACE_ID;
     globalThis.fetch = async () => {
-      calls++;
+      attempts++;
       throw Error("must not reach Slack without pin");
     };
     await tick();
-    assert.equal(calls, 0);
+    assert.equal(attempts, 0);
     process.env.SLACK_WORKSPACE_ID = "TRHR";
     globalThis.fetch = async () => {
-      calls++;
+      attempts++;
       return Response.json({ ok: true, team_id: "TOTHER", bot_id: "B1" });
     };
     await tick(1);
-    assert.equal(calls, 0);
+    assert.equal(attempts, 0);
     await tick(15 * 60);
-    assert.equal(calls, 1);
+    assert.equal(attempts, 1);
     assert.equal(posts.length, start);
     transport();
     await tick(15 * 60);
     assert.equal(posts.length, start + 1);
   }));
+
 test("a single pending record is never sent by concurrent worker calls", async () =>
-  atHour(13, async () => {
+  atHour(20, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
     await release("concurrent", owner);
-    await move("concurrent", { column_id: "done" });
     const start = posts.length;
     const { runSlackDelivery } = await import("../src/lib/slack/worker");
     now += 10000;
@@ -571,13 +765,15 @@ test("a single pending record is never sent by concurrent worker calls", async (
     ]);
     assert.equal(posts.length, start + 1);
   }));
-test("card update and capture either both commit or both roll back", async () =>
-  atHour(14, async () => {
+
+test("card changes and their Slack events either both commit or both roll back", async () =>
+  atHour(21, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
     await release("atomic", owner);
+    await drain(1);
     const { db } = await import("../src/server/db/client");
     // Fault injection at durable storage, never used to observe the outcome.
     db.$client.exec(
@@ -591,6 +787,14 @@ test("card update and capture either both commit or both roll back", async () =>
         {}
       );
       assert.equal(response.status, 500);
+      const created = await endpoint(cards, "POST")(
+        jsonRequest("/api/kanban/cards", "POST", owner, {
+          id: "atomic-new",
+          title: "Never created",
+        }),
+        {}
+      );
+      assert.equal(created.status, 500);
     } finally {
       db.$client.exec("DROP TRIGGER fixture_reject_pending");
     }
@@ -611,19 +815,18 @@ test("card deep-link targets survive successful OAuth sign-in", async () => {
 });
 
 test("Retry-After beyond the delivery window expires the notification instead of posting early", async () =>
-  atHour(15, async () => {
+  atHour(22, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    await release("long-retry", owner);
-    await move("long-retry", { column_id: "review" });
     const start = posts.length;
     const original = globalThis.fetch;
     globalThis.fetch = async (input, init) =>
       String(input).endsWith("chat.postMessage")
         ? new Response("", { status: 429, headers: { "Retry-After": "90000" } })
         : original(input, init);
+    await release("long-retry", owner);
     await tick();
     transport();
     await tick(23 * 3600);
@@ -632,72 +835,6 @@ test("Retry-After beyond the delivery window expires the notification instead of
     assert.equal(posts.length, start);
     await tick(2 * 3600);
     assert.equal(posts.length, start);
-  }));
-
-test("bulk moves from separate sessions share a bounded window and mention the submitter once", async () =>
-  atHour(50, async () => {
-    const owner = await signIn();
-    cookie = await signIn("bob@example.com", "bob");
-    const otherBrowser = await signIn("carol@example.com", "carol");
-    transport();
-    await save();
-    await release("bulk-a", owner, "Left plate");
-    await release("bulk-b", owner, "Right plate");
-    await move("bulk-a", { column_id: "review", quantity_to_make: 3 });
-    const start = posts.length;
-    await tick(9);
-    assert.equal(posts.length, start, "collect updates for ten seconds");
-    await move(
-      "bulk-b",
-      { column_id: "review", quantity_to_make: 3 },
-      otherBrowser
-    );
-    await tick(1);
-    assert.equal(
-      posts.length,
-      start + 1,
-      "later arrivals must not reset the window"
-    );
-    const text = String(posts.at(-1)?.text);
-    assert.equal(text.match(/<@UALICE>/g)?.length, 1);
-    assert.match(text, /Left plate · Quantity to make: 3/);
-    assert.match(text, /Right plate · Quantity to make: 3/);
-    assert.match(text, /cardId=bulk-a/);
-    assert.match(text, /cardId=bulk-b/);
-  }));
-
-test("renaming columns inside a collection window preserves both label snapshots", async () =>
-  atHour(51, async () => {
-    const owner = await signIn();
-    cookie = await signIn("bob@example.com", "bob");
-    transport();
-    await save();
-    const columns = await import("../src/pages/api/kanban/config/index");
-    const setLabels = async (label: string) => {
-      const response = await endpoint(columns, "PUT")(
-        jsonRequest("/api/kanban/config", "PUT", cookie, {
-          columns: [
-            { id: "backlog", title: "Queued", position: 0 },
-            { id: "review", title: label, position: 1 },
-          ],
-        }),
-        {}
-      );
-      assert.equal(response.status, 200);
-    };
-    await setLabels("Inspection");
-    await release("label-a", owner, "Before rename");
-    await release("label-b", owner, "After rename");
-    await move("label-a", { column_id: "review" });
-    await setLabels("Quality review");
-    await move("label-b", { column_id: "review" });
-    const start = posts.length;
-    await tick();
-    await tick();
-    const sent = posts.slice(start).map((post) => String(post.text));
-    assert.equal(sent.length, 2);
-    assert.match(sent[0], /Queued → Inspection\nBefore rename/);
-    assert.match(sent[1], /Queued → Quality review\nAfter rename/);
   }));
 
 async function restartedDelivery(at: number) {
@@ -719,7 +856,7 @@ async function restartedDelivery(at: number) {
       const body=Object.fromEntries(new URLSearchParams(String(init?.body??'')));
       if(method==='auth.test') return Response.json({ok:true,team_id:'TRHR',bot_id:'B1'});
       if(method==='users.info'||method==='users.lookupByEmail') return Response.json({ok:true,user:{id:body.user??'UALICE',team_id:'TRHR',deleted:false,is_bot:false}});
-      if(method==='chat.postMessage') { posts.push(body); return Response.json({ok:true,channel:body.channel,ts:'123'}); }
+      if(method==='chat.postMessage') { posts.push(body); return Response.json({ok:true,channel:body.channel,ts:'${at}.1'}); }
       throw Error('unexpected');
     };
     const {runSlackDelivery}=await import('./src/lib/slack/worker.ts');
@@ -730,139 +867,32 @@ async function restartedDelivery(at: number) {
     { cwd: process.cwd(), env: process.env, encoding: "utf8" }
   );
   assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout.trim()) as Array<Record<string, unknown>>;
+  return JSON.parse(result.stdout.trim()) as Array<Record<string, string>>;
 }
 
-test("restart during collection retains the original deadline and separates known submitters", async () =>
-  atHour(52, async () => {
-    const owner = await signIn(null, "one");
-    const secondOwner = await signIn(null, "two");
+test("a restart between the part message and its reply keeps the thread", async () =>
+  atHour(23, async () => {
+    const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    await release("restart-a", owner, "One's part");
-    await release("restart-b", secondOwner, "Two's part");
-    await move("restart-a", { column_id: "review" });
-    await move("restart-b", { column_id: "review" });
-    assert.deepEqual(await restartedDelivery(now + 9000), []);
-    const first = await restartedDelivery(now + 10000);
-    const second = await restartedDelivery(now + 12000);
+    await release("restart", owner, "Restart plate");
+    await move("restart", { column_id: "review" });
+    const first = await restartedDelivery(now + 1000);
     assert.equal(first.length, 1);
+    assert.equal(first[0].thread_ts, undefined);
+    const second = await restartedDelivery(now + 3000);
     assert.equal(second.length, 1);
-    assert.match(String(first[0].text), /^<@UONE>:.*\nOne's part/);
-    assert.match(String(second[0].text), /^<@UTWO>:.*\nTwo's part/);
+    assert.equal(second[0].thread_ts, `${now + 1000}.1`);
+    assert.deepEqual(await restartedDelivery(now + 5000), []);
   }));
 
-test("repeated and backward transitions preserve per-card order across conflicting bulk groups", async () =>
-  atHour(53, async () => {
-    const owner = await signIn();
-    cookie = await signIn("bob@example.com", "bob");
-    transport();
-    await save();
-    await release("cycle-a", owner, "Cycle A");
-    await release("cycle-b", owner, "Cycle B");
-    await move("cycle-b", { column_id: "review" }, owner); // own move is silent
-    await move("cycle-a", { column_id: "review" });
-    await move("cycle-b", { column_id: "backlog" });
-    await move("cycle-a", { column_id: "backlog" });
-    await move("cycle-b", { column_id: "review" });
-    await move("cycle-a", { column_id: "review" });
-    const start = posts.length;
-    for (let i = 0; i < 6; i++) await tick();
-    const sent = posts.slice(start).map((post) => String(post.text));
-    const a = sent
-      .filter((text) => text.includes("cardId=cycle-a"))
-      .map((text) => text.split("\n")[0]);
-    const b = sent
-      .filter((text) => text.includes("cardId=cycle-b"))
-      .map((text) => text.split("\n")[0]);
-    assert.deepEqual(a, [
-      "<@UALICE>: Queued → Quality review",
-      "<@UALICE>: Quality review → Queued",
-      "<@UALICE>: Queued → Quality review",
-    ]);
-    assert.deepEqual(b, [
-      "<@UALICE>: Quality review → Queued",
-      "<@UALICE>: Queued → Quality review",
-    ]);
-  }));
-
-test("split groups retain every entry after restart and retry without resending acknowledged chunks", async () =>
-  atHour(54, async () => {
-    const owner = await signIn();
-    cookie = await signIn("bob@example.com", "bob");
-    transport();
-    await save();
-    for (let i = 0; i < 5; i++) {
-      await release(`split-${i}`, owner, `Plate ${i} ` + "x".repeat(1600));
-      await move(`split-${i}`, {
-        column_id: "review",
-        quantity_to_make: i + 1,
-      });
-    }
-    const start = posts.length;
-    await tick();
-    assert.equal(posts.length, start + 1);
-    const first = String(posts.at(-1)?.text);
-    assert.match(first, /cardId=split-0/);
-    assert.match(first, /cardId=split-1/);
-    assert.ok(!first.includes("cardId=split-2"));
-    const original = globalThis.fetch;
-    globalThis.fetch = async (input, init) =>
-      String(input).endsWith("chat.postMessage")
-        ? new Response("", { status: 429, headers: { "Retry-After": "30" } })
-        : original(input, init);
-    await tick(2);
-    assert.deepEqual(await restartedDelivery(now + 29000), []);
-    const rest = [
-      ...(await restartedDelivery(now + 30000)),
-      ...(await restartedDelivery(now + 32000)),
-      ...(await restartedDelivery(now + 34000)),
-    ];
-    const all = [first, ...rest.map((post) => String(post.text))];
-    assert.ok(all.every((text) => text.length < 4000));
-    for (let i = 0; i < 5; i++) {
-      assert.equal(
-        all.filter((text) => text.includes(`cardId=split-${i}|`)).length,
-        1,
-        `part ${i} delivered once`
-      );
-      assert.ok(
-        all.some((text) => text.includes(`Quantity to make: ${i + 1}`))
-      );
-    }
-    assert.deepEqual(await restartedDelivery(now + 36000), []);
-    transport();
-  }));
-
-test("changing channel during collection cancels that window and new changes follow the new channel", async () =>
-  atHour(55, async () => {
-    const owner = await signIn();
-    cookie = await signIn("bob@example.com", "bob");
-    transport();
-    await save();
-    await release("window-cancel", owner, "Canceled window");
-    await move("window-cancel", { column_id: "review" });
-    await tick(5);
-    await save(true, "C456");
-    const start = posts.length;
-    await tick(5);
-    assert.equal(posts.length, start);
-    await move("window-cancel", { column_id: "backlog" });
-    await tick();
-    assert.equal(posts.length, start + 1);
-    assert.equal(posts.at(-1)?.channel, "C456");
-    assert.match(String(posts.at(-1)?.text), /Quality review → Queued/);
-  }));
-
-test("formatting configuration errors back off the pending group", async () =>
+test("formatting configuration errors back off the pending event", async () =>
   atHour(56, async () => {
     const owner = await signIn();
     cookie = await signIn("bob@example.com", "bob");
     transport();
     await save();
-    await release("bad-url", owner);
-    await move("bad-url", { column_id: "review" });
     const original = globalThis.fetch;
     let checks = 0;
     globalThis.fetch = async (input, init) => {
@@ -871,6 +901,7 @@ test("formatting configuration errors back off the pending group", async () =>
     };
     process.env.APP_URL = "invalid";
     try {
+      await release("bad-url", owner);
       await tick();
       assert.equal(checks, 1);
       await tick(1);
