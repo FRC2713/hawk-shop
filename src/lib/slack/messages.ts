@@ -53,3 +53,40 @@ export async function postSlackMessage(
     postState.posting = false;
   }
 }
+// Edits share the posting gate: Slack rate-limits chat.update like posts.
+export async function updateSlackMessage(
+  channel: string,
+  ts: string,
+  text: string,
+  blocks: unknown[]
+) {
+  const nextPostAt = Math.max(
+    slackCooldown("post_spacing"),
+    slackCooldown("method:chat.update")
+  );
+  if (postState.posting || Date.now() < nextPostAt)
+    throw new SlackError(
+      "ratelimited",
+      Math.max(1, Math.ceil((nextPostAt - Date.now()) / 1000))
+    );
+  postState.posting = true;
+  try {
+    deferSlackCall("post_spacing", Date.now() + 1000);
+    await slackCall("chat.update", {
+      channel,
+      ts,
+      text,
+      blocks,
+      parse: "none",
+    });
+  } catch (error) {
+    if (error instanceof SlackError && error.retryAfterSeconds)
+      deferSlackCall(
+        "post_spacing",
+        Date.now() + error.retryAfterSeconds * 1000
+      );
+    throw error;
+  } finally {
+    postState.posting = false;
+  }
+}

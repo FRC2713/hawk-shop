@@ -36,7 +36,7 @@ function enqueue(
   card: Snapshot,
   actor: SessionActor | null,
   event: {
-    kind: "release" | "status" | "removed";
+    kind: "release" | "status" | "removed" | "project";
     old_column_id: string;
     payload?: SlackReleasePayload;
   }
@@ -93,7 +93,8 @@ export function captureSlackRelease(
   tx: Transaction,
   card: KanbanCardRow,
   actor: SessionActor,
-  processNames: string[]
+  processNames: string[],
+  projectName: string
 ) {
   enqueue(tx, card, actor, {
     kind: "release",
@@ -108,8 +109,18 @@ export function captureSlackRelease(
         message: issue.message,
       })),
       onshape_url: onshapeCardUrl(card),
+      project: projectName,
     },
   });
+}
+// A project change edits the part's message in place; the worker rebuilds it
+// from the card. Nothing is posted when the part has no message yet.
+export function captureSlackProjectChange(
+  tx: Transaction,
+  card: KanbanCardRow,
+  actor: SessionActor
+) {
+  enqueue(tx, card, actor, { kind: "project", old_column_id: card.column_id });
 }
 // Every move between columns is posted, whoever made it.
 export function captureSlackTransition(

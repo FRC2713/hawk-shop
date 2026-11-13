@@ -3,6 +3,7 @@ import {
   checkPartForRelease,
   type ReleaseCheckContext,
 } from "~/onshape_connector/utils/partEligibility";
+import { ProjectPicker } from "./ProjectPicker";
 import { ReleaseIssues } from "./ReleaseIssues";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -24,6 +25,7 @@ import { cn } from "~/lib/utils";
 
 export interface AddCardFormData {
   processIds: string[];
+  projectId: string;
   quantityPerRobot: number | "";
   quantityToMake: number | "";
   dueDate: Date | undefined;
@@ -126,6 +128,7 @@ export function AddCardDialog({
 }: AddCardDialogProps) {
   const ids = useId();
   const [processIds, setProcessIds] = useState<string[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [perRobot, setPerRobot] = useState(1);
   const [spares, setSpares] = useState(0);
   const [due, setDue] = useState("");
@@ -135,6 +138,7 @@ export function AddCardDialog({
   useEffect(() => {
     if (!open) return;
     setProcessIds([]);
+    setProjectId(null);
     setPerRobot(1);
     setSpares(0);
     setDue("");
@@ -156,6 +160,7 @@ export function AddCardDialog({
   });
   const blocked = issues.some((issue) => issue.severity === "error");
   const noProcess = processIds.length === 0;
+  const noProject = !projectId;
 
   const capable = useMemo(
     () =>
@@ -193,9 +198,10 @@ export function AddCardDialog({
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (noProcess || blocked || isSubmitting) return;
+    if (noProcess || noProject || blocked || isSubmitting) return;
     onSubmit({
       processIds,
+      projectId,
       quantityPerRobot: perRobot,
       quantityToMake: toMake,
       dueDate: due ? parseISO(due) : undefined,
@@ -269,6 +275,33 @@ export function AddCardDialog({
 
           <div className="flex flex-col gap-5 px-6 py-5">
             <ReleaseIssues issues={issues} />
+
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor={`${ids}-project`}
+                className="font-heading text-sm font-semibold"
+              >
+                Project
+              </label>
+              <ProjectPicker
+                id={`${ids}-project`}
+                value={projectId}
+                onChange={setProjectId}
+                disabled={isSubmitting}
+                invalid={tried && noProject}
+                describedBy={
+                  tried && noProject ? `${ids}-project-error` : undefined
+                }
+              />
+              {tried && noProject && (
+                <span
+                  id={`${ids}-project-error`}
+                  className="text-xs text-[var(--emphasis)]"
+                >
+                  Pick a project, or Miscellaneous for a one-off part.
+                </span>
+              )}
+            </div>
 
             <fieldset className="flex flex-col gap-2">
               <legend className="font-heading mb-1 text-sm font-semibold">

@@ -20,6 +20,12 @@ type Post = {
   ts: string;
 };
 const posts: Post[] = [];
+const edits: Array<{
+  channel: string;
+  ts: string;
+  text: string;
+  blocks: any[];
+}> = [];
 const calls: string[] = [];
 let ts = 1000;
 let now = Date.now();
@@ -83,6 +89,15 @@ function transport() {
       };
       posts.push(post);
       return Response.json({ ok: true, channel: body.channel, ts: post.ts });
+    }
+    if (method === "chat.update") {
+      edits.push({
+        channel: body.channel,
+        ts: body.ts,
+        text: body.text,
+        blocks: JSON.parse(body.blocks),
+      });
+      return Response.json({ ok: true, channel: body.channel, ts: body.ts });
     }
     throw Error(`Unexpected transport ${method}`);
   };
@@ -182,14 +197,15 @@ test("a release posts the part's own message, and every later move replies in it
     assert.equal(posts.length, start + 1, "the release posts on its own");
     const parent = posts[start];
     assert.equal(parent.thread_ts, undefined);
-    assert.equal(parent.text, "New part released: Bracket &lt;@UFAKE&gt;");
+    assert.equal(parent.text, "Miscellaneous: Bracket &lt;@UFAKE&gt;");
     assert.equal(parent.blocks?.[0].type, "header");
     assert.equal(parent.blocks?.[0].text.text, "Bracket <@UFAKE>");
     const details = mrkdwn(parent);
-    assert.match(details, /Released by <@UALICE>/);
-    assert.match(details, /\*Machine\*\nLaser/);
-    assert.match(details, /\*Due date\*\n2026-12-01/);
-    assert.match(details, /\*Quantity to make\*\nNot specified/);
+    assert.match(
+      details,
+      /^\*Miscellaneous\*  ·  released by <@UALICE>  ·  due Tue, Dec 1\nLaser$/m
+    );
+    assert.ok(!/Not specified|Status|Make/.test(details), "unset values hide");
     assert.match(details, /http:\/\/localhost\/kanban\?cardId=first/);
     assert.ok(!details.includes("<@UFAKE>"), "titles cannot mention anyone");
 
@@ -280,7 +296,7 @@ test("startup drains existing pending work without an incoming request", async (
       { cwd: process.cwd(), env: process.env, encoding: "utf8" }
     );
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /New part released: Restart bracket/);
+    assert.match(result.stdout, /Miscellaneous: Restart bracket/);
   } finally {
     Date.now = originalNow;
   }
@@ -381,7 +397,7 @@ test("changes while notifications are off are dropped; a later move starts the p
     await move("quiet", { column_id: "done" });
     await drain(3);
     const [parent] = partMessages(start);
-    assert.match(mrkdwn(parent), /Released by <@UALICE>/);
+    assert.match(mrkdwn(parent), /released by <@UALICE>/);
     assert.equal(replies(start, parent).length, 1);
     assert.equal(posts.length, start + 2);
   }));
@@ -410,7 +426,7 @@ test("outages back off, keep each part's order, and recover without delaying boa
     transport();
     await drain(4);
     const [parent] = partMessages(start);
-    assert.equal(parent.text, "New part released: Outage plate");
+    assert.equal(parent.text, "Miscellaneous: Outage plate");
     const thread = replies(start, parent);
     assert.equal(thread.length, 2);
     assert.ok(thread[0].ts < thread[1].ts);
@@ -458,7 +474,7 @@ test("Suite submitters are mentioned by Slack ID, legacy cards fall back to emai
     await move("unknown", { column_id: "review" });
     await drain(5);
     const texts = posts.slice(start).map((post) => mrkdwn(post));
-    assert.ok(texts.some((text) => /Released by <@USUITE>/.test(text)));
+    assert.ok(texts.some((text) => /released by <@USUITE>/.test(text)));
     assert.ok(texts.some((text) => /^<@UALICE>: .+ → .+/m.test(text)));
     assert.ok(texts.some((text) => /^Unknown submitter: /m.test(text)));
     assert.ok(lookups.includes("users.info USUITE"));
@@ -472,7 +488,7 @@ test("Suite submitters are mentioned by Slack ID, legacy cards fall back to emai
         : controlled(input, init);
     await release("unmatched", unmatched);
     await tick();
-    assert.match(mrkdwn(posts[before]), /Released by absent/);
+    assert.match(mrkdwn(posts[before]), /released by absent/);
     transport();
   }));
 
@@ -552,7 +568,7 @@ test("a failed upload, such as a missing files:write scope, posts without the im
     await release("no-scope", owner, "No scope plate", { imageUrl: url });
     await tick();
     const [parent] = partMessages(start);
-    assert.equal(parent.text, "New part released: No scope plate");
+    assert.equal(parent.text, "Miscellaneous: No scope plate");
     assert.equal(parent.blocks![1].accessory, undefined);
     transport();
   }));
@@ -911,4 +927,93 @@ test("formatting configuration errors back off the pending event", async () =>
       transport();
       await save(false);
     }
+  }));
+
+test("changing a card's project edits its message in place, keeping the picture", async () =>
+  atHour(30, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save();
+    const projects = await import("../src/pages/api/projects/index");
+    const created = await endpoint(projects, "POST")(
+      jsonRequest("/api/projects", "POST", cookie, { name: "Intake" }),
+      {}
+    );
+    const { project } = await created.json();
+    const { saveFile } = await import("../src/server/storage/files");
+    const url = await saveFile(
+      "thumbnails/project-part.png",
+      Buffer.from("project image bytes")
+    );
+    const start = posts.length;
+    const editsBefore = edits.length;
+    await release("moved-project", owner, "Roller", { imageUrl: url });
+    await drain(2);
+    const [parent] = partMessages(start);
+    assert.match(parent.text, /^Miscellaneous: Roller/);
+
+    await move("moved-project", { project_id: project.id });
+    await move("moved-project", { project_id: "project-nope" }).catch(
+      () => undefined
+    );
+    await drain(2);
+    assert.equal(posts.length, start + 1, "a project change posts no reply");
+    assert.equal(edits.length, editsBefore + 1);
+    const edit = edits.at(-1)!;
+    assert.equal(edit.ts, parent.ts);
+    assert.equal(edit.channel, "C123");
+    assert.match(edit.text, /^Intake: Roller/);
+    assert.match(
+      edit.blocks[1].text.text,
+      /^\*Intake\*  ·  released by <@UALICE>/
+    );
+    assert.deepEqual(edit.blocks[1].accessory.slack_file, { id: "FTHUMB" });
+  }));
+
+test("a project change before the part has a message posts nothing", async () =>
+  atHour(31, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    transport();
+    await save(false);
+    await release("quiet-project", owner, "Quiet roller");
+    await save();
+    const start = posts.length;
+    const editsBefore = edits.length;
+    await move("quiet-project", { project_id: "project-miscellaneous" });
+    const projects = await import("../src/pages/api/projects/index");
+    const { project } = await (
+      await endpoint(projects, "POST")(
+        jsonRequest("/api/projects", "POST", cookie, { name: "Shooter" }),
+        {}
+      )
+    ).json();
+    await move("quiet-project", { project_id: project.id });
+    await drain(3);
+    assert.equal(posts.length, start);
+    assert.equal(edits.length, editsBefore);
+  }));
+
+test("an unknown project is rejected without changing the card", async () =>
+  atHour(32, async () => {
+    const owner = await signIn();
+    cookie = await signIn("bob@example.com", "bob");
+    await release("bad-project", owner, "Plate");
+    const response = await endpoint(card, "PATCH", { id: "bad-project" })(
+      jsonRequest("/api/kanban/cards/bad-project", "PATCH", cookie, {
+        project_id: "project-nope",
+      }),
+      {}
+    );
+    assert.equal(response.status, 400);
+    const created = await endpoint(cards, "POST")(
+      jsonRequest("/api/kanban/cards", "POST", owner, {
+        id: "bad-project-2",
+        title: "Plate",
+        projectId: "project-nope",
+      }),
+      {}
+    );
+    assert.equal(created.status, 400);
   }));

@@ -60,6 +60,7 @@ const releaseFields = {
   action: "addCard",
   partNumber: "RHR-AUTH-37",
   processIds: "process-cnc-milling",
+  projectId: "project-miscellaneous",
   quantityPerRobot: "1",
   quantityToMake: "2",
   dueDate: "2026-12-01",

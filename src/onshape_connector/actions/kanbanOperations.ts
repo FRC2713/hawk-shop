@@ -1,7 +1,12 @@
 import "virtual:hawk-shop/server-only";
 import { createErrorResponse } from "../utils/errorHandling";
 import { z } from "zod";
-import { createCard, updateCard, getCards } from "~/server/kanbanApi/cards";
+import {
+  createCard,
+  updateCard,
+  getCards,
+  UnknownProjectError,
+} from "~/server/kanbanApi/cards";
 import { logger } from "~/lib/logger";
 import type { SessionActor } from "~/lib/sessionActor";
 import type { ActionResponse } from "../utils/types";
@@ -29,6 +34,9 @@ const addCardSchema = z.object({
   microversionId: z.string().optional(),
   rawThumbnailUrl: z.string().optional(),
   processIds: z.array(z.string()).min(1, "At least one process is required"),
+  projectId: z
+    .string({ error: "A project is required" })
+    .min(1, "A project is required"),
   quantityPerRobot: z
     .string()
     .min(1, "Quantity per robot is required")
@@ -112,6 +120,7 @@ export async function handleAddKanbanCard(
       "microversionId",
       "rawThumbnailUrl",
       "processIds",
+      "projectId",
       "quantityPerRobot",
       "quantityToMake",
       "dueDate",
@@ -247,6 +256,7 @@ export async function handleAddKanbanCard(
         imageUrl,
         machine: "TBD",
         processIds: data.processIds,
+        projectId: data.projectId,
         quantityPerRobot: data.quantityPerRobot,
         quantityToMake: data.quantityToMake,
         dueDate: data.dueDate,
@@ -264,6 +274,11 @@ export async function handleAddKanbanCard(
 
     return { success: true, data: card };
   } catch (error) {
+    if (error instanceof UnknownProjectError)
+      return {
+        success: false,
+        error: "That project no longer exists. Pick another.",
+      };
     return createErrorResponse(error, "Failed to add card to tracker");
   }
 }

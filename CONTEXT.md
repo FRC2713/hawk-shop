@@ -22,3 +22,11 @@ The permanent record of a card's status changes; unlike status notifications, it
 
 **Slack administrator**:
 An active workspace admin or workspace owner in the Red Hawk Robotics Slack workspace. Managing a channel alone does not qualify.
+
+**Project**:
+A named piece of work that released parts serve, such as a mechanism, fixture, field element or shop tool. Every card belongs to exactly one project, and it is unrelated to Onshape documents and folders.
+_Avoid_: Subsystem, mechanism, document, folder (when referring to a project)
+
+**Miscellaneous**:
+The built-in project for one-off parts that serve no named piece of work. It always exists and cannot be renamed or removed.
+_Avoid_: No project, unassigned, Other

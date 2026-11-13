@@ -343,6 +343,7 @@ test("card creation, assignment, updates, status, due dates, quantities and dele
     quantityPerRobot: "2",
     quantityToMake: "6",
     processIds: "process-cnc-milling",
+    projectId: "project-miscellaneous",
     dueDate: "2027-01-11",
   }))
     add.set(key, value);

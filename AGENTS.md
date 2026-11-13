@@ -59,6 +59,8 @@ better-sqlite3 is external in `astro.config.mjs`. The Node image includes produc
 
 `POST /api/onshape/webhook` (exact path and method) is the one data route that skips Suite identity, because Onshape can't carry it. It is enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are set, checks the secret from its query string in constant time, answers empty bodies (404 for disabled or wrong secret), and does nothing but `invalidateOnshapeCacheForDocument` and stamping that document's `last_event_at`. Its configuration and callback URL live in `src/server/onshape-webhook.ts`. The gateway must route it without `authorize`; see `docs/ONSHAPE.md#webhooks`. Don't widen the exemption or return shop data from it.
 
+`POST /api/slack/interactions` (exact path and method) is the other one, for Slack's servers. It answers 404 unless `SLACK_SIGNING_SECRET` is set, checks Slack's `v0` signature and five-minute timestamp window (`src/server/slack-interactions.ts`), and only acknowledges: release-message buttons just open links. The gateway routes it without `authorize` too. Don't make it act on a click without adding authorization for the clicking member.
+
 `src/server/suite-identity.ts` follows Hawk Eye's identity-header contract. Enable `HAWK_SUITE_TRUST_PROXY=true` only on an isolated gateway network; configure `HAWK_SUITE_TEAM_ID` and `HAWK_SUITE_ISSUER`. Caddy strips browser identity headers before authorization and injects the approved workspace, Slack user, matching subject, and exact `suite/member` role. Header trust grants nothing by default. Never expose a trusted app port directly.
 
 `requireAuth()` reads the verified request identity; Onshape credentials never grant Shop access. Same-origin checks protect every mutation, including multipart uploads. Use `APP_URL` for the browser-facing origin when TLS terminates at the gateway.
@@ -138,4 +140,4 @@ The five canonical roles, each label string equal to its name. See `docs/agents/
 
 ### Domain docs
 
-Single-context — `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context — `CONTEXT.md` at the repo root. No ADRs: never create architecture decision records or an adr directory; put decisions in the doc that owns the area. See `docs/agents/domain.md`.

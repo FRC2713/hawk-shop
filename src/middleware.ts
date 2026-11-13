@@ -2,6 +2,7 @@ import { defineMiddleware } from "astro:middleware";
 import { requestContext } from "./server/request-context";
 import { suiteIdentity, suiteSettings } from "./server/suite-identity";
 import { ONSHAPE_WEBHOOK_PATH } from "./server/onshape-webhook";
+import { SLACK_INTERACTIONS_PATH } from "./server/slack-interactions";
 
 // Response.redirect() and fetch() responses have immutable headers; copy those
 // before adding one rather than throwing a 500.
@@ -32,6 +33,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // no trailing slash, no subpath, no other verb.
   if (
     context.url.pathname === ONSHAPE_WEBHOOK_PATH &&
+    context.request.method === "POST"
+  ) {
+    return withHeader(await next(), "Cache-Control", "no-store");
+  }
+  // Slack's servers cannot carry Suite identity either. The route checks
+  // Slack's signature and only acknowledges. Same exact path and method rule.
+  if (
+    context.url.pathname === SLACK_INTERACTIONS_PATH &&
     context.request.method === "POST"
   ) {
     return withHeader(await next(), "Cache-Control", "no-store");

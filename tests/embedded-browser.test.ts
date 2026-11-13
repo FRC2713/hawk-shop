@@ -240,6 +240,8 @@ test(
       await frame
         .getByRole("button", { name: "Fixture machining", exact: true })
         .click();
+      await frame.getByRole("combobox", { name: "Project" }).click();
+      await frame.getByRole("option", { name: "Miscellaneous" }).click();
       await frame.getByLabel("Per robot", { exact: true }).fill("2");
       await expect(
         frame.getByText("2 × 2 robots", { exact: true })

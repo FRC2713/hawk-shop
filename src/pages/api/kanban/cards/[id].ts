@@ -6,6 +6,7 @@ import {
   deleteCard,
   getCards,
   getCardStatusHistory,
+  UnknownProjectError,
   updateCard,
   setCardProcesses,
 } from "~/server/kanbanApi/cards";
@@ -65,6 +66,8 @@ export const PATCH: APIRoute = async ({ request, params }) => {
 
     return Response.json({ card: cardWithProcesses || updatedCard });
   } catch (error) {
+    if (error instanceof UnknownProjectError)
+      return Response.json({ error: error.message }, { status: 400 });
     const errorId = logServerError("KANBAN CARD", error);
     const errorMessage =
       error instanceof Error ? error.message : "Operation failed";
