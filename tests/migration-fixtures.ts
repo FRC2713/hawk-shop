@@ -284,6 +284,24 @@ export const migrationFixtures: SeedFixture = {
     },
   ],
   slack_post_gate: [{ id: "default", next_post_at: updated }],
+  projects: [
+    {
+      id: "project-intake",
+      name: "Intake",
+      archived_at: null,
+      created_by: "user-a",
+      created_at: created,
+      updated_at: updated,
+    },
+    {
+      id: "project-old-climber",
+      name: "Old Climber",
+      archived_at: updated,
+      created_by: null,
+      created_at: updated,
+      updated_at: updated,
+    },
+  ],
   slack_threads: [
     {
       card_id: "card-a",

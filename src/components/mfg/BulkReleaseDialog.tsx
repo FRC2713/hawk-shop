@@ -2,6 +2,7 @@ import {
   checkPartForRelease,
   type ReleaseCheckContext,
 } from "~/onshape_connector/utils/partEligibility";
+import { ProjectPicker } from "./ProjectPicker";
 import { ReleaseIssues } from "./ReleaseIssues";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -31,6 +32,7 @@ import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 export interface BulkReleaseFormData {
   processIds: string[];
+  projectId: string | null;
   dueDate: Date | undefined;
   partQuantities: Array<{
     partKey: string;
@@ -68,6 +70,7 @@ export function BulkReleaseDialog({
 }: BulkReleaseDialogProps) {
   const [formData, setFormData] = useState<BulkReleaseFormData>({
     processIds: [],
+    projectId: null,
     dueDate: undefined,
     partQuantities: [],
   });
@@ -91,6 +94,7 @@ export function BulkReleaseDialog({
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [errors, setErrors] = useState<{
     processes?: string;
+    project?: string;
     partQuantities?: Record<
       string,
       { quantityPerRobot?: string; quantityToMake?: string }
@@ -168,6 +172,9 @@ export function BulkReleaseDialog({
     if (formData.processIds.length === 0) {
       newErrors.processes = "At least one process is required";
     }
+    if (!formData.projectId) {
+      newErrors.project = "Pick a project, or Miscellaneous for one-off parts";
+    }
 
     const partQuantityErrors: Record<
       string,
@@ -220,6 +227,7 @@ export function BulkReleaseDialog({
       // Reset form when closing
       setFormData({
         processIds: [],
+        projectId: null,
         dueDate: undefined,
         partQuantities: [],
       });
@@ -236,8 +244,8 @@ export function BulkReleaseDialog({
             Release {selectedParts.length} Parts to Manufacturing
           </DialogTitle>
           <DialogDescription>
-            Set common processes and due date, then specify quantities for each
-            part.
+            Set the project, processes and due date for every part, then specify
+            quantities for each part.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
@@ -245,6 +253,26 @@ export function BulkReleaseDialog({
             <div className="space-y-4 py-4">
               {/* Common Fields */}
               <div className="space-y-4 border-b pb-4">
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-project">
+                    Project <span className="text-destructive">*</span>
+                  </Label>
+                  <ProjectPicker
+                    id="bulk-project"
+                    value={formData.projectId}
+                    onChange={(projectId) => {
+                      setFormData({ ...formData, projectId });
+                      if (errors.project)
+                        setErrors({ ...errors, project: undefined });
+                    }}
+                    disabled={isSubmitting}
+                    invalid={!!errors.project}
+                  />
+                  {errors.project && (
+                    <p className="text-destructive text-sm">{errors.project}</p>
+                  )}
+                </div>
+
                 {/* Process Selection */}
                 <div className="space-y-2">
                   <Label htmlFor="processes">

@@ -5,6 +5,7 @@ import {
   kanbanCardProcesses,
   kanbanCards,
   processes as processes_,
+  projects,
   slackPending,
   slackThreads,
   type SlackReleasePayload,
@@ -21,7 +22,7 @@ import {
   slackUserFromSubject,
   type SlackMember,
 } from "./client";
-import { postSlackMessage } from "./messages";
+import { postSlackMessage, updateSlackMessage } from "./messages";
 import { slackAppBaseUrl } from "./appUrl";
 import {
   cleanupSlackPending,
@@ -76,7 +77,7 @@ async function mention(row: PendingSlackNotification, workspace: string) {
   }
   return escape(row.submitter_name);
 }
-type Thread = { card_id: string; channel_id: string; ts: string };
+type Thread = typeof slackThreads.$inferSelect;
 function threadFor(row: PendingSlackNotification): Thread | undefined {
   return db
     .select()
@@ -117,19 +118,15 @@ function done(row: PendingSlackNotification) {
   db.delete(slackPending).where(eq(slackPending.id, row.id)).run();
 }
 // What the part's message shows. A release uses the snapshot taken with the
-// card. A part released before threads existed gets its message the first
-// time its status changes, built from the card as it is now.
+// card. Otherwise the message is built from the card as it is now: a part
+// released before threads existed gets its message the first time its status
+// changes, and a project change rebuilds the message to edit it.
 function partDetails(row: PendingSlackNotification): {
   payload: SlackReleasePayload;
   quantity_to_make: number | null;
-  status: string;
 } {
   if (row.kind === "release" && row.payload)
-    return {
-      payload: row.payload,
-      quantity_to_make: row.quantity_to_make,
-      status: row.new_status,
-    };
+    return { payload: row.payload, quantity_to_make: row.quantity_to_make };
   const card = db
     .select()
     .from(kanbanCards)
@@ -147,6 +144,13 @@ function partDetails(row: PendingSlackNotification): {
         .all()
         .map((process) => process.name)
     : [];
+  const project = card
+    ? db
+        .select({ name: projects.name })
+        .from(projects)
+        .where(eq(projects.id, card.project_id))
+        .get()?.name
+    : undefined;
   return {
     payload: {
       quantity_per_robot: card?.quantity_per_robot ?? null,
@@ -158,41 +162,82 @@ function partDetails(row: PendingSlackNotification): {
         message: issue.message,
       })),
       onshape_url: card ? onshapeCardUrl(card) : null,
+      project: project ?? null,
     },
-    quantity_to_make: row.quantity_to_make,
-    // The message describes the part before this pending move.
-    status: row.old_status,
+    quantity_to_make: card ? card.quantity_to_make : row.quantity_to_make,
   };
 }
 function plain(value: string, limit: number) {
   return value.length > limit ? value.slice(0, limit - 1) + "…" : value;
 }
-function partBlocks(
-  row: PendingSlackNotification,
+// "TBD" is the machine every release starts with, so it says nothing.
+function present(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text && text.toUpperCase() !== "TBD" ? text : null;
+}
+// Due dates are calendar days; formatting in UTC keeps the day from shifting.
+export function slackDueDate(value: string | null | undefined) {
+  const day = value?.slice(0, 10);
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const date = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+// Link buttons still send Slack an interaction, so they appear only when the
+// app can verify and acknowledge one. Without the signing secret the message
+// keeps text links.
+function linkButtonsEnabled() {
+  return Boolean(process.env.SLACK_SIGNING_SECRET);
+}
+/** Push notifications and channel previews show only this. */
+export function partMessageText(
+  row: Pick<PendingSlackNotification, "title">,
+  details: { payload: SlackReleasePayload; quantity_to_make: number | null }
+) {
+  const project = present(details.payload.project);
+  const quantity = present(details.quantity_to_make);
+  return [
+    `${project ? `${escape(project, 100)}: ` : ""}${escape(row.title, 200)}`,
+    quantity ? `make ${quantity}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+export function partBlocks(
+  row: Pick<PendingSlackNotification, "card_id" | "title">,
+  details: { payload: SlackReleasePayload; quantity_to_make: number | null },
   who: string,
   fileId: string | null
 ) {
-  const { payload, quantity_to_make, status } = partDetails(row);
-  const show = (value: string | number | null | undefined) =>
-    value === null || value === undefined || value === ""
-      ? "Not specified"
-      : escape(String(value), 200);
-  const fields = [
-    ["Quantity to make", show(quantity_to_make)],
-    ["Quantity per robot", show(payload.quantity_per_robot)],
-    ["Machine", show(payload.machine)],
-    [
-      "Processes",
-      payload.processes.length
-        ? escape(payload.processes.join(", "), 300)
-        : "Not specified",
-    ],
-    ["Due date", show(payload.due_date?.slice(0, 10))],
-    ["Status", escape(status, 200)],
-  ].map(([label, value]) => ({ type: "mrkdwn", text: `*${label}*\n${value}` }));
-  const links = [`<${cardLink(row.card_id)}|Open in Hawk Shop>`];
-  if (payload.onshape_url)
-    links.push(`<${payload.onshape_url}|Open in Onshape>`);
+  const { payload, quantity_to_make } = details;
+  const project = present(payload.project);
+  const due = slackDueDate(payload.due_date);
+  const context = [
+    project ? `*${escape(project, 100)}*` : null,
+    `released by ${who}`,
+    due ? `due ${due}` : null,
+  ];
+  const quantity = present(quantity_to_make);
+  const perRobot = present(payload.quantity_per_robot);
+  const machine = present(payload.machine);
+  const work = [
+    quantity
+      ? `*Make ${escape(quantity, 20)}*${perRobot ? ` (${escape(perRobot, 20)} per robot)` : ""}`
+      : perRobot
+        ? `${escape(perRobot, 20)} per robot`
+        : null,
+    payload.processes.length ? escape(payload.processes.join(", "), 300) : null,
+    machine ? escape(machine, 200) : null,
+  ];
+  const lines = [context, work]
+    .map((parts) => parts.filter(Boolean).join("  ·  "))
+    .filter(Boolean);
   const blocks: unknown[] = [
     {
       type: "header",
@@ -200,8 +245,7 @@ function partBlocks(
     },
     {
       type: "section",
-      text: { type: "mrkdwn", text: `Released by ${who}` },
-      fields,
+      text: { type: "mrkdwn", text: lines.join("\n") },
       ...(fileId
         ? {
             accessory: {
@@ -224,7 +268,7 @@ function partBlocks(
               .slice(0, 10)
               .map(
                 (issue) =>
-                  `${issue.severity === "error" ? "Error" : "Warning"}: ${issue.message}`
+                  `${issue.severity === "error" ? "🛑" : "⚠️"} ${issue.message}`
               )
               .join("\n"),
             2900
@@ -232,10 +276,36 @@ function partBlocks(
         },
       ],
     });
-  blocks.push({
-    type: "context",
-    elements: [{ type: "mrkdwn", text: links.join("  ·  ") }],
-  });
+  const links = [
+    { text: "Open in Hawk Shop", url: cardLink(row.card_id), primary: true },
+    ...(payload.onshape_url
+      ? [{ text: "Open in Onshape", url: payload.onshape_url, primary: false }]
+      : []),
+  ];
+  blocks.push(
+    linkButtonsEnabled()
+      ? {
+          type: "actions",
+          elements: links.map((link, index) => ({
+            type: "button",
+            action_id: `open_link_${index}`,
+            text: { type: "plain_text", text: link.text, emoji: false },
+            url: link.url,
+            ...(link.primary ? { style: "primary" } : {}),
+          })),
+        }
+      : {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: links
+                .map((link) => `<${link.url}|${link.text}>`)
+                .join("  ·  "),
+            },
+          ],
+        }
+  );
   return blocks;
 }
 // Upload the stored thumbnail, if there is one. Never fetches from Onshape:
@@ -314,6 +384,23 @@ export async function runSlackDelivery({
             .run();
           continue;
         }
+        if (row.kind === "project") {
+          // Without a message there is nothing to edit; the part's message,
+          // whenever it is posted, is built with the current project.
+          if (thread) {
+            const details = partDetails(row);
+            const who = await mention(row, workspace);
+            if (!current(row, now())) continue;
+            await updateSlackMessage(
+              row.channel_id,
+              thread.ts,
+              partMessageText(row, details),
+              partBlocks(row, details, who, thread.file_id)
+            );
+          }
+          done(row);
+          continue;
+        }
         if (!thread) {
           // A release waits one pass after uploading, so Slack has finished
           // processing the image before a message refers to it.
@@ -325,18 +412,20 @@ export async function runSlackDelivery({
             row.kind === "release" && row.file_id !== "none"
               ? row.file_id
               : null;
+          const details = partDetails(row);
           const who = await mention(row, workspace);
           if (!current(row, now())) continue;
           const { ts } = await postSlackMessage(
             row.channel_id,
-            `New part released: ${escape(row.title, 200)}`,
-            { blocks: partBlocks(row, who, fileId) }
+            partMessageText(row, details),
+            { blocks: partBlocks(row, details, who, fileId) }
           );
           db.insert(slackThreads)
             .values({
               card_id: row.card_id,
               channel_id: row.channel_id,
               ts,
+              file_id: fileId,
             })
             .onConflictDoNothing()
             .run();
@@ -372,6 +461,17 @@ export async function runSlackDelivery({
             .where(eq(slackPending.id, row.id))
             .run();
         }
+        // The same for an edit: drop the image the message was posted with.
+        if (failure.code === "invalid_blocks" && row.kind === "project")
+          db.update(slackThreads)
+            .set({ file_id: null })
+            .where(
+              and(
+                eq(slackThreads.card_id, row.card_id),
+                eq(slackThreads.channel_id, row.channel_id)
+              )
+            )
+            .run();
         // The part's message was deleted in Slack: start a new one.
         if (["thread_not_found", "message_not_found"].includes(failure.code))
           db.delete(slackThreads)

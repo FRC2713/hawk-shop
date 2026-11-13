@@ -28,6 +28,9 @@ export const queryKeys = {
   processes: {
     all: () => ["processes"] as const,
   },
+  projects: {
+    all: () => ["projects"] as const,
+  },
   users: {
     /** Prefix of `byId`, so invalidating this also drops every single-user entry. */
     all: () => ["users"] as const,

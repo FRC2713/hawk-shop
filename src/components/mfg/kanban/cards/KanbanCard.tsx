@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Calendar, User, Wrench, Package } from "lucide-react";
+import { Calendar, FolderKanban, User, Wrench, Package } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
@@ -166,6 +166,7 @@ export const KanbanCard = memo(function KanbanCard({
   };
 
   const hasMeta =
+    card.project ||
     card.assignee ||
     card.machine ||
     card.due_date ||
@@ -224,6 +225,16 @@ export const KanbanCard = memo(function KanbanCard({
             {/* Card Meta */}
             {hasMeta && (
               <CardContent className="flex flex-wrap gap-1.5 px-2.5 pt-0 pb-2.5 sm:px-3 sm:pb-3">
+                {card.project && (
+                  <Badge
+                    variant="outline"
+                    className="max-w-full gap-1 border-[var(--hawk-teal)] text-xs font-semibold"
+                    title={`Project: ${card.project.name}`}
+                  >
+                    <FolderKanban className="size-3 shrink-0" />
+                    <span className="truncate">{card.project.name}</span>
+                  </Badge>
+                )}
                 {card.assignee && (
                   <Badge
                     variant="secondary"

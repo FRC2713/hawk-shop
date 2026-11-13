@@ -2,6 +2,7 @@ import "virtual:hawk-shop/server-only";
 import { logServerError } from "~/server/errors";
 
 import {
+  captureSlackProjectChange,
   captureSlackRelease,
   captureSlackRemoval,
   captureSlackTransition,
@@ -14,6 +15,8 @@ import {
   kanbanCardProcesses,
   kanbanCards,
   kanbanConfig,
+  MISCELLANEOUS_PROJECT_ID,
+  projects as projectsTable,
   statusHistory,
   users,
   processes as processesTable,
@@ -27,6 +30,23 @@ import type {
 } from "~/server/db/types";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Thrown when a card names a project that doesn't exist. */
+export class UnknownProjectError extends Error {
+  constructor() {
+    super("Unknown project");
+  }
+}
+
+function requireProject(tx: Transaction, id: string) {
+  const project = tx
+    .select()
+    .from(projectsTable)
+    .where(eq(projectsTable.id, id))
+    .get();
+  if (!project) throw new UnknownProjectError();
+  return project;
+}
 
 function captureStatusHistory(
   tx: Transaction,
@@ -133,11 +153,23 @@ export async function getCards(): Promise<GetCardsResult> {
       .orderBy(asc(kanbanCards.date_created));
 
     const byCard = await processesByCardId(cards.map((card) => card.id));
+    const projectById = new Map(
+      db
+        .select({
+          id: projectsTable.id,
+          name: projectsTable.name,
+          archived_at: projectsTable.archived_at,
+        })
+        .from(projectsTable)
+        .all()
+        .map((project) => [project.id, project])
+    );
 
     return {
       cards: cards.map((card) => ({
         ...card,
         processes: byCard.get(card.id) ?? [],
+        project: projectById.get(card.project_id) ?? null,
       })),
     };
   } catch (error) {
@@ -187,6 +219,8 @@ export interface CreateCardInput {
   onshapeVersionId?: string;
   /** The part's microversion from the parts read the release came from. */
   onshapeMicroversionId?: string;
+  /** Defaults to Miscellaneous. */
+  projectId?: string;
 }
 
 /**
@@ -210,6 +244,10 @@ export async function createCard(
   let card: KanbanCardRow;
   try {
     card = db.transaction((tx) => {
+      const project = requireProject(
+        tx,
+        cardData.projectId || MISCELLANEOUS_PROJECT_ID
+      );
       const inserted = tx
         .insert(kanbanCards)
         .values({
@@ -236,6 +274,7 @@ export async function createCard(
           onshape_part_id: cardData.onshapePartId ?? null,
           onshape_version_id: cardData.onshapeVersionId ?? null,
           onshape_microversion_id: cardData.onshapeMicroversionId ?? null,
+          project_id: project.id,
         })
         .returning()
         .get();
@@ -248,10 +287,11 @@ export async function createCard(
             .all()
             .map((row) => row.name)
         : [];
-      captureSlackRelease(tx, inserted, actor, processNames);
+      captureSlackRelease(tx, inserted, actor, processNames, project.name);
       return inserted;
     });
   } catch (error) {
+    if (error instanceof UnknownProjectError) throw error;
     console.error("[KANBAN CARDS] Error creating card:", error);
     const message = error instanceof Error ? error.message : "unknown error";
     throw new Error(`Failed to create card: ${message}`);
@@ -288,6 +328,7 @@ export async function updateCard(
     "content",
     "quantity_per_robot",
     "quantity_to_make",
+    "project_id",
   ]);
   const finalUpdates = Object.fromEntries(
     Object.entries(updates).filter(([key]) => mutableFields.has(key))
@@ -300,6 +341,8 @@ export async function updateCard(
       .get();
     if (!previous) throw new Error("Card not found");
     if (Object.keys(finalUpdates).length === 0) return previous;
+    if (finalUpdates.project_id !== undefined)
+      requireProject(tx, finalUpdates.project_id);
     const changed =
       finalUpdates.column_id !== undefined &&
       finalUpdates.column_id !== previous.column_id;
@@ -314,6 +357,10 @@ export async function updateCard(
       captureStatusHistory(tx, previous, updated, actor);
       captureSlackTransition(tx, previous, updated, actor);
     }
+    // Not a status change: no history, no reply. The release message is
+    // edited to show the new project instead.
+    if (updated.project_id !== previous.project_id)
+      captureSlackProjectChange(tx, updated, actor);
     return updated;
   });
 

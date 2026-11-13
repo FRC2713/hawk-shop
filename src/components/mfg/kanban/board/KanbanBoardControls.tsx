@@ -8,7 +8,10 @@ import {
   Image,
   ChevronDown,
   User,
+  FolderKanban,
+  Rows3,
 } from "lucide-react";
+import { ProjectFilter } from "~/components/mfg/ProjectFilter";
 import { useQuery } from "@tanstack/react-query";
 import type { KanbanConfig } from "~/server/kanbanApi/columnTypes";
 import { Button } from "~/components/ui/button";
@@ -39,6 +42,12 @@ interface KanbanBoardControlsProps {
   onProcessFilterChange: (processIds: string[]) => void;
   sortByUser: boolean;
   onSortByUserChange: (value: boolean) => void;
+  selectedProjectIds: string[];
+  onProjectFilterChange: (projectIds: string[]) => void;
+  sortByProject: boolean;
+  onSortByProjectChange: (value: boolean) => void;
+  groupByProject: boolean;
+  onGroupByProjectChange: (value: boolean) => void;
 }
 
 export function KanbanBoardControls({
@@ -56,6 +65,12 @@ export function KanbanBoardControls({
   onProcessFilterChange,
   sortByUser,
   onSortByUserChange,
+  selectedProjectIds,
+  onProjectFilterChange,
+  sortByProject,
+  onSortByProjectChange,
+  groupByProject,
+  onGroupByProjectChange,
 }: KanbanBoardControlsProps) {
   const [processMenuOpen, setProcessMenuOpen] = useState(false);
 
@@ -63,6 +78,8 @@ export function KanbanBoardControls({
     const values: string[] = [];
     if (!hideImages) values.push("images");
     if (sortByUser) values.push("sortByUser");
+    if (sortByProject) values.push("sortByProject");
+    if (groupByProject) values.push("groupByProject");
     return values;
   })();
 
@@ -76,6 +93,10 @@ export function KanbanBoardControls({
     if (hasSortByUser !== sortByUser) {
       onSortByUserChange(hasSortByUser);
     }
+    if (values.includes("sortByProject") !== sortByProject)
+      onSortByProjectChange(!sortByProject);
+    if (values.includes("groupByProject") !== groupByProject)
+      onGroupByProjectChange(!groupByProject);
   };
 
   const { data: processes = [] } = useQuery(processesQuery());
@@ -89,6 +110,10 @@ export function KanbanBoardControls({
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
+      <ProjectFilter
+        selectedIds={selectedProjectIds}
+        onChange={onProjectFilterChange}
+      />
       <DropdownMenu open={processMenuOpen} onOpenChange={setProcessMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
@@ -154,6 +179,18 @@ export function KanbanBoardControls({
         <ToggleGroupItem value="sortByUser" aria-label="Sort by user">
           <User className="size-4" />
           <span className="hidden sm:inline">Sort by User</span>
+        </ToggleGroupItem>
+        <ToggleGroupItem value="sortByProject" aria-label="Sort by project">
+          <FolderKanban className="size-4" />
+          <span className="hidden sm:inline">Sort by Project</span>
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="groupByProject"
+          aria-label="Group by project"
+          disabled={isEditMode}
+        >
+          <Rows3 className="size-4" />
+          <span className="hidden sm:inline">Group by Project</span>
         </ToggleGroupItem>
       </ToggleGroup>
 

@@ -1,9 +1,11 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
   primaryKey,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 import type { ReleaseIssue } from "~/onshape_connector/utils/partEligibility";
@@ -30,6 +32,8 @@ export type SlackReleasePayload = {
   processes: string[];
   issues: Array<{ severity: string; message: string }>;
   onshape_url: string | null;
+  /** Project name at release. Absent on snapshots taken before projects. */
+  project?: string | null;
 };
 
 export const users = sqliteTable("users", {
@@ -47,6 +51,28 @@ export const processes = sqliteTable("processes", {
   created_at: text("created_at").notNull().$defaultFn(now),
   updated_at: text("updated_at").notNull().$defaultFn(now).$onUpdateFn(now),
 });
+
+/** The built-in project for one-off parts. Seeded by migration; never renamed or archived. */
+export const MISCELLANEOUS_PROJECT_ID = "project-miscellaneous";
+
+/**
+ * A named piece of work that released parts serve. Names are unique ignoring
+ * case. Archived projects leave the release picker but stay on their cards.
+ */
+export const projects = sqliteTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    archived_at: text("archived_at"),
+    created_by: text("created_by"),
+    created_at: text("created_at").notNull().$defaultFn(now),
+    updated_at: text("updated_at").notNull().$defaultFn(now).$onUpdateFn(now),
+  },
+  (table) => [
+    uniqueIndex("idx_projects_name_nocase").on(sql`lower(${table.name})`),
+  ]
+);
 
 export const equipment = sqliteTable("equipment", {
   id: text("id").primaryKey(),
@@ -93,9 +119,13 @@ export const kanbanCards = sqliteTable(
     // The part's microversion when it was released (or last seen by a
     // workspace parts read). Thumbnails are cached under it.
     onshape_microversion_id: text("onshape_microversion_id"),
+    // Every card has exactly one project. No foreign key: SQLite cannot add
+    // one with a non-null default, and projects are archived, never deleted.
+    project_id: text("project_id").notNull().default(MISCELLANEOUS_PROJECT_ID),
   },
   (table) => [
     index("idx_kanban_cards_column_id").on(table.column_id),
+    index("idx_kanban_cards_project_id").on(table.project_id),
     index("idx_kanban_cards_date_created").on(table.date_created),
   ]
 );
@@ -362,8 +392,9 @@ export const slackPending = sqliteTable("slack_pending", {
   next_attempt_at: text("next_attempt_at").notNull(),
   attempts: integer("attempts").notNull().default(0),
   error_code: text("error_code"),
-  // "release" (the part's own message), "status" (a reply in its thread) or
-  // "removed" (a reply when the card is deleted).
+  // "release" (the part's own message), "status" (a reply in its thread),
+  // "removed" (a reply when the card is deleted) or "project" (an edit of the
+  // part's message after its project changed).
   kind: text("kind").notNull().default("status"),
   // Who made the change, as shown in Slack. Not a mention.
   actor_name: text("actor_name"),
@@ -383,6 +414,9 @@ export const slackThreads = sqliteTable(
     card_id: text("card_id").notNull(),
     channel_id: text("channel_id").notNull(),
     ts: text("ts").notNull(),
+    // The thumbnail the message shows, so an edit can keep it. Null when the
+    // message has no image.
+    file_id: text("file_id"),
     created_at: text("created_at").notNull().$defaultFn(now),
   },
   (table) => [primaryKey({ columns: [table.card_id, table.channel_id] })]

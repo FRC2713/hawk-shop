@@ -30,14 +30,23 @@ import { Skeleton } from "~/components/ui/skeleton";
 import {
   kanbanCardsQuery,
   partActions,
+  projectsQuery,
   queryKeys,
+  sortProjectsForDisplay,
   usersQuery,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
-import type { KanbanCardRow } from "~/server/db/types";
 import { KanbanCard as KanbanCardComponent } from "../cards/KanbanCard";
 import { KanbanColumn } from "../columns/KanbanColumn";
 import { KanbanBulkEditBar } from "./KanbanBulkEditBar";
+import {
+  dropTargetColumnId,
+  KanbanSwimlanes,
+  type Lane,
+} from "./KanbanSwimlanes";
+
+type KanbanCardRow = KanbanCardWithProcesses;
+const DONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface KanbanBoardProps {
   config: KanbanConfig;
@@ -46,6 +55,9 @@ interface KanbanBoardProps {
   hideImages?: boolean;
   processFilterIds?: string[];
   sortByUser?: boolean;
+  projectFilterIds?: string[];
+  sortByProject?: boolean;
+  groupByProject?: boolean;
   searchQuery?: string;
   hasWarningsOnly?: boolean;
   onAddColumn?: () => void;
@@ -61,6 +73,9 @@ export function KanbanBoard({
   hideImages = false,
   processFilterIds = [],
   sortByUser = false,
+  projectFilterIds = [],
+  sortByProject = false,
+  groupByProject = false,
   searchQuery = "",
   hasWarningsOnly = false,
   onAddColumn,
@@ -100,6 +115,17 @@ export function KanbanBoard({
   const { data: cards = [], isLoading: isLoadingCards } =
     useQuery(kanbanCardsQuery());
   const { data: users = [] } = useQuery(usersQuery());
+  const { data: projects = [] } = useQuery(projectsQuery());
+
+  // Lane and sort order: alphabetical, Miscellaneous last.
+  const orderedProjects = useMemo(
+    () => sortProjectsForDisplay(projects),
+    [projects]
+  );
+  const projectRank = useMemo(
+    () => new Map(orderedProjects.map((project, index) => [project.id, index])),
+    [orderedProjects]
+  );
 
   // Resolve Suite subjects to names for assignee and submitter search.
   const usersMap = useMemo(() => buildCardUsersMap(users), [users]);
@@ -123,12 +149,14 @@ export function KanbanBoard({
         (card) =>
           searchScores.has(card.id) &&
           (!hasWarningsOnly || !!card.release_issues?.length) &&
+          (projectFilterIds.length === 0 ||
+            projectFilterIds.includes(card.project_id)) &&
           (processFilterIds.length === 0 ||
             card.processes?.some((process) =>
               processFilterIds.includes(process.id)
             ))
       ),
-    [cards, searchScores, processFilterIds, hasWarningsOnly]
+    [cards, searchScores, processFilterIds, projectFilterIds, hasWarningsOnly]
   );
 
   // Mutation to update card column
@@ -194,6 +222,13 @@ export function KanbanBoard({
     // Sort cards within each column
     Object.keys(grouped).forEach((columnId) => {
       grouped[columnId].sort((a, b) => {
+        // Lanes read top to bottom in project order, so grouping sorts too.
+        if (sortByProject || groupByProject) {
+          const projectCompare =
+            (projectRank.get(a.project_id) ?? Infinity) -
+            (projectRank.get(b.project_id) ?? Infinity);
+          if (projectCompare !== 0) return projectCompare;
+        }
         // Sort by user if enabled
         if (sortByUser) {
           const aAssignee = a.assignee || "zzz_Unassigned";
@@ -213,7 +248,43 @@ export function KanbanBoard({
     });
 
     return grouped;
-  }, [filteredCards, sortByUser, searchScores]);
+  }, [
+    filteredCards,
+    sortByUser,
+    sortByProject,
+    groupByProject,
+    projectRank,
+    searchScores,
+  ]);
+
+  // Swimlanes show Done like its column does: the last 24 hours only.
+  const laneCardsByColumn = useMemo(() => {
+    if (!groupByProject || columns.length === 0) return cardsByColumn;
+    const lastId = columns[columns.length - 1].id;
+    const since = Date.now() - DONE_WINDOW_MS;
+    return {
+      ...cardsByColumn,
+      [lastId]: (cardsByColumn[lastId] ?? []).filter(
+        (card) => new Date(card.date_updated).getTime() > since
+      ),
+    };
+  }, [groupByProject, cardsByColumn, columns]);
+
+  const lanes = useMemo<Lane[]>(() => {
+    if (!groupByProject) return [];
+    const used = new Set(
+      Object.values(laneCardsByColumn)
+        .flat()
+        .map((card) => card.project_id)
+    );
+    return orderedProjects
+      .filter((project) => used.has(project.id))
+      .map((project) => ({
+        id: project.id,
+        name: project.name,
+        archived: !!project.archived_at,
+      }));
+  }, [groupByProject, laneCardsByColumn, orderedProjects]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -276,8 +347,9 @@ export function KanbanBoard({
     const isColumn = columns.some((col) => col.id === active.id);
 
     if (isCard && cardsToMove.length > 0) {
-      // Handle card drag (single or multiple)
-      const targetColumnId = over.id as string;
+      // Handle card drag (single or multiple). A lane cell moves the column
+      // only; the card keeps its project.
+      const targetColumnId = dropTargetColumnId(String(over.id));
 
       // Move all cards that are being dragged to the new column
       const cardsToMoveToNewColumn = cardsToMove.filter(
@@ -480,48 +552,63 @@ export function KanbanBoard({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <SortableContext
-        items={columns.map((col) => col.id)}
-        strategy={horizontalListSortingStrategy}
-      >
-        <div className="flex h-full gap-3 overflow-x-auto p-3 sm:gap-4 sm:p-6">
-          {columns.map((column, index) => {
-            const isLastColumn = index === columns.length - 1;
-            // Force last column to always be labeled "Done"
-            const displayColumn = isLastColumn
-              ? { ...column, title: "Done" }
-              : column;
-            return (
-              <KanbanColumn
-                key={column.id}
-                column={displayColumn}
-                cards={cardsByColumn[column.id] || []}
-                onRename={handleRenameColumn}
-                onDelete={handleDeleteColumn}
-                isEditMode={isEditMode}
-                isDraggingCard={activeCard !== null}
-                hideImages={hideImages}
-                usersMap={usersMap}
-                isLastColumn={isLastColumn}
-                selectedCardIds={selectedCardIds}
-                selectedColumnId={selectedColumnId}
-                onCardSelect={handleCardSelect}
-              />
-            );
-          })}
+      {groupByProject ? (
+        <KanbanSwimlanes
+          columns={columns}
+          lanes={lanes}
+          cardsByColumn={laneCardsByColumn}
+          hideImages={hideImages}
+          usersMap={usersMap}
+          isDraggingCard={activeCard !== null}
+          selectedCardIds={selectedCardIds}
+          onCardSelect={handleCardSelect}
+        />
+      ) : (
+        <SortableContext
+          items={columns.map((col) => col.id)}
+          strategy={horizontalListSortingStrategy}
+        >
+          <div className="flex h-full gap-3 overflow-x-auto p-3 sm:gap-4 sm:p-6">
+            {columns.map((column, index) => {
+              const isLastColumn = index === columns.length - 1;
+              // Force last column to always be labeled "Done"
+              const displayColumn = isLastColumn
+                ? { ...column, title: "Done" }
+                : column;
+              return (
+                <KanbanColumn
+                  key={column.id}
+                  column={displayColumn}
+                  cards={cardsByColumn[column.id] || []}
+                  onRename={handleRenameColumn}
+                  onDelete={handleDeleteColumn}
+                  isEditMode={isEditMode}
+                  isDraggingCard={activeCard !== null}
+                  hideImages={hideImages}
+                  usersMap={usersMap}
+                  isLastColumn={isLastColumn}
+                  selectedCardIds={selectedCardIds}
+                  selectedColumnId={selectedColumnId}
+                  onCardSelect={handleCardSelect}
+                />
+              );
+            })}
 
-          {/* Quick add column button at the end - only in edit mode */}
-          {isEditMode && (
-            <button
-              onClick={handleAddColumn}
-              className="border-muted-foreground/20 bg-muted/20 text-muted-foreground active:border-muted-foreground/40 active:bg-muted/40 active:text-foreground hover:border-muted-foreground/40 hover:bg-muted/40 hover:text-foreground flex h-full w-[280px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-all sm:w-[320px]"
-            >
-              <Plus className="size-5 sm:size-6" />
-              <span className="text-xs font-medium sm:text-sm">Add Column</span>
-            </button>
-          )}
-        </div>
-      </SortableContext>
+            {/* Quick add column button at the end - only in edit mode */}
+            {isEditMode && (
+              <button
+                onClick={handleAddColumn}
+                className="border-muted-foreground/20 bg-muted/20 text-muted-foreground active:border-muted-foreground/40 active:bg-muted/40 active:text-foreground hover:border-muted-foreground/40 hover:bg-muted/40 hover:text-foreground flex h-full w-[280px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-all sm:w-[320px]"
+              >
+                <Plus className="size-5 sm:size-6" />
+                <span className="text-xs font-medium sm:text-sm">
+                  Add Column
+                </span>
+              </button>
+            )}
+          </div>
+        </SortableContext>
+      )}
 
       {/* Floating bulk edit bar - shown when cards are selected */}
       {selectedCardIds.size > 0 && (

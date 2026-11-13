@@ -3,8 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "~/lib/api";
 
 /**
- * Subscribes to `/api/kanban/events` and invalidates the cards query whenever
- * the server reports a change. EventSource reconnects on its own, so a server
+ * Subscribes to `/api/kanban/events` and invalidates the cards and projects
+ * queries whenever the server reports a change. EventSource reconnects on its own, so a server
  * restart heals without a page reload.
  */
 export function useKanbanRealtime() {
@@ -17,6 +17,7 @@ export function useKanbanRealtime() {
 
     const onChange = () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() });
     };
 
     source.addEventListener("change", onChange);

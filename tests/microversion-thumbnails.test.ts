@@ -151,6 +151,7 @@ async function release(
     microversionId: part.microversionId,
     rawThumbnailUrl: part.thumbnailInfo.sizes[0].href,
     processIds: "process-other",
+    projectId: "project-miscellaneous",
     quantityPerRobot: "1",
     quantityToMake: "1",
   }).forEach(([key, value]) => form.set(key, value));

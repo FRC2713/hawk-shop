@@ -80,6 +80,7 @@ export function PartMfgState({
     addCard.mutate({
       partNumber,
       processIds: formData.processIds,
+      projectId: formData.projectId,
       quantityPerRobot: formData.quantityPerRobot,
       quantityToMake: formData.quantityToMake,
       dueDate: formData.dueDate

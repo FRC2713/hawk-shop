@@ -1,0 +1,1 @@
+ALTER TABLE `slack_threads` ADD `file_id` text;

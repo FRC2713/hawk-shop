@@ -10,6 +10,7 @@ export { queryKeys } from "./keys";
 
 export * from "./equipment";
 export * from "./processes";
+export * from "./projects";
 export * from "./users";
 export * from "./kanban";
 export * from "./onshape";

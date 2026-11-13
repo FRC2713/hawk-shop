@@ -11,7 +11,10 @@ import {
   Box,
   ExternalLink,
   Hash,
+  FolderKanban,
 } from "lucide-react";
+import { toast } from "sonner";
+import { ProjectPicker } from "~/components/mfg/ProjectPicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "~/components/ui/button";
 import {
@@ -250,6 +253,18 @@ export function KanbanCardDetails({
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.columns() });
     },
   });
+  const projectMutation = useMutation({
+    mutationFn: (projectId: string) =>
+      updateKanbanCard(card.id, { project_id: projectId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() });
+    },
+    onError: (error) =>
+      toast.error("Failed to change project", {
+        description: <ErrorMessage error={error} cardId={card.id} />,
+      }),
+  });
 
   // Get creator from map instead of individual query
   const creator = card.created_by ? usersMap.get(card.created_by) : undefined;
@@ -432,6 +447,29 @@ export function KanbanCardDetails({
                           </p>
                         )}
                       </div>
+                    </td>
+                  </tr>
+
+                  {/* Project */}
+                  <tr>
+                    <td className="text-muted-foreground w-1/3 px-4 py-3 text-sm font-medium">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-muted flex size-6 items-center justify-center rounded-full">
+                          <FolderKanban className="text-foreground size-3.5" />
+                        </div>
+                        <label htmlFor={`project-${card.id}`}>Project</label>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <ProjectPicker
+                        id={`project-${card.id}`}
+                        value={card.project_id}
+                        onChange={(projectId) => {
+                          if (projectId !== card.project_id)
+                            projectMutation.mutate(projectId);
+                        }}
+                        disabled={projectMutation.isPending}
+                      />
                     </td>
                   </tr>
 

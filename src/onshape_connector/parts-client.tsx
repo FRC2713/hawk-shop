@@ -286,6 +286,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
         const data = await partActions.addCard({
           partNumber: eligiblePart.part.partNumber || "",
           processIds: formData.processIds,
+          projectId: formData.projectId!,
           quantityPerRobot: partQuantities.quantityPerRobot,
           quantityToMake: partQuantities.quantityToMake,
           dueDate: formData.dueDate

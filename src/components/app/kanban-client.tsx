@@ -1,5 +1,6 @@
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useUrlSearch } from "~/hooks/useUrlSearch";
+import { useUrlProjectView } from "~/hooks/useUrlProjectView";
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +35,7 @@ export function MfgKanbanClient({
   const [hasWarningsOnly, setHasWarningsOnly] = useState(false);
   const [sortByUser, setSortByUser] = useState(false);
   const { searchQuery, changeSearch, searchRef } = useUrlSearch();
+  const projectView = useUrlProjectView();
   const [originalConfig, setOriginalConfig] = useState<KanbanConfig | null>(
     null
   );
@@ -247,6 +249,12 @@ export function MfgKanbanClient({
               onProcessFilterChange={handleProcessFilterChange}
               sortByUser={sortByUser}
               onSortByUserChange={handleSortByUserChange}
+              selectedProjectIds={projectView.projectIds}
+              onProjectFilterChange={projectView.setProjectIds}
+              sortByProject={projectView.sortByProject}
+              onSortByProjectChange={projectView.setSortByProject}
+              groupByProject={projectView.groupByProject}
+              onGroupByProjectChange={projectView.setGroupByProject}
             />
           </div>
         </div>
@@ -265,6 +273,10 @@ export function MfgKanbanClient({
               hideImages={hideImages}
               processFilterIds={selectedProcessIds}
               sortByUser={sortByUser}
+              projectFilterIds={projectView.projectIds}
+              sortByProject={projectView.sortByProject}
+              // Column editing needs whole columns to drag.
+              groupByProject={projectView.groupByProject && !isEditMode}
               searchQuery={searchQuery}
               hasWarningsOnly={hasWarningsOnly}
               onAddColumn={isEditMode ? handleAddColumn : undefined}

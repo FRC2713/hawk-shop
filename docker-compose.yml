@@ -25,6 +25,7 @@ services:
       # --- Slack outbound integration (optional) --------------------------
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       SLACK_WORKSPACE_ID: ${SLACK_WORKSPACE_ID:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
 
       # --- Storage ---------------------------------------------------------
       # The SQLite file and uploaded images both live under here.

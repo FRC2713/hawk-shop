@@ -39,7 +39,18 @@ test("single and bulk dialogs list all issues and block only error parts", async
     page.setDefaultTimeout(3000);
     await page.route("**/api/**", (route) =>
       route.fulfill({
-        json: { processes: [{ id: "process-other", name: "Other" }] },
+        json: {
+          processes: [{ id: "process-other", name: "Other" }],
+          projects: [
+            {
+              id: "project-miscellaneous",
+              name: "Miscellaneous",
+              archived_at: null,
+              card_count: 0,
+              last_used_by_me_at: null,
+            },
+          ],
+        },
       })
     );
     await page.route("http://localhost:32199/", (route) =>
@@ -83,7 +94,19 @@ test("single and bulk dialogs list all issues and block only error parts", async
     await page
       .getByText("This part uses a placeholder material.", { exact: true })
       .waitFor();
-    await page.getByRole("combobox").click();
+    const submit = page.getByRole("button", {
+      name: "Release 1 Parts",
+      exact: true,
+    });
+    await submit.click();
+    await page
+      .getByText("Pick a project, or Miscellaneous for one-off parts", {
+        exact: true,
+      })
+      .waitFor();
+    await page.locator("#bulk-project").click();
+    await page.getByRole("option", { name: "Miscellaneous" }).click();
+    await page.getByRole("combobox").nth(1).click();
     await page.getByText("Other", { exact: true }).click();
     await page.keyboard.press("Escape");
     await page.locator("#qty-robot-warning").fill("4");
@@ -93,16 +116,16 @@ test("single and bulk dialogs list all issues and block only error parts", async
         exact: true,
       })
       .waitFor();
-    const submit = page.getByRole("button", {
-      name: "Release 1 Parts",
-      exact: true,
-    });
     assert.equal(await submit.isEnabled(), true);
     assert.equal(await page.locator("#qty-robot-blocked").isDisabled(), true);
     await submit.click();
     assert.deepEqual(
       await page.evaluate(() => (window as any).submitted.partQuantities),
       [{ partKey: "warning", quantityPerRobot: 4, quantityToMake: 2 }]
+    );
+    assert.equal(
+      await page.evaluate(() => (window as any).submitted.projectId),
+      "project-miscellaneous"
     );
   } finally {
     await browser.close();

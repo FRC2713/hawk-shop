@@ -2,7 +2,11 @@ import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireSessionActor } from "~/lib/sessionActor";
 import { requireAuth } from "~/lib/requireAuth";
-import { createCard, getCards } from "~/server/kanbanApi/cards";
+import {
+  createCard,
+  getCards,
+  UnknownProjectError,
+} from "~/server/kanbanApi/cards";
 
 export const GET: APIRoute = async ({ request }) => {
   const unauthorized = await requireAuth();
@@ -62,12 +66,15 @@ export const POST: APIRoute = async ({ request }) => {
         dueDate: body.dueDate,
         content: body.content,
         processIds: body.processIds || [],
+        projectId: body.projectId,
       },
       actor
     );
 
     return Response.json({ card: newCard }, { status: 201 });
   } catch (error) {
+    if (error instanceof UnknownProjectError)
+      return Response.json({ error: error.message }, { status: 400 });
     const errorId = logServerError("KANBAN CARDS", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to create card";

@@ -14,6 +14,11 @@ oauth_config:
       - users:read.email
       - files:write
 settings:
+  # Link buttons on release messages send Slack an interaction even though
+  # they only open a URL. Replace the host with Hawk Shop's public origin.
+  interactivity:
+    is_enabled: true
+    request_url: https://shop.example.org/api/slack/interactions
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false

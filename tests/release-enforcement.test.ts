@@ -45,6 +45,7 @@ async function release(partId: string, extra: Record<string, string> = {}) {
     partId,
     partNumber: "FORGED",
     processIds: "process-other",
+    projectId: "project-miscellaneous",
     quantityPerRobot: "4",
     quantityToMake: "2",
     ...extra,

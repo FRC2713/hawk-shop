@@ -19,6 +19,7 @@ export function buildCardSearchIndex(
     { value: (card) => userName(card.assignee) },
     { value: (card) => userName(card.created_by) },
     { value: (card) => card.machine },
+    { value: (card) => card.project?.name },
     {
       value: (card) => card.processes?.map((process) => process.name).join(" "),
     },
