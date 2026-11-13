@@ -46,7 +46,6 @@ async function release(partId: string, extra: Record<string, string> = {}) {
     partNumber: "FORGED",
     processIds: "process-other",
     projectId: "project-miscellaneous",
-    quantityPerRobot: "4",
     quantityToMake: "2",
     ...extra,
   }).forEach(([key, value]) => form.set(key, value));
@@ -123,12 +122,6 @@ test("server uses cached part facts for every blocker and allows warnings withou
         severity: "warning",
         message: "This part has no description.",
         fix: "Add a description in Onshape so the shop knows what it is.",
-      },
-      {
-        code: "quantity-below-per-robot",
-        severity: "warning",
-        message: "Quantity to make is below quantity per robot.",
-        fix: "Check the requested quantities, including any parts already in stock.",
       },
       {
         code: "placeholder-material",

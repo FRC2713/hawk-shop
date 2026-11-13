@@ -242,13 +242,10 @@ test(
         .click();
       await frame.getByRole("combobox", { name: "Project" }).click();
       await frame.getByRole("option", { name: "Miscellaneous" }).click();
-      await frame.getByLabel("Per robot", { exact: true }).fill("2");
-      await expect(
-        frame.getByText("2 × 2 robots", { exact: true })
-      ).toBeVisible();
+      await frame.getByLabel("Quantity to make", { exact: true }).fill("4");
       await frame
         .getByRole("dialog")
-        .getByRole("button", { name: "Release", exact: true })
+        .getByRole("button", { name: /^Release( \d+)?$/ })
         .click();
       await expect
         .poll(async () => {
@@ -256,7 +253,7 @@ test(
           try {
             return database
               .prepare(
-                "SELECT created_by, quantity_per_robot, quantity_to_make FROM kanban_cards WHERE title='IFRAME-001'"
+                "SELECT created_by, quantity_to_make FROM kanban_cards WHERE title='IFRAME-001'"
               )
               .get();
           } finally {
@@ -265,7 +262,6 @@ test(
         })
         .toEqual({
           created_by: "slack:TTEAM:UMEMBER",
-          quantity_per_robot: 2,
           quantity_to_make: 4,
         });
       await page.reload();

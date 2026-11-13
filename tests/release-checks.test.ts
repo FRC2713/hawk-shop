@@ -15,7 +15,6 @@ test("clean versioned part has no release issues", () => {
   assert.deepEqual(
     checkPartForRelease(clean, {
       instanceType: "v",
-      quantityPerRobot: 2,
       quantityToMake: 4,
     }),
     []
@@ -53,11 +52,6 @@ for (const [code, part, context] of [
     "placeholder-material",
     { ...clean, material: { displayName: "  UNKNOWN " } },
     {},
-  ],
-  [
-    "quantity-below-per-robot",
-    clean,
-    { quantityPerRobot: 4, quantityToMake: 2 },
   ],
   ["missing-description", { ...clean, description: "  " }, {}],
 ] as const) {
@@ -112,8 +106,7 @@ test("all issues are returned together, and absent quantities do not warn", () =
   assert.equal(isPartEligibleForRelease(undefined, undefined), false);
   assert.deepEqual(
     checkPartForRelease(clean, {
-      quantityPerRobot: 4,
-      quantityToMake: 4,
+      quantityToMake: 1,
       instanceType: "v",
     }),
     []

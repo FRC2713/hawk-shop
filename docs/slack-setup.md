@@ -37,7 +37,7 @@ See Slack's [Web API](https://docs.slack.dev/apis/web-api/), [email lookup](http
 
 Each released part gets its own channel message, and every later change to that part replies in the message's thread:
 
-- **Release:** the part name as a header, then two lines: the project, the submitter's mention and the due date; then the quantity to make (with quantity per robot), processes and machine. Unset values are left out, including a machine still set to "TBD". Release warnings follow, marked ⚠️ for a warning and 🛑 for an error. **Open in Hawk Shop** and **Open in Onshape** are buttons when the signing secret is set, text links otherwise. The part's thumbnail is attached when Hawk Shop has already stored it. The notification text reads `Project: part · make N`.
+- **Release:** the part name as a header, then two lines: the project, the submitter's mention and the due date; then the quantity to make, processes and machine. Unset values are left out, including a machine still set to "TBD". Release warnings follow, marked ⚠️ for a warning and 🛑 for an error. **Open in Hawk Shop** and **Open in Onshape** are buttons when the signing secret is set, text links otherwise. The part's thumbnail is attached when Hawk Shop has already stored it. The notification text reads `Project: part · make N`.
 - **Changing a card's project** edits the part's message in place. It posts no reply. A part without a message yet gets one, showing the current project, on its next status change.
 - **Every column move,** whoever made it, replies in the thread: `@submitter: Old → New · moved by Name`. Backward, intermediate and repeated moves all appear, in order.
 - **Deleting the card** replies "removed from the board" when the part has a message.

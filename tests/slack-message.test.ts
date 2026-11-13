@@ -13,7 +13,6 @@ const details = {
   quantity_to_make: 2,
   payload: {
     project: "Intake",
-    quantity_per_robot: 1,
     machine: "TBD",
     due_date: "2026-11-20",
     processes: ["3D Printing"],
@@ -32,7 +31,7 @@ test("the release message reads as two summary lines without placeholders", () =
   assert.equal(blocks[0].text.text, "torx drive 4x");
   assert.equal(
     blocks[1].text.text,
-    "*Intake*  ·  released by <@URACHEL>  ·  due Fri, Nov 20\n*Make 2* (1 per robot)  ·  3D Printing"
+    "*Intake*  ·  released by <@URACHEL>  ·  due Fri, Nov 20\n*Make 2*  ·  3D Printing"
   );
   assert.ok(!JSON.stringify(blocks).includes("TBD"), "TBD machine is unset");
   assert.ok(!JSON.stringify(blocks).includes("Status"));
@@ -93,25 +92,25 @@ test("the notification text names the project and quantity", () => {
   );
 });
 
-test("a real machine shows; a missing quantity keeps the per-robot count", () => {
+test("a real machine shows; an old snapshot's per-robot count does not", () => {
+  // Snapshots taken before per-robot quantities were removed still carry one.
+  const legacyPayload = {
+    ...details.payload,
+    quantity_per_robot: 1,
+    machine: "Bambu X1",
+    processes: [],
+    issues: [],
+    due_date: null,
+  };
   const blocks = partBlocks(
     row,
-    {
-      quantity_to_make: null,
-      payload: {
-        ...details.payload,
-        machine: "Bambu X1",
-        processes: [],
-        issues: [],
-        due_date: null,
-      },
-    },
+    { quantity_to_make: null, payload: legacyPayload },
     "Rachel",
     null
   ) as any[];
   assert.equal(
     blocks[1].text.text,
-    "*Intake*  ·  released by Rachel\n1 per robot  ·  Bambu X1"
+    "*Intake*  ·  released by Rachel\nBambu X1"
   );
   assert.equal(blocks.length, 3, "no warnings block");
 });

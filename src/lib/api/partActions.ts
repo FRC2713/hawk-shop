@@ -49,7 +49,6 @@ export interface AddCardInput {
   partNumber: string;
   processIds: string[];
   projectId: string;
-  quantityPerRobot: number | string;
   quantityToMake: number | string;
   /** ISO `yyyy-MM-dd`; omitted means no due date. */
   dueDate?: string;
@@ -65,7 +64,6 @@ export function addCard(input: AddCardInput): Promise<ActionResponse> {
   body.append("partNumber", input.partNumber);
   input.processIds.forEach((id) => body.append("processIds", id));
   body.append("projectId", input.projectId);
-  body.append("quantityPerRobot", String(input.quantityPerRobot));
   body.append("quantityToMake", String(input.quantityToMake));
   if (input.dueDate) body.append("dueDate", input.dueDate);
   if (input.onshapePart) {

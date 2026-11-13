@@ -340,7 +340,6 @@ test("card creation, assignment, updates, status, due dates, quantities and dele
   for (const [key, value] of Object.entries({
     action: "addCard",
     partNumber: "FIXTURE-PART",
-    quantityPerRobot: "2",
     quantityToMake: "6",
     processIds: "process-cnc-milling",
     projectId: "project-miscellaneous",
@@ -358,7 +357,6 @@ test("card creation, assignment, updates, status, due dates, quantities and dele
     (card: { title: string }) => card.title === "FIXTURE-PART"
   );
   assert.equal(part.quantity_to_make, 6);
-  assert.equal(part.quantity_per_robot, 2);
   assert.equal(part.created_by, identity["x-token-subject"]);
   assert.equal(
     (await call(`/api/kanban/cards/${id}`, { method: "DELETE" })).status,

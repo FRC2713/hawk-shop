@@ -153,7 +153,6 @@ function partDetails(row: PendingSlackNotification): {
     : undefined;
   return {
     payload: {
-      quantity_per_robot: card?.quantity_per_robot ?? null,
       machine: card?.machine ?? null,
       due_date: card?.due_date ?? null,
       processes,
@@ -224,14 +223,9 @@ export function partBlocks(
     due ? `due ${due}` : null,
   ];
   const quantity = present(quantity_to_make);
-  const perRobot = present(payload.quantity_per_robot);
   const machine = present(payload.machine);
   const work = [
-    quantity
-      ? `*Make ${escape(quantity, 20)}*${perRobot ? ` (${escape(perRobot, 20)} per robot)` : ""}`
-      : perRobot
-        ? `${escape(perRobot, 20)} per robot`
-        : null,
+    quantity ? `*Make ${escape(quantity, 20)}*` : null,
     payload.processes.length ? escape(payload.processes.join(", "), 300) : null,
     machine ? escape(machine, 200) : null,
   ];
