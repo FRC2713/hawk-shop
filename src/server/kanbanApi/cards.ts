@@ -208,7 +208,6 @@ export interface CreateCardInput {
   dueDate?: string;
   content?: string;
   processIds?: string[];
-  quantityPerRobot?: number;
   quantityToMake?: number;
   id?: string;
   onshapeDocumentId?: string;
@@ -265,7 +264,6 @@ export async function createCard(
             ? cardData.releaseIssues
             : null,
           created_by: actor.onshape_user_id,
-          quantity_per_robot: cardData.quantityPerRobot ?? null,
           quantity_to_make: cardData.quantityToMake ?? null,
           onshape_document_id: cardData.onshapeDocumentId ?? null,
           onshape_instance_type: cardData.onshapeInstanceType ?? null,
@@ -326,7 +324,6 @@ export async function updateCard(
     "machine",
     "due_date",
     "content",
-    "quantity_per_robot",
     "quantity_to_make",
     "project_id",
   ]);

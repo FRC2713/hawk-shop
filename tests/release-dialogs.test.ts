@@ -75,12 +75,26 @@ test("single and bulk dialogs list all issues and block only error parts", async
         exact: true,
       })
       .waitFor();
+    const quantity = page.getByRole("spinbutton", {
+      name: "Quantity to make",
+    });
+    assert.equal(await quantity.inputValue(), "1");
+    assert.equal(
+      await page.getByRole("button", { name: "Make one fewer" }).isDisabled(),
+      true
+    );
     assert.equal(
       await page
-        .getByRole("button", { name: "Release", exact: true })
+        .getByRole("button", { name: "Release 1", exact: true })
         .isDisabled(),
       true
     );
+    await page.getByRole("button", { name: "Make one more" }).click();
+    assert.equal(await quantity.inputValue(), "2");
+    await page
+      .getByRole("button", { name: "Release 2", exact: true })
+      .waitFor();
+    assert.equal(await page.getByText(/per robot/i).count(), 0);
     await show(true);
     await page
       .getByText("This part has no material.", { exact: true })
@@ -109,19 +123,23 @@ test("single and bulk dialogs list all issues and block only error parts", async
     await page.getByRole("combobox").nth(1).click();
     await page.getByText("Other", { exact: true }).click();
     await page.keyboard.press("Escape");
-    await page.locator("#qty-robot-warning").fill("4");
-    await page.locator("#qty-make-warning").fill("2");
-    await page
-      .getByText("Quantity to make is below quantity per robot.", {
-        exact: true,
-      })
-      .waitFor();
+    assert.equal(await page.locator("#qty-make-warning").inputValue(), "1");
+    assert.equal(await page.locator("#qty-make-blocked").inputValue(), "1");
+    assert.equal(await page.locator("#qty-make-blocked").isDisabled(), true);
+    assert.equal(await page.getByText(/per robot/i).count(), 0);
+    await page.locator("#qty-make-warning").fill("");
+    await submit.click();
+    await page.getByText("Make at least 1", { exact: true }).waitFor();
+    assert.equal(
+      await page.evaluate(() => (window as any).submitted),
+      undefined
+    );
+    await page.locator("#qty-make-warning").fill("5");
     assert.equal(await submit.isEnabled(), true);
-    assert.equal(await page.locator("#qty-robot-blocked").isDisabled(), true);
     await submit.click();
     assert.deepEqual(
       await page.evaluate(() => (window as any).submitted.partQuantities),
-      [{ partKey: "warning", quantityPerRobot: 4, quantityToMake: 2 }]
+      [{ partKey: "warning", quantityToMake: 5 }]
     );
     assert.equal(
       await page.evaluate(() => (window as any).submitted.projectId),

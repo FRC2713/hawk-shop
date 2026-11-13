@@ -227,7 +227,6 @@ export function KanbanCardDetails({
         card.assignee ||
         card.machine ||
         card.due_date ||
-        card.quantity_per_robot ||
         card.quantity_to_make ||
         (card.processes && card.processes.length > 0)
       ),
@@ -236,7 +235,6 @@ export function KanbanCardDetails({
       card.assignee,
       card.machine,
       card.due_date,
-      card.quantity_per_robot,
       card.quantity_to_make,
       card.processes,
     ]
@@ -559,26 +557,7 @@ export function KanbanCardDetails({
                     </td>
                   </tr>
 
-                  {/* Quantity per Robot */}
-                  {card.quantity_per_robot && (
-                    <tr>
-                      <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-muted flex size-6 items-center justify-center rounded-full">
-                            <Hash className="text-foreground size-3.5" />
-                          </div>
-                          <span>Quantity per Robot</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm">
-                          {card.quantity_per_robot}
-                        </span>
-                      </td>
-                    </tr>
-                  )}
-
-                  {/* Quantity to Make */}
+                  {/* Quantity to make */}
                   {card.quantity_to_make && (
                     <tr>
                       <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
@@ -586,7 +565,7 @@ export function KanbanCardDetails({
                           <div className="bg-muted flex size-6 items-center justify-center rounded-full">
                             <Hash className="text-foreground size-3.5" />
                           </div>
-                          <span>Quantity to Make</span>
+                          <span>Quantity to make</span>
                         </div>
                       </td>
                       <td className="px-4 py-3">

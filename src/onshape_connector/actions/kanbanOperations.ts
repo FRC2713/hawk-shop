@@ -37,16 +37,16 @@ const addCardSchema = z.object({
   projectId: z
     .string({ error: "A project is required" })
     .min(1, "A project is required"),
-  quantityPerRobot: z
-    .string()
-    .min(1, "Quantity per robot is required")
-    .transform((val) => Number(val))
-    .pipe(z.number().positive("Quantity per robot must be greater than 0")),
   quantityToMake: z
     .string()
     .min(1, "Quantity to make is required")
     .transform((val) => Number(val))
-    .pipe(z.number().positive("Quantity to make must be greater than 0")),
+    .pipe(
+      z
+        .number()
+        .int("Quantity to make must be a whole number")
+        .positive("Quantity to make must be greater than 0")
+    ),
   dueDate: z.string().optional(),
 });
 
@@ -121,7 +121,6 @@ export async function handleAddKanbanCard(
       "rawThumbnailUrl",
       "processIds",
       "projectId",
-      "quantityPerRobot",
       "quantityToMake",
       "dueDate",
     ],
@@ -136,10 +135,6 @@ export async function handleAddKanbanCard(
       : rawData.processIds
         ? [rawData.processIds]
         : [],
-    quantityPerRobot:
-      typeof rawData.quantityPerRobot === "string"
-        ? rawData.quantityPerRobot
-        : "",
     quantityToMake:
       typeof rawData.quantityToMake === "string" ? rawData.quantityToMake : "",
   };
@@ -211,7 +206,6 @@ export async function handleAddKanbanCard(
       const issues = checkPartForRelease(part, {
         matchingCard,
         instanceType: data.instanceType,
-        quantityPerRobot: data.quantityPerRobot,
         quantityToMake: data.quantityToMake,
       });
       const errors = issues.filter((issue) => issue.severity === "error");
@@ -257,7 +251,6 @@ export async function handleAddKanbanCard(
         machine: "TBD",
         processIds: data.processIds,
         projectId: data.projectId,
-        quantityPerRobot: data.quantityPerRobot,
         quantityToMake: data.quantityToMake,
         dueDate: data.dueDate,
         onshapeDocumentId: data.documentId,

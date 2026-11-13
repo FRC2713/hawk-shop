@@ -36,7 +36,6 @@ export interface BulkReleaseFormData {
   dueDate: Date | undefined;
   partQuantities: Array<{
     partKey: string;
-    quantityPerRobot: number | "";
     quantityToMake: number | "";
   }>;
 }
@@ -75,11 +74,7 @@ export function BulkReleaseDialog({
     partQuantities: [],
   });
   const checkedParts = selectedParts.map((selectedPart) => {
-    const quantities = formData.partQuantities.find(
-      (pq) => pq.partKey === selectedPart.partKey
-    );
     const issues = checkPartForRelease(selectedPart.part, {
-      ...quantities,
       matchingCard: selectedPart.matchingCard,
       instanceType: selectedPart.onshapeParams?.instanceType,
     });
@@ -95,10 +90,7 @@ export function BulkReleaseDialog({
   const [errors, setErrors] = useState<{
     processes?: string;
     project?: string;
-    partQuantities?: Record<
-      string,
-      { quantityPerRobot?: string; quantityToMake?: string }
-    >;
+    partQuantities?: Record<string, string>;
   }>({});
 
   // Initialize part quantities when dialog opens or selected parts change
@@ -108,12 +100,9 @@ export function BulkReleaseDialog({
         ...prev,
         partQuantities: selectedParts.map((sp) => ({
           partKey: sp.partKey,
-          quantityPerRobot:
-            prev.partQuantities.find((pq) => pq.partKey === sp.partKey)
-              ?.quantityPerRobot || "",
           quantityToMake:
             prev.partQuantities.find((pq) => pq.partKey === sp.partKey)
-              ?.quantityToMake || "",
+              ?.quantityToMake || 1,
         })),
       }));
     }
@@ -136,30 +125,20 @@ export function BulkReleaseDialog({
     }
   };
 
-  const handlePartQuantityChange = (
-    partKey: string,
-    field: "quantityPerRobot" | "quantityToMake",
-    value: number | ""
-  ) => {
+  const handleQuantityChange = (partKey: string, value: number | "") => {
     setFormData((prev) => ({
       ...prev,
       partQuantities: prev.partQuantities.map((pq) =>
-        pq.partKey === partKey ? { ...pq, [field]: value } : pq
+        pq.partKey === partKey ? { ...pq, quantityToMake: value } : pq
       ),
     }));
 
-    // Clear error for this field
-    if (errors.partQuantities?.[partKey]?.[field]) {
-      setErrors((prev) => ({
-        ...prev,
-        partQuantities: {
-          ...prev.partQuantities,
-          [partKey]: {
-            ...prev.partQuantities?.[partKey],
-            [field]: undefined,
-          },
-        },
-      }));
+    if (errors.partQuantities?.[partKey]) {
+      setErrors((prev) => {
+        const partQuantities = { ...prev.partQuantities };
+        delete partQuantities[partKey];
+        return { ...prev, partQuantities };
+      });
     }
   };
 
@@ -176,31 +155,19 @@ export function BulkReleaseDialog({
       newErrors.project = "Pick a project, or Miscellaneous for one-off parts";
     }
 
-    const partQuantityErrors: Record<
-      string,
-      { quantityPerRobot?: string; quantityToMake?: string }
-    > = {};
+    const partQuantityErrors: Record<string, string> = {};
 
     formData.partQuantities
       .filter((pq) =>
         releasableParts.some((part) => part.partKey === pq.partKey)
       )
       .forEach((pq) => {
-        const partErrors: {
-          quantityPerRobot?: string;
-          quantityToMake?: string;
-        } = {};
-
-        if (pq.quantityPerRobot === "" || pq.quantityPerRobot <= 0) {
-          partErrors.quantityPerRobot =
-            "Quantity per robot must be greater than 0";
-        }
-        if (pq.quantityToMake === "" || pq.quantityToMake <= 0) {
-          partErrors.quantityToMake = "Quantity to make must be greater than 0";
-        }
-
-        if (Object.keys(partErrors).length > 0) {
-          partQuantityErrors[pq.partKey] = partErrors;
+        if (
+          pq.quantityToMake === "" ||
+          !Number.isInteger(pq.quantityToMake) ||
+          pq.quantityToMake < 1
+        ) {
+          partQuantityErrors[pq.partKey] = "Make at least 1";
         }
       });
 
@@ -244,11 +211,15 @@ export function BulkReleaseDialog({
             Release {selectedParts.length} Parts to Manufacturing
           </DialogTitle>
           <DialogDescription>
-            Set the project, processes and due date for every part, then specify
-            quantities for each part.
+            Set the project, processes and due date for every part, then how
+            many of each part to make.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="max-h-[60vh] flex-1 overflow-y-auto pr-4">
             <div className="space-y-4 py-4">
               {/* Common Fields */}
@@ -402,21 +373,21 @@ export function BulkReleaseDialog({
 
               {/* Part Quantities */}
               <div className="space-y-4">
-                <Label>Part Quantities</Label>
-                <div className="space-y-4">
+                <Label>Parts</Label>
+                <div className="space-y-2">
                   {checkedParts.map((selectedPart) => {
                     const partQuantity = formData.partQuantities.find(
                       (pq) => pq.partKey === selectedPart.partKey
                     );
-                    const partErrors =
+                    const partError =
                       errors.partQuantities?.[selectedPart.partKey];
 
                     return (
                       <div
                         key={selectedPart.partKey}
-                        className="space-y-3 rounded-lg border p-4"
+                        className="space-y-2 rounded-lg border p-3"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                           {selectedPart.thumbnailUrl && (
                             <img
                               src={onshapeThumbnailSrc(
@@ -431,7 +402,7 @@ export function BulkReleaseDialog({
                               className="h-12 w-12 rounded object-cover"
                             />
                           )}
-                          <div className="min-w-0 flex-1">
+                          <div className="min-w-0 flex-[1_1_160px]">
                             <p className="truncate font-medium">
                               {selectedPart.part.name ||
                                 `Part ${selectedPart.partId}`}
@@ -442,74 +413,49 @@ export function BulkReleaseDialog({
                               </p>
                             )}
                           </div>
-                        </div>
-                        <ReleaseIssues issues={selectedPart.issues} />
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-2">
+                          <div className="flex flex-col gap-1">
                             <Label
-                              htmlFor={`qty-robot-${selectedPart.partKey}`}
+                              htmlFor={`qty-make-${selectedPart.partKey}`}
+                              className="text-xs"
                             >
-                              Quantity per Robot{" "}
-                              <span className="text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id={`qty-robot-${selectedPart.partKey}`}
-                              type="number"
-                              min="1"
-                              value={partQuantity?.quantityPerRobot || ""}
-                              onChange={(e) => {
-                                const value =
-                                  e.target.value === ""
-                                    ? ""
-                                    : Number(e.target.value);
-                                handlePartQuantityChange(
-                                  selectedPart.partKey,
-                                  "quantityPerRobot",
-                                  value
-                                );
-                              }}
-                              placeholder="Enter quantity"
-                              aria-invalid={!!partErrors?.quantityPerRobot}
-                              disabled={isSubmitting || selectedPart.blocked}
-                            />
-                            {partErrors?.quantityPerRobot && (
-                              <p className="text-destructive text-xs">
-                                {partErrors.quantityPerRobot}
-                              </p>
-                            )}
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor={`qty-make-${selectedPart.partKey}`}>
-                              Quantity to Make{" "}
-                              <span className="text-destructive">*</span>
+                              Quantity to make
                             </Label>
                             <Input
                               id={`qty-make-${selectedPart.partKey}`}
                               type="number"
+                              inputMode="numeric"
                               min="1"
-                              value={partQuantity?.quantityToMake || ""}
-                              onChange={(e) => {
-                                const value =
+                              step="1"
+                              required
+                              value={partQuantity?.quantityToMake ?? ""}
+                              onChange={(e) =>
+                                handleQuantityChange(
+                                  selectedPart.partKey,
                                   e.target.value === ""
                                     ? ""
-                                    : Number(e.target.value);
-                                handlePartQuantityChange(
-                                  selectedPart.partKey,
-                                  "quantityToMake",
-                                  value
-                                );
-                              }}
-                              placeholder="Enter quantity"
-                              aria-invalid={!!partErrors?.quantityToMake}
+                                    : Number(e.target.value)
+                                )
+                              }
+                              aria-invalid={!!partError}
+                              aria-describedby={
+                                partError
+                                  ? `qty-make-${selectedPart.partKey}-error`
+                                  : undefined
+                              }
                               disabled={isSubmitting || selectedPart.blocked}
+                              className="w-24"
                             />
-                            {partErrors?.quantityToMake && (
-                              <p className="text-destructive text-xs">
-                                {partErrors.quantityToMake}
+                            {partError && (
+                              <p
+                                id={`qty-make-${selectedPart.partKey}-error`}
+                                className="text-destructive text-xs"
+                              >
+                                {partError}
                               </p>
                             )}
                           </div>
                         </div>
+                        <ReleaseIssues issues={selectedPart.issues} />
                       </div>
                     );
                   })}

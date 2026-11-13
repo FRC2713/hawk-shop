@@ -25,8 +25,11 @@ export type KanbanColumnConfig = KanbanColumn;
  */
 const now = () => new Date().toISOString();
 
+/**
+ * Snapshots taken before per-robot quantities were removed also carry
+ * `quantity_per_robot`; nothing reads it.
+ */
 export type SlackReleasePayload = {
-  quantity_per_robot: number | null;
   machine: string | null;
   due_date: string | null;
   processes: string[];
@@ -108,6 +111,8 @@ export const kanbanCards = sqliteTable(
       ReleaseIssue[]
     >(),
     created_by: text("created_by"),
+    // Legacy: no longer written or read. Kept so the table matches existing
+    // databases; old rows keep their value.
     quantity_per_robot: integer("quantity_per_robot"),
     quantity_to_make: integer("quantity_to_make"),
     onshape_document_id: text("onshape_document_id"),

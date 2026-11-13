@@ -100,7 +100,6 @@ export function captureSlackRelease(
     kind: "release",
     old_column_id: card.column_id,
     payload: {
-      quantity_per_robot: card.quantity_per_robot,
       machine: card.machine,
       due_date: card.due_date,
       processes: processNames,

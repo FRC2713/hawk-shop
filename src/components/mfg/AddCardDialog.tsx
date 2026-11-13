@@ -20,14 +20,12 @@ import {
 } from "~/components/ui/dialog";
 import { ProcessChips } from "~/components/mfg/processes/ProcessChips";
 import { equipmentQuery, needsMaintenance, processesQuery } from "~/lib/api";
-import { ROBOT_COUNT, quantityToMake } from "~/lib/robots";
 import { cn } from "~/lib/utils";
 
 export interface AddCardFormData {
   processIds: string[];
   projectId: string;
-  quantityPerRobot: number | "";
-  quantityToMake: number | "";
+  quantityToMake: number;
   dueDate: Date | undefined;
 }
 
@@ -45,6 +43,8 @@ interface AddCardDialogProps {
   isSubmitting?: boolean;
 }
 
+const MIN_QUANTITY = 1;
+
 function swatch(part?: BtPartMetadataInfo) {
   const color = part?.appearance?.color;
   if (
@@ -56,33 +56,33 @@ function swatch(part?: BtPartMetadataInfo) {
   return `rgb(${color.red} ${color.green} ${color.blue})`;
 }
 
-function Stepper({
+function QuantityStepper({
   id,
-  label,
   value,
-  min,
   onChange,
   disabled,
+  invalid,
 }: {
   id: string;
-  label: string;
-  value: number;
-  min: number;
-  onChange: (value: number) => void;
+  value: number | "";
+  onChange: (value: number | "") => void;
   disabled?: boolean;
+  invalid?: boolean;
 }) {
-  const set = (next: number) => onChange(Math.max(min, next));
+  const current = value === "" ? MIN_QUANTITY : value;
+  const set = (next: number) => onChange(Math.max(MIN_QUANTITY, next));
   return (
-    <div className="flex flex-[1_1_150px] flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-semibold">
-        {label}
+    <div className="flex flex-[0_1_auto] flex-col gap-1">
+      <label htmlFor={id} className="font-heading text-sm font-semibold">
+        Quantity to make
       </label>
       <div className="flex h-9">
         <button
           type="button"
-          aria-label={`Decrease ${label.toLowerCase()}`}
-          onClick={() => set(value - 1)}
-          disabled={disabled || value <= min}
+          aria-label="Make one fewer"
+          aria-controls={id}
+          onClick={() => set(current - 1)}
+          disabled={disabled || current <= MIN_QUANTITY}
           className="border-input bg-card hover:bg-muted focus-visible:ring-ring/50 flex w-9 items-center justify-center rounded-l-md border outline-none focus-visible:ring-[3px] disabled:opacity-50"
         >
           <Minus className="size-4" aria-hidden="true" />
@@ -91,25 +91,37 @@ function Stepper({
           id={id}
           type="number"
           inputMode="numeric"
-          min={min}
+          min={MIN_QUANTITY}
+          step={1}
+          required
           value={value}
           disabled={disabled}
+          aria-invalid={invalid || undefined}
+          aria-describedby={`${id}-help`}
           onChange={(event) => {
+            if (event.target.value === "") return onChange("");
             const parsed = parseInt(event.target.value, 10);
-            set(Number.isNaN(parsed) ? min : parsed);
+            if (!Number.isNaN(parsed)) set(parsed);
+          }}
+          onBlur={() => {
+            if (value === "") onChange(MIN_QUANTITY);
           }}
           className="border-input bg-card brand-figures focus-visible:ring-ring/50 w-16 [appearance:textfield] border-y text-center text-sm font-bold outline-none focus-visible:ring-[3px] [&::-webkit-inner-spin-button]:appearance-none"
         />
         <button
           type="button"
-          aria-label={`Increase ${label.toLowerCase()}`}
-          onClick={() => set(value + 1)}
+          aria-label="Make one more"
+          aria-controls={id}
+          onClick={() => set(current + 1)}
           disabled={disabled}
           className="border-input bg-card hover:bg-muted focus-visible:ring-ring/50 flex w-9 items-center justify-center rounded-r-md border outline-none focus-visible:ring-[3px] disabled:opacity-50"
         >
           <Plus className="size-4" aria-hidden="true" />
         </button>
       </div>
+      <span id={`${id}-help`} className="text-muted-foreground text-xs">
+        Total, spares included
+      </span>
     </div>
   );
 }
@@ -129,8 +141,7 @@ export function AddCardDialog({
   const ids = useId();
   const [processIds, setProcessIds] = useState<string[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [perRobot, setPerRobot] = useState(1);
-  const [spares, setSpares] = useState(0);
+  const [quantity, setQuantity] = useState<number | "">(MIN_QUANTITY);
   const [due, setDue] = useState("");
   const [tried, setTried] = useState(false);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
@@ -139,8 +150,7 @@ export function AddCardDialog({
     if (!open) return;
     setProcessIds([]);
     setProjectId(null);
-    setPerRobot(1);
-    setSpares(0);
+    setQuantity(MIN_QUANTITY);
     setDue("");
     setTried(false);
   }, [open]);
@@ -151,16 +161,11 @@ export function AddCardDialog({
     enabled: open,
   });
 
-  const toMake = quantityToMake(perRobot, spares);
-  const issues = checkPartForRelease(part, {
-    matchingCard,
-    instanceType,
-    quantityPerRobot: perRobot,
-    quantityToMake: toMake,
-  });
+  const issues = checkPartForRelease(part, { matchingCard, instanceType });
   const blocked = issues.some((issue) => issue.severity === "error");
   const noProcess = processIds.length === 0;
   const noProject = !projectId;
+  const noQuantity = quantity === "";
 
   const capable = useMemo(
     () =>
@@ -198,12 +203,11 @@ export function AddCardDialog({
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (noProcess || noProject || blocked || isSubmitting) return;
+    if (noProcess || noProject || noQuantity || blocked || isSubmitting) return;
     onSubmit({
       processIds,
       projectId,
-      quantityPerRobot: perRobot,
-      quantityToMake: toMake,
+      quantityToMake: quantity,
       dueDate: due ? parseISO(due) : undefined,
     });
   };
@@ -276,31 +280,40 @@ export function AddCardDialog({
           <div className="flex flex-col gap-5 px-6 py-5">
             <ReleaseIssues issues={issues} />
 
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor={`${ids}-project`}
-                className="font-heading text-sm font-semibold"
-              >
-                Project
-              </label>
-              <ProjectPicker
-                id={`${ids}-project`}
-                value={projectId}
-                onChange={setProjectId}
-                disabled={isSubmitting}
-                invalid={tried && noProject}
-                describedBy={
-                  tried && noProject ? `${ids}-project-error` : undefined
-                }
-              />
-              {tried && noProject && (
-                <span
-                  id={`${ids}-project-error`}
-                  className="text-xs text-[var(--emphasis)]"
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="flex min-w-0 flex-[1_1_240px] flex-col gap-1">
+                <label
+                  htmlFor={`${ids}-project`}
+                  className="font-heading text-sm font-semibold"
                 >
-                  Pick a project, or Miscellaneous for a one-off part.
-                </span>
-              )}
+                  Project
+                </label>
+                <ProjectPicker
+                  id={`${ids}-project`}
+                  value={projectId}
+                  onChange={setProjectId}
+                  disabled={isSubmitting}
+                  invalid={tried && noProject}
+                  describedBy={
+                    tried && noProject ? `${ids}-project-error` : undefined
+                  }
+                />
+                {tried && noProject && (
+                  <span
+                    id={`${ids}-project-error`}
+                    className="text-xs text-[var(--emphasis)]"
+                  >
+                    Pick a project, or Miscellaneous for a one-off part.
+                  </span>
+                )}
+              </div>
+              <QuantityStepper
+                id={`${ids}-quantity`}
+                value={quantity}
+                onChange={setQuantity}
+                disabled={isSubmitting}
+                invalid={tried && noQuantity}
+              />
             </div>
 
             <fieldset className="flex flex-col gap-2">
@@ -332,40 +345,6 @@ export function AddCardDialog({
                 </p>
               )}
             </fieldset>
-
-            <div className="flex flex-wrap items-end gap-4">
-              <Stepper
-                id={`${ids}-per-robot`}
-                label="Per robot"
-                value={perRobot}
-                min={1}
-                onChange={setPerRobot}
-                disabled={isSubmitting}
-              />
-              <Stepper
-                id={`${ids}-spares`}
-                label="Spares"
-                value={spares}
-                min={0}
-                onChange={setSpares}
-                disabled={isSubmitting}
-              />
-              <div className="flex flex-[1_1_120px] flex-col gap-1">
-                <span className="font-heading text-sm font-semibold">
-                  To make
-                </span>
-                <div aria-live="polite" className="flex min-h-9 flex-col">
-                  <span className="brand-figures text-base leading-5 font-bold">
-                    {toMake}
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {perRobot} × {ROBOT_COUNT} robots
-                    {spares > 0 &&
-                      ` + ${spares} ${spares === 1 ? "spare" : "spares"}`}
-                  </span>
-                </div>
-              </div>
-            </div>
 
             <div className="flex flex-col gap-1">
               <label htmlFor={`${ids}-due`} className="text-sm font-semibold">
@@ -422,7 +401,11 @@ export function AddCardDialog({
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting || blocked}>
-                {isSubmitting ? "Releasing..." : "Release"}
+                {isSubmitting
+                  ? "Releasing..."
+                  : quantity === ""
+                    ? "Release"
+                    : `Release ${quantity}`}
               </Button>
             </div>
           </DialogFooter>

@@ -23,7 +23,6 @@ export interface KanbanCardUpdate {
   column_id?: string;
   machine?: string | null;
   due_date?: string | null;
-  quantity_per_robot?: number;
   quantity_to_make?: number;
   project_id?: string;
   processIds?: string[];

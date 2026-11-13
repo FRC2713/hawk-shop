@@ -81,7 +81,6 @@ export function PartMfgState({
       partNumber,
       processIds: formData.processIds,
       projectId: formData.projectId,
-      quantityPerRobot: formData.quantityPerRobot,
       quantityToMake: formData.quantityToMake,
       dueDate: formData.dueDate
         ? format(formData.dueDate, "yyyy-MM-dd")
@@ -221,17 +220,7 @@ export function PartMfgState({
           </tr>
           <tr>
             <td className="text-muted-foreground py-1.5 pr-4 font-medium">
-              Quantity per Robot
-            </td>
-            <td className="py-1.5">
-              <Badge variant="secondary">
-                {matchingCard?.quantity_per_robot || "Not Set"}
-              </Badge>
-            </td>
-          </tr>
-          <tr>
-            <td className="text-muted-foreground py-1.5 pr-4 font-medium">
-              Quantity to Make
+              Quantity to make
             </td>
             <td className="py-1.5">
               <Badge variant="secondary">

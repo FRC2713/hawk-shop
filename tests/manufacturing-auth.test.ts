@@ -93,7 +93,6 @@ test("manufacturing works with Suite alone and does not fetch Onshape", async (t
     partNumber: "SUITE-ONLY",
     processIds: "process-cnc-milling",
     projectId: "project-miscellaneous",
-    quantityPerRobot: "2",
     quantityToMake: "4",
   }))
     form.set(key, value);

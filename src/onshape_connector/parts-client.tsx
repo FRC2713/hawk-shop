@@ -266,11 +266,8 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
     // Process each eligible part
     for (const eligiblePart of selectedPartsInfo.eligibleParts) {
       const partQuantities = formData.partQuantities.find(
-        (pq: {
-          partKey: string;
-          quantityPerRobot: number | "";
-          quantityToMake: number | "";
-        }) => pq.partKey === eligiblePart.partKey
+        (pq: { partKey: string; quantityToMake: number | "" }) =>
+          pq.partKey === eligiblePart.partKey
       );
 
       if (!partQuantities) {
@@ -287,7 +284,6 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
           partNumber: eligiblePart.part.partNumber || "",
           processIds: formData.processIds,
           projectId: formData.projectId!,
-          quantityPerRobot: partQuantities.quantityPerRobot,
           quantityToMake: partQuantities.quantityToMake,
           dueDate: formData.dueDate
             ? format(formData.dueDate, "yyyy-MM-dd")

@@ -10,7 +10,6 @@ export interface ReleaseIssue {
 
 export interface ReleaseCheckContext {
   matchingCard?: Pick<KanbanCardRow, "id">;
-  quantityPerRobot?: number | "";
   quantityToMake?: number | "";
   instanceType?: string;
   /** Override the default placeholder names, matched case-insensitively. */
@@ -58,18 +57,6 @@ const releaseRules: ReleaseRule[] = [
           severity: "warning",
           message: "This part has no description.",
           fix: "Add a description in Onshape so the shop knows what it is.",
-        }
-      : undefined,
-
-  (_, context) =>
-    typeof context.quantityPerRobot === "number" &&
-    typeof context.quantityToMake === "number" &&
-    context.quantityToMake < context.quantityPerRobot
-      ? {
-          code: "quantity-below-per-robot",
-          severity: "warning",
-          message: "Quantity to make is below quantity per robot.",
-          fix: "Check the requested quantities, including any parts already in stock.",
         }
       : undefined,
 
