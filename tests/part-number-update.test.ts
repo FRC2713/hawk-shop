@@ -33,7 +33,7 @@ const metadata = (value = "old") => ({
 async function update(data = form()) {
   const request = sessionRequest("editor");
   const response = await inRequest(request, async () =>
-    Response.json(await handlePartNumberUpdate(data, request))
+    Response.json(await handlePartNumberUpdate(data))
   );
   return response.json();
 }

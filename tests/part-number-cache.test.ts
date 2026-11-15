@@ -38,7 +38,7 @@ async function edit(documentId: string) {
   const request = sessionRequest("editor");
   return (
     await inRequest(request, async () =>
-      Response.json(await handlePartNumberUpdate(form, request))
+      Response.json(await handlePartNumberUpdate(form))
     )
   ).json();
 }

@@ -86,5 +86,3 @@ export const db = globalForDb.__hawkShopDb ?? openDatabase();
 if (process.env.NODE_ENV !== "production") {
   globalForDb.__hawkShopDb = db;
 }
-
-export { schema };

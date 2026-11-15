@@ -5,7 +5,6 @@
  * a payload shape, and a query key each exist in exactly one place. Everything
  * under this directory is client-safe — no `server-only` imports.
  */
-export { ApiError, apiFetch, searchParams } from "./client";
 export { queryKeys } from "./keys";
 
 export * from "./equipment";

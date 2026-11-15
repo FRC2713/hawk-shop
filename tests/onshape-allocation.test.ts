@@ -93,7 +93,7 @@ test("a part-number release answers a 402 inline with the same message", async (
     data.set(key, value);
   const request = sessionRequest("editor");
   const response = await inRequest(request, async () =>
-    Response.json(await handlePartNumberUpdate(data, request))
+    Response.json(await handlePartNumberUpdate(data))
   );
   const { errorId, ...payload } = await response.json();
   assert.deepEqual(payload, {

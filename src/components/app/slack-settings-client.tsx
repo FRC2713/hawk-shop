@@ -35,10 +35,7 @@ export function SlackSettingsClient() {
   const save = useMutation({
     onSettled: refresh,
     mutationFn: saveSlackSettings,
-    onSuccess: async () => {
-      setNotice("Slack settings saved.");
-      await client.invalidateQueries({ queryKey: queryKeys.slack.settings() });
-    },
+    onSuccess: () => setNotice("Slack settings saved."),
   });
   const test = useMutation({
     onSettled: refresh,

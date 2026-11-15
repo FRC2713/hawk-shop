@@ -178,8 +178,8 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 
 - **The parts list is either a bare array or `{ parts: [...] }`.**
   - Label: unverified
-  - Source: defensive handling in the hand-written `OnshapeClient.getParts`
-  - Relied on by: `OnshapeClient.getParts`
+  - Source: defensive handling in a hand-written Onshape client, since removed
+  - Relied on by: nothing
 
 - **Part metadata is read with `getWMVEPMetadata` and written with a body of `jsonType: "metadata-part"` and a `properties` array of `{ propertyId, value }`.** The part-number property is found by name ("Part number") in the read.
   - Label: documented
@@ -212,8 +212,8 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
 
 - **Part thumbnails can also be fetched from `/api/v10/thumbnails/d/{did}/{wvm}/{wvmid}/e/{eid}/p/{pid}?outputFormat=PNG&pixelSize=300`.** That part-level path is not in the OpenAPI spec the generated client was built from, which lists element and document thumbnails only.
   - Label: unverified
-  - Source: URL built by `uploadOnshapeThumbnail` (which has no caller) and the connector's release action fallback
-  - Relied on by: `uploadOnshapeThumbnail`, the release action's fallback thumbnail URL
+  - Source: the connector's release action fallback
+  - Relied on by: the release action's fallback thumbnail URL
 
 - **The thumbnail hrefs in the parts list point at `cad.onshape.com`, and an API-key-signed GET returns the PNG.** An unsigned request was not tried.
   - Label: observed
@@ -228,7 +228,7 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
 - **A thumbnail image answers 200 to `Accept: */*` and to `Accept: image/png` (same bytes and ETag), and 406 "Request not acceptable." to `Accept: application/json`.** The signer sends `application/json` unless the caller sets an `Accept`, so image fetches must set one. The image response carries `Cache-Control: must-revalidate,no-cache,no-store` and an `ETag`.
   - Label: observed
   - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
-  - Relied on by: `/api/onshape/thumbnail` and `uploadOnshapeThumbnail` (send `Accept: */*`)
+  - Relied on by: `/api/onshape/thumbnail` (sends `Accept: */*`)
 
 - **A thumbnail fetch counts against the allocation like any other API call.** It follows from "API-key calls that return 2xx or 3xx count", but no one has seen it on Onshape's usage page. #55 records observations here.
   - Label: unverified
@@ -395,8 +395,8 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
 
 - **Error bodies carry the message in `message`, `error` or `errorMessage`.**
   - Label: unverified
-  - Source: defensive handling in `OnshapeClient`
-  - Relied on by: `OnshapeClient`
+  - Source: defensive handling in a hand-written Onshape client, since removed; `extractErrorDetails` reads `error` and then `message`
+  - Relied on by: `extractErrorDetails` (connector error messages)
 
 Hawk Shop's own codes are separate: a missing key pair returns 409 from Hawk Shop (`OnshapeConfigurationError`), and a Suite sign-in failure returns 401. Neither comes from Onshape.
 

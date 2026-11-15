@@ -69,9 +69,8 @@ Onshape access uses one server-side API key pair (`ONSHAPE_ACCESS_KEY`, `ONSHAPE
 
 `src/server/request-context.ts` uses AsyncLocalStorage so server helpers such as `requireAuth()` and `getSessionActor()` read the current request's verified identity.
 
-### Onshape API — two clients coexist
+### Onshape API client
 
-- `src/lib/onshapeApi/client.ts` — hand-written `OnshapeClient` class (documents, parts, session info, thumbnails).
 - `src/lib/onshapeApi/generated/` — `@hey-api/openapi-ts` output, **generated, never edit by hand**. Reach it through `generated-wrapper.ts` (server) or `generated-wrapper-client.ts` (browser), which inject the auth callback. Types like `BtPartMetadataInfo` come from here.
 
 ### Data fetching pattern

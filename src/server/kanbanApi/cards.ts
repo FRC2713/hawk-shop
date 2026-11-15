@@ -401,27 +401,6 @@ export async function deleteCard(
 }
 
 /**
- * Get processes for a kanban card
- */
-export async function getCardProcesses(cardId: string): Promise<ProcessRow[]> {
-  try {
-    const rows = await db
-      .select({ process: processesTable })
-      .from(kanbanCardProcesses)
-      .innerJoin(
-        processesTable,
-        eq(kanbanCardProcesses.process_id, processesTable.id)
-      )
-      .where(eq(kanbanCardProcesses.card_id, cardId));
-
-    return rows.map((row) => row.process);
-  } catch (error) {
-    console.error("[KANBAN CARDS] Error fetching card processes:", error);
-    throw error;
-  }
-}
-
-/**
  * Set processes for a kanban card (replaces existing)
  */
 export async function setCardProcesses(

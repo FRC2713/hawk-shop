@@ -44,11 +44,7 @@ export const POST: APIRoute = async ({ request }) => {
 
       // Return as JSON Response
       const status = result.success ? 200 : 400;
-      const headers: HeadersInit = {};
-      if (result.headers) {
-        headers["Set-Cookie"] = result.headers["Set-Cookie"];
-      }
-      return Response.json(result, { status, headers });
+      return Response.json(result, { status });
     } catch (error: unknown) {
       const errorResponse = createErrorResponse(
         error,
@@ -59,11 +55,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   // Handle part number update (default/fallback)
-  const result = await handlePartNumberUpdate(formData, request);
+  const result = await handlePartNumberUpdate(formData);
   const status = result.success ? 200 : 400;
-  const headers: HeadersInit = {};
-  if (result.headers) {
-    headers["Set-Cookie"] = result.headers["Set-Cookie"];
-  }
-  return Response.json(result, { status, headers });
+  return Response.json(result, { status });
 };

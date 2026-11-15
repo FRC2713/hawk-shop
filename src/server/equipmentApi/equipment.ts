@@ -292,29 +292,6 @@ export async function deleteEquipment(
 }
 
 /**
- * Get processes for an equipment item
- */
-export async function getEquipmentProcesses(
-  equipmentId: string
-): Promise<ProcessRow[]> {
-  try {
-    const rows = await db
-      .select({ process: processesTable })
-      .from(equipmentProcesses)
-      .innerJoin(
-        processesTable,
-        eq(equipmentProcesses.process_id, processesTable.id)
-      )
-      .where(eq(equipmentProcesses.equipment_id, equipmentId));
-
-    return rows.map((row) => row.process);
-  } catch (error) {
-    console.error("[EQUIPMENT] Error fetching equipment processes:", error);
-    throw error;
-  }
-}
-
-/**
  * Set processes for an equipment item (replaces existing)
  */
 export async function setEquipmentProcesses(

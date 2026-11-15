@@ -213,16 +213,7 @@ h2 {
   }
 }
 
-.nav-api-short {
-  display: none;
-}
 @media (max-width: 600px) {
-  .app-navigation .nav-api-label {
-    display: none;
-  }
-  .app-navigation .nav-api-short {
-    display: inline;
-  }
   .app-header > div {
     flex-wrap: nowrap;
   }

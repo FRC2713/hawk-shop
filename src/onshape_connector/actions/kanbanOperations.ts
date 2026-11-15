@@ -7,7 +7,6 @@ import {
   getCards,
   UnknownProjectError,
 } from "~/server/kanbanApi/cards";
-import { logger } from "~/lib/logger";
 import type { SessionActor } from "~/lib/sessionActor";
 import type { ActionResponse } from "../utils/types";
 import {

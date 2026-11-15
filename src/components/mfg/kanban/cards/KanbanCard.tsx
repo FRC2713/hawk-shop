@@ -19,22 +19,6 @@ import { KanbanCardDetails } from "./KanbanCardDetails";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 
 /**
- * Format a date string for display
- * Returns "Invalid date" for invalid date strings
- */
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) {
-    return "Invalid date";
-  }
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-/**
  * Format relative time (e.g., "2 days ago", "in 3 days")
  */
 function formatRelativeTime(dateString: string): string {

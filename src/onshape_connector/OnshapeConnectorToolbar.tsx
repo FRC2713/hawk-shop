@@ -16,15 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { Label } from "~/components/ui/label";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn } from "~/lib/utils";
-import { Separator } from "~/components/ui/separator";
 import type { SortBy, SortDirection } from "./hooks/usePartsSort";
-
-// Re-export types for convenience
-export type { SortBy, SortDirection };
 
 interface OnshapeConnectorToolbarProps {
   searchQuery: string;

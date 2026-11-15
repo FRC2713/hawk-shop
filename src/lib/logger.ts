@@ -12,7 +12,7 @@ const isDev = process.env.NODE_ENV === "development";
 /**
  * Format a log message with timestamp and level
  */
-function formatMessage(level: LogLevel, args: unknown[]): string {
+function formatMessage(level: LogLevel): string {
   const timestamp = new Date().toISOString();
   const prefix = `[${timestamp}] [${level.toUpperCase()}]`;
   return prefix;
@@ -28,7 +28,7 @@ export const logger = {
    */
   debug: (...args: unknown[]): void => {
     if (isDev) {
-      console.log(formatMessage("debug", args), ...args);
+      console.log(formatMessage("debug"), ...args);
     }
   },
 
@@ -38,7 +38,7 @@ export const logger = {
    */
   info: (...args: unknown[]): void => {
     if (isDev) {
-      console.info(formatMessage("info", args), ...args);
+      console.info(formatMessage("info"), ...args);
     }
   },
 
@@ -47,7 +47,7 @@ export const logger = {
    * Use for potentially problematic situations
    */
   warn: (...args: unknown[]): void => {
-    console.warn(formatMessage("warn", args), ...args);
+    console.warn(formatMessage("warn"), ...args);
   },
 
   /**
@@ -55,8 +55,6 @@ export const logger = {
    * Use for error conditions
    */
   error: (...args: unknown[]): void => {
-    console.error(formatMessage("error", args), ...args);
+    console.error(formatMessage("error"), ...args);
   },
 };
-
-export default logger;

@@ -63,18 +63,6 @@ export async function upsertUser(
 }
 
 /**
- * Get user by Onshape user ID
- * @param onshapeUserId - The Onshape user ID to look up
- * @returns The user's name (first name + last initial) or null if not found
- */
-export async function getUserById(
-  onshapeUserId: string
-): Promise<string | null> {
-  const user = await getUserRecordById(onshapeUserId);
-  return user?.name || null;
-}
-
-/**
  * Get full user record by Onshape user ID
  * @param onshapeUserId - The Onshape user ID to look up
  * @returns The full user record or null if not found

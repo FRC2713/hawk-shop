@@ -50,7 +50,6 @@ const DONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface KanbanBoardProps {
   config: KanbanConfig;
-  onConfigChange: (config: KanbanConfig) => void;
   isEditMode?: boolean;
   hideImages?: boolean;
   processFilterIds?: string[];
@@ -68,7 +67,6 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({
   config,
-  onConfigChange,
   isEditMode = false,
   hideImages = false,
   processFilterIds = [],
@@ -112,8 +110,7 @@ export function KanbanBoard({
   );
 
   // Fetch cards and users
-  const { data: cards = [], isLoading: isLoadingCards } =
-    useQuery(kanbanCardsQuery());
+  const { data: cards = [] } = useQuery(kanbanCardsQuery());
   const { data: users = [] } = useQuery(usersQuery());
   const { data: projects = [] } = useQuery(projectsQuery());
 
@@ -588,7 +585,6 @@ export function KanbanBoard({
                   usersMap={usersMap}
                   isLastColumn={isLastColumn}
                   selectedCardIds={selectedCardIds}
-                  selectedColumnId={selectedColumnId}
                   onCardSelect={handleCardSelect}
                 />
               );

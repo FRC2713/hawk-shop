@@ -25,8 +25,6 @@ interface PartCardProps {
   currentColumn?: KanbanColumn;
   isSelected?: boolean;
   onSelect?: (e: React.MouseEvent) => void;
-  partKey?: string;
-  index?: number;
 }
 
 /**
@@ -39,8 +37,6 @@ export function PartCard({
   currentColumn,
   isSelected = false,
   onSelect,
-  partKey,
-  index,
 }: PartCardProps) {
   // Extract thumbnail URL once (memoized to avoid recalculation)
   const thumbnailUrl = useMemo(() => {

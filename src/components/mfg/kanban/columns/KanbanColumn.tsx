@@ -36,7 +36,6 @@ interface KanbanColumnProps {
   usersMap: Map<string, UserRow>;
   isLastColumn?: boolean;
   selectedCardIds?: Set<string>;
-  selectedColumnId?: string | null;
   onCardSelect?: (
     cardId: string,
     columnId: string,
@@ -56,7 +55,6 @@ export function KanbanColumn({
   usersMap,
   isLastColumn = false,
   selectedCardIds = new Set(),
-  selectedColumnId = null,
   onCardSelect,
 }: KanbanColumnProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -210,7 +208,6 @@ export function KanbanColumn({
           olderCardsCount={isLastColumn ? olderCardsCount : 0}
           columnId={column.id}
           selectedCardIds={selectedCardIds}
-          selectedColumnId={selectedColumnId}
           onCardSelect={onCardSelect}
         />
       </div>

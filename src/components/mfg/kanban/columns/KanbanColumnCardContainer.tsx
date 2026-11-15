@@ -12,7 +12,6 @@ interface KanbanColumnCardContainerProps {
   olderCardsCount?: number;
   columnId?: string;
   selectedCardIds?: Set<string>;
-  selectedColumnId?: string | null;
   onCardSelect?: (
     cardId: string,
     columnId: string,
@@ -30,7 +29,6 @@ export function KanbanColumnCardContainer({
   olderCardsCount = 0,
   columnId = "",
   selectedCardIds = new Set(),
-  selectedColumnId = null,
   onCardSelect,
 }: KanbanColumnCardContainerProps) {
   if (isDraggingCard) {
