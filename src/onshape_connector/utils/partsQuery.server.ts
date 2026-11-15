@@ -1,7 +1,7 @@
 import "virtual:hawk-shop/server-only";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
-import { ensureOnshapeWebhook } from "~/lib/onshapeApi/webhooks";
+import { onshapeWebhookUpkeep } from "~/lib/onshapeApi/webhooks";
 import type { PartsPageSearchParams } from "./types";
 
 /**
@@ -34,7 +34,7 @@ export async function fetchPartsFromOnshape(
   if (queryParams.instanceType === "w" && Array.isArray(parts)) {
     // Hear about the next edit to this document instead of waiting out the
     // TTL. Not awaited: registration must never slow or fail a parts read.
-    void ensureOnshapeWebhook(queryParams.documentId);
+    void onshapeWebhookUpkeep.ensure(queryParams.documentId);
   }
 
   return parts;

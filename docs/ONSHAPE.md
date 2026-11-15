@@ -169,12 +169,12 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Each part in the parts list carries a `microversionId`.**
   - Label: documented
   - Source: Onshape OpenAPI spec, `BTPartMetadataInfo.microversionId` (`src/lib/onshapeApi/generated/types.gen.ts`)
-  - Relied on by: the release action (`onshape_microversion_id`), the thumbnail route's `partRowKey`
+  - Relied on by: the release action (`onshape_microversion_id`), the thumbnail route's `partRowKey`, the Part Studio fingerprint behind webhook upkeep (`partStudioFingerprint`)
 
 - **A part's `microversionId` changes when that part changes and only then;** edits to other parts in the same Part Studio leave it alone.
   - Label: unverified
   - Source: #48 and FRCDesignApp's microversion-keyed caching (seen with OAuth)
-  - Relied on by: the thumbnail route's microversion-keyed rows. If it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, the connector would keep showing the old picture. Cards keep their release microversion regardless.
+  - Relied on by: the thumbnail route's microversion-keyed rows, and webhook upkeep, which treats a changed fingerprint as a change to the document. If microversions failed to change on an edit, upkeep would miss that evidence; if they changed without an edit, it would suspect a webhook that works, costing at most one list call a day. For thumbnails: if it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, the connector would keep showing the old picture. Cards keep their release microversion regardless.
 
 - **Part metadata is read with `getWMVEPMetadata` and written with a body of `jsonType: "metadata-part"` and a `properties` array of `{ propertyId, value }`.** The part-number property is found by name ("Part number") in the read.
   - Label: documented
@@ -279,21 +279,29 @@ How the receiver behaves (Hawk Shop's own contract, covered by `tests/onshape-we
 - With the right secret every delivery gets an empty 200, even one it ignores, because a non-200 cancels a new registration. `onshape.model.lifecycle.changed`, `onshape.model.lifecycle.createversion` and `onshape.model.lifecycle.metadata` run `partStudioFreshness.changed(documentId, elementId?)` inline. It marks that document's workspace rows stale (only the named element's when there is one) and detaches their in-flight reads. Version and microversion entries and other documents stay cached. Other events, including `webhook.register`, change nothing.
 - No debounce. The refresh window's floor does that job: repeated events never bring a read forward, and single-flight collapses concurrent reads into one upstream call.
 - The middleware exempts exactly `POST /api/onshape/webhook` from Suite identity and the same-origin check. A trailing slash, subpath, neighbouring path or other method still needs identity. The response carries no shop data.
-- Any authenticated delivery that names a `documentId` sets that document's `last_event_at`, pings included.
+- Any authenticated delivery that names a `documentId` runs `onshapeWebhookUpkeep.deliverySeen`, which sets that document's `last_event_at`, pings included.
 
-How registration behaves (`src/lib/onshapeApi/webhooks.ts`, covered by `tests/onshape-webhook-registration.test.ts`):
+How registration and upkeep behave (`src/lib/onshapeApi/webhooks.ts`, covered by `tests/onshape-webhook-registration.test.ts` and `tests/onshape-webhook-upkeep.test.ts`):
 
-- After a successful **workspace** parts read, `ensureOnshapeWebhook(documentId)` registers a webhook if the `onshape_webhooks` table has no row for that document. It isn't awaited, so it never slows or fails the read. Later reads cost one SQLite lookup. A failed registration writes no row, so the next read tries again. Version and microversion reads register nothing: their cache entries never go stale.
-- The registration body is `{ events: ONSHAPE_DOCUMENT_CHANGE_EVENTS, filter: "{$DocumentId} = '<id>'", options: { collapseEvents: false }, url: <callback URL>, isTransient: false }`.
-- `startOnshapeWebhookChecks` runs `recheckOnshapeWebhooks` on boot (30 seconds after `src/server/startup.ts` loads, so the listener can answer Onshape's registration ping) and then every 24 hours. A check lists the key's webhooks (`GET /api/v6/webhooks`, following `next`) and then:
+- After a successful **workspace** parts read, `onshapeWebhookUpkeep.ensure(documentId)` registers a webhook if the `onshape_webhooks` table has no row for that document. It isn't awaited, so it never slows or fails the read. Later reads cost one SQLite lookup. A failed registration writes no row, so the next read tries again. Version and microversion reads register nothing: their cache entries never go stale.
+- The registration body is `{ events: ONSHAPE_DOCUMENT_CHANGE_EVENTS, filter: "{$DocumentId} = '<id>'", options: { collapseEvents: false }, url: <callback URL>, isTransient: false }`. The row records `callback_hash`, a SHA-256 of that callback URL. The URL carries the secret, so only the hash is stored.
+- Upkeep runs on evidence, never on a clock. Boot makes no Onshape calls and there is no daily check. Upkeep has three inputs, each with one call site:
+  - `ensure(documentId)`, from `fetchPartsFromOnshape` after every workspace read;
+  - `deliverySeen(documentId)`, from the webhook route;
+  - `workspaceObserved(documentId, elementId, fingerprint)`, from `partStudioFreshness.get` after a workspace read that reached Onshape. The gateway's `onSource` option reports `upstream`, `cache` or `shared`, and only `upstream` counts. The fingerprint (`partStudioFingerprint`) is a SHA-256 of the parts' ids and microversions. Each Part Studio's latest fingerprint and observation time are stored in the row's `observed_part_studios` (JSON keyed by element), so reads of a document's different Part Studios aren't compared with each other. The first read comes before registration; its observation is held in memory and saved with the new row.
+- A repair pass is due when:
+  - **a delivery was missed**: a Part Studio's fingerprint differs from its previous upstream read and the document's `last_event_at` is not later than that read; or
+  - **the callback changed**: the row's `callback_hash` differs from the current settings' callback, for example after changing `ONSHAPE_WEBHOOK_BASE_URL` or the secret. The next `ensure` or observation of that document notices. Rows from before callbacks were recorded adopt the current hash without a pass, because the old daily check kept them pointed at the configured callback.
+- A due pass starts at most once per 24 hours (`WEBHOOK_REPAIR_INTERVAL_MS`). It is skipped while another runs or while the daily ceiling is reached; a skipped pass doesn't use up the day. Its start time, reason and document are recorded in the single `onshape_webhook_upkeep` row before any call, so a pass that fails still counts and the limit survives a restart. It runs in the background and never blocks the read that found the evidence.
+- A pass lists the key's webhooks (`GET /api/v6/webhooks`, following `next`) and then:
   - registers again any tracked webhook that is missing, and replaces one whose URL carries an old secret or base URL (delete, then register). URLs are compared by origin, path without a trailing slash, and `secret`, so an equivalent form of the same callback is left alone;
   - deletes listed webhooks that deliver to this app's webhook path but aren't tracked, such as duplicates left after a lost database;
   - leaves webhooks that deliver anywhere else alone;
-  - sets `last_checked_at` on every row, only after the whole check succeeded.
-- With no tracked documents, a check makes no calls.
-- Calls go through the Onshape gateway and are tallied as `webhook-register`, `webhook-list` and `webhook-delete` in `/api/onshape/usage`. They're never cached. Failures aren't counted, like every other call. Once `ONSHAPE_DAILY_CALL_LIMIT` is reached they're refused, and a later read or check tries again.
-- With webhooks disabled, nothing registers, lists or deletes.
-- `/onshape` and the `webhooks` field of `/api/onshape/usage` show `disabled`, or the registered document count, the latest `last_event_at` and the latest `last_checked_at`.
+  - sets `last_checked_at` and the current `callback_hash` on every row, only after the whole pass succeeded.
+- With no tracked documents, a pass makes no calls. A document that is never read never produces evidence.
+- Calls go through the Onshape gateway and are tallied as `webhook-register`, `webhook-list` and `webhook-delete` in `/api/onshape/usage`. They're never cached. Failures aren't counted, like every other call. Once `ONSHAPE_DAILY_CALL_LIMIT` is reached they're refused, and a later read tries again.
+- With webhooks disabled, nothing registers, lists, deletes or records observations.
+- `/onshape` and the `webhooks` field of `/api/onshape/usage` show `disabled`, or the registered document count, the latest `last_event_at`, the latest `last_checked_at`, and the last repair pass's time, reason (`missed-delivery` or `callback-changed`) and document.
 
 **Gateway route.** The Suite gateway authorizes every Shop request, so Onshape's deliveries never reach the app until the gateway forwards this one path without `authorize`. In the Shop site block of the Suite Caddyfile (see `deploy/hawk-suite-auth.patch`), add this before the catch-all `handle`, after `import clear-suite-identity`:
 
@@ -312,37 +320,37 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
 - **Webhooks are registered with `POST /api/v6/webhooks`.** Onshape immediately sends a `webhook.register` notification, and if the endpoint doesn't answer 200 the registration is cancelled. HTTPS endpoints need a certificate from a recognized CA.
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/)
-  - Relied on by: the webhook route (answers 200 to every authenticated delivery); `ensureOnshapeWebhook`; the boot delay in `src/server/startup.ts`
+  - Relied on by: the webhook route (answers 200 to every authenticated delivery); `onshapeWebhookUpkeep.ensure`. Registration only happens during a parts read or a repair pass, so the listener is always up to answer the ping.
 
 - **The registration response is 200 with the webhook as JSON, including its `id`, `href`, `isTransient`, `droppedEventCount`, and `url` exactly as sent.** Onshape accepted all three of `ONSHAPE_DOCUMENT_CHANGE_EVENTS` as event names.
   - Label: observed
   - Source: observed 2026-11-09 14:40 UTC, one `POST /api/v6/webhooks` with the production API key, Hawk Shop's registration body, and a callback on an unresolvable `.invalid` host
-  - Relied on by: `ensureOnshapeWebhook` (a response without `id` counts as a failed registration)
+  - Relied on by: `onshapeWebhookUpkeep.ensure` (a response without `id` counts as a failed registration)
 
 - **A registration whose callback can't be reached still answers 200, and the webhook is gone within a minute** (`GET /api/v6/webhooks/{id}` → 404, and it isn't listed). This matches the documented cancellation after a failed `webhook.register` ping.
   - Label: observed
   - Source: the registration above, followed by a list and a GET by id about a minute later
-  - Relied on by: the boot delay in `src/server/startup.ts`; the daily `recheckOnshapeWebhooks`, which registers again any webhook that vanished. It also means a deployment whose callback Onshape can't reach will register a webhook on every check, so `ONSHAPE_WEBHOOK_BASE_URL` must be reachable from the internet.
+  - Relied on by: the repair pass, which registers again any webhook that vanished. A deployment whose callback Onshape can't reach gets no deliveries, so every change looks like a missed delivery and costs a pass a day; `ONSHAPE_WEBHOOK_BASE_URL` must be reachable from the internet.
 
 - **`GET /api/v6/webhooks` rejects `limit` above 20 with 400 ("must be less than or equal to 20"). With `limit=20` and no `company` or `user` parameter it answers 200 with `{ href, items, next, previous }`, `next` null on the last page.**
   - Label: observed
   - Source: observed 2026-11-09 14:40 UTC with the production API key; the key had no live webhooks, so `items` was empty
-  - Relied on by: `recheckOnshapeWebhooks` (`limit=20`, follows `next`)
+  - Relied on by: the repair pass (`limit=20`, follows `next`)
 
 - **The listing includes the key owner's live webhooks, each with its `url`, and `DELETE /api/v6/webhooks/{webhookid}` removes one.**
   - Label: unverified
   - Source: Onshape's API Explorer (Webhook endpoints). Not yet seen: the only webhook registered on 2026-11-09 was dropped before it could be listed or deleted, because its callback was unreachable.
-  - Relied on by: `recheckOnshapeWebhooks`. If the listing omits `url`, a listed webhook is treated as healthy and strays aren't detected.
+  - Relied on by: the repair pass. If the listing omits `url`, a listed webhook is treated as healthy and strays aren't detected.
 
 - **The `filter` `{$DocumentId} = '<id>'` limits a webhook to one document.**
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/) (filter examples)
-  - Relied on by: `ensureOnshapeWebhook`
+  - Relied on by: `onshapeWebhookUpkeep.ensure`
 
 - **Onshape drops webhooks without notice**, even non-transient ones.
   - Label: unverified
   - Source: FRCDesignApp's `ensureWebhook` re-registers for this reason (seen with OAuth)
-  - Relied on by: the daily `recheckOnshapeWebhooks`
+  - Relied on by: the evidence-driven repair pass
 
 - **The endpoint must be one Onshape can call.** Hawk Shop sits behind the Suite gateway, so the webhook route needs a public path that bypasses Suite sign-in.
   - Label: documented
@@ -382,7 +390,7 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
 - **Webhooks are transient by default and are deleted after a period without events** unless registered with `isTransient: false`. Onshape keeps delivering until the endpoint errors or stops responding for a long time.
   - Label: documented
   - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/)
-  - Relied on by: `ensureOnshapeWebhook` (registers with `isTransient: false`)
+  - Relied on by: `onshapeWebhookUpkeep.ensure` (registers with `isTransient: false`)
 
 - **`onshape.model.lifecycle.changed` fires on workspace edits and `onshape.model.lifecycle.createversion` when a version is cut.**
   - Label: documented

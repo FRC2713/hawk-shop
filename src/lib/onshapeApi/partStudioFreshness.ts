@@ -20,6 +20,7 @@ import "virtual:hawk-shop/server-only";
  * See docs/ONSHAPE.md#webhooks.
  */
 
+import { createHash } from "node:crypto";
 import type { BtPartMetadataInfo } from "./generated-wrapper";
 import {
   cacheKey,
@@ -32,6 +33,7 @@ import {
   setOnshapeCacheExpiry,
 } from "./cache";
 import { onshapeRead } from "./gateway";
+import { onshapeWebhookUpkeep } from "./webhooks";
 import { onshapeWebhookSettings } from "~/server/onshape-webhook";
 
 /** The four ids that name one Part Studio at one point in its history. */
@@ -112,21 +114,44 @@ export function minRefreshMs(): number {
 }
 
 /**
+ * A stable digest of a Part Studio read: each part's id and microversion,
+ * order-independent. Two reads with the same fingerprint saw the same parts.
+ */
+export function partStudioFingerprint(parts: unknown): string {
+  const entries = (Array.isArray(parts) ? parts : [])
+    .map((part: { partId?: unknown; microversionId?: unknown } | null) => [
+      String(part?.partId ?? ""),
+      String(part?.microversionId ?? ""),
+    ])
+    .sort(([a, x], [b, y]) => (a + "\0" + x < b + "\0" + y ? -1 : 1));
+  return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+/**
  * The parts of a Part Studio, from the cache when it may be reused. This is
- * the one place a parts read can go upstream: something that should happen
- * only after a real Onshape read (not a cache hit) belongs here, once the
- * gateway's `onshapeRead` reports which it was.
+ * the one place a parts read can go upstream, so it is where webhook upkeep
+ * hears about a workspace read that reached Onshape (a cache hit says nothing
+ * about whether the document changed).
  */
 async function get(partStudio: PartStudio): Promise<BtPartMetadataInfo[]> {
   const { documentId, instanceType, instanceId, elementId } = partStudio;
-  return onshapeRead<BtPartMetadataInfo[]>({
+  let upstream = false;
+  const parts = await onshapeRead<BtPartMetadataInfo[]>({
     label: LABEL,
+    onSource: (source) => (upstream = source === "upstream"),
     cache: { key: keyOf(partStudio), ttlMs: ttlMs(instanceType) },
     request: {
       path: `/v12/parts/d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}`,
       query: { withThumbnails: true, includePropertyDefaults: true },
     },
   });
+  if (upstream && instanceType === "w" && Array.isArray(parts))
+    onshapeWebhookUpkeep.workspaceObserved(
+      documentId,
+      elementId,
+      partStudioFingerprint(parts)
+    );
+  return parts;
 }
 
 /**

@@ -175,16 +175,41 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
               {webhooks.registered === 1 ? "document" : "documents"}.
             </p>
             <ul class="text-muted-foreground text-sm">
-              {[
-                ["Last event", webhooks.lastEventAt],
-                ["Last check", webhooks.lastCheckedAt],
-              ].map(([label, at]) => (
-                <li>
-                  {label}:{" "}
-                  {at ? <span class="brand-figures">{when(at)}</span> : "never"}
-                </li>
-              ))}
+              <li>
+                Last event:{" "}
+                {webhooks.lastEventAt ? (
+                  <span class="brand-figures">
+                    {when(webhooks.lastEventAt)}
+                  </span>
+                ) : (
+                  "never"
+                )}
+              </li>
+              <li>
+                Last repair pass:{" "}
+                {webhooks.lastRepairAt ? (
+                  <>
+                    <span class="brand-figures">
+                      {when(webhooks.lastRepairAt)}
+                    </span>
+                    , because{" "}
+                    {webhooks.lastRepairReason === "callback-changed"
+                      ? "the callback URL changed"
+                      : "a document changed in Onshape without a delivery"}
+                    {webhooks.lastRepairDocumentId &&
+                      ` (document ${webhooks.lastRepairDocumentId})`}
+                    .
+                  </>
+                ) : (
+                  "never"
+                )}
+              </li>
             </ul>
+            <p class="text-muted-foreground text-sm">
+              A repair pass lists the webhooks and fixes missing or misdirected
+              ones. It runs only on evidence that one stopped delivering, at
+              most once a day.
+            </p>
             <p class="text-muted-foreground text-sm">
               After a CAD edit, a Part Studio is read from Onshape again at most
               once every{" "}

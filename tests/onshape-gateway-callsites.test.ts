@@ -222,24 +222,27 @@ test("webhook registration, listing and deletion go through the gateway with the
   freshDay(t);
   enableWebhooks(t);
   const { onshape, hooks } = webhookOnshape(t);
-  await webhooks.ensureOnshapeWebhook("hooked");
+  await webhooks.onshapeWebhookUpkeep.ensure("hooked");
   await webhooks.onshapeWebhookWork();
   assert.equal(hooks.length, 1);
 
-  // A stray pointing here that the app doesn't track gets deleted.
+  // A new secret is evidence: the next ensure runs a repair pass, which
+  // replaces the webhook and deletes a stray pointing here.
+  process.env.ONSHAPE_WEBHOOK_SECRET = "rotated-secret";
   hooks.push({
     id: "stray",
-    url: "https://shop.example.org/api/onshape/webhook?secret=old",
+    url: "https://shop.example.org/api/onshape/webhook?secret=rotated-secret",
   });
-  await webhooks.recheckOnshapeWebhooks();
+  await webhooks.onshapeWebhookUpkeep.ensure("hooked");
+  await webhooks.onshapeWebhookWork();
   assert.deepEqual(
     onshape.requests.map((request) => request.method),
-    ["POST", "GET", "DELETE"]
+    ["POST", "GET", "DELETE", "DELETE", "POST"]
   );
   const tally = await tallyToday();
-  assert.deepEqual(tally["webhook-register"], [1, 0]);
+  assert.deepEqual(tally["webhook-register"], [2, 0]);
   assert.deepEqual(tally["webhook-list"], [1, 0]);
-  assert.deepEqual(tally["webhook-delete"], [1, 0]);
+  assert.deepEqual(tally["webhook-delete"], [2, 0]);
 });
 
 test("webhook upkeep makes no call once the daily ceiling is reached", async (t) => {
@@ -247,9 +250,11 @@ test("webhook upkeep makes no call once the daily ceiling is reached", async (t)
   enableWebhooks(t);
   process.env.ONSHAPE_DAILY_CALL_LIMIT = "1";
   const { onshape } = webhookOnshape(t);
-  await webhooks.ensureOnshapeWebhook("capped-1");
+  await webhooks.onshapeWebhookUpkeep.ensure("capped-1");
   await webhooks.onshapeWebhookWork();
-  await webhooks.ensureOnshapeWebhook("capped-2");
-  await webhooks.recheckOnshapeWebhooks();
+  await webhooks.onshapeWebhookUpkeep.ensure("capped-2");
+  process.env.ONSHAPE_WEBHOOK_SECRET = "rotated-secret";
+  await webhooks.onshapeWebhookUpkeep.ensure("capped-1");
+  await webhooks.onshapeWebhookWork();
   assert.equal(onshape.requests.length, 1, "only the first registration");
 });

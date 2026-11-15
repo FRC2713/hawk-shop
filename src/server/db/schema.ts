@@ -302,8 +302,14 @@ export const onshapeApiRemaining = sqliteTable("onshape_api_remaining", {
 
 /**
  * One Onshape webhook per document whose workspace the app reads (see
- * `~/lib/onshapeApi/webhooks`). `webhook_id` is Onshape's id. A re-check that
- * finds the webhook gone registers it again and replaces the id.
+ * `~/lib/onshapeApi/webhooks`). `webhook_id` is Onshape's id. A repair pass
+ * that finds the webhook gone registers it again and replaces the id.
+ *
+ * Upkeep evidence: `observed_part_studios` is JSON, one entry per Part Studio
+ * of the document read from Onshape (not the cache): `{ [elementId]:
+ * { fingerprint, observedAt } }`. `callback_hash` is a SHA-256 of the callback
+ * URL the webhook was registered (or last verified) with, never the URL
+ * itself, because the URL carries the secret.
  */
 export const onshapeWebhooks = sqliteTable("onshape_webhooks", {
   document_id: text("document_id").primaryKey(),
@@ -311,6 +317,19 @@ export const onshapeWebhooks = sqliteTable("onshape_webhooks", {
   registered_at: text("registered_at").notNull(),
   last_event_at: text("last_event_at"),
   last_checked_at: text("last_checked_at"),
+  observed_part_studios: text("observed_part_studios"),
+  callback_hash: text("callback_hash"),
+});
+
+/**
+ * Single row (`id = 'default'`): when the last webhook repair pass started and
+ * why, so the at-most-once-a-day limit survives a restart.
+ */
+export const onshapeWebhookRepairs = sqliteTable("onshape_webhook_upkeep", {
+  id: text("id").primaryKey(),
+  last_repair_at: text("last_repair_at").notNull(),
+  last_repair_reason: text("last_repair_reason").notNull(),
+  last_repair_document_id: text("last_repair_document_id"),
 });
 
 /**

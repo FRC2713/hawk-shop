@@ -254,9 +254,21 @@ function writeCache(key: string, value: unknown, ttlMs: number | null): void {
   }
 }
 
+/**
+ * Where a read's answer came from: `upstream` when this read paid for an
+ * Onshape call, `cache` for a stored answer (fresh, or expired and served
+ * under the daily ceiling), `shared` when it rode along on another read's call.
+ */
+export type OnshapeReadSource = "upstream" | "cache" | "shared";
+
 type ReadOptions = {
   label: OnshapeUsageLabel;
   request: OnshapeRequest;
+  /**
+   * Told where a successful answer came from, before it is returned. Only the
+   * read that made the Onshape call hears `upstream`. Must not throw.
+   */
+  onSource?: (source: OnshapeReadSource) => void;
 } & (
   | {
       /** Durable cache entry; `ttlMs: null` never expires. */
@@ -286,12 +298,13 @@ export function onshapeRead(
 export async function onshapeRead(
   options: ReadOptions & { responseType?: "json" | "binary" }
 ): Promise<unknown> {
-  const { label, cache, request, responseType = "json" } = options;
+  const { label, cache, request, responseType = "json", onSource } = options;
   const key = cache?.key ?? options.dedupKey!;
 
   const cached = cache ? readCache(cache.key) : ({ hit: false } as const);
   if (cached.hit && !cached.expired) {
     recordOnshapeUsage(label, "hit");
+    onSource?.("cache");
     return cached.value;
   }
 
@@ -299,12 +312,15 @@ export async function onshapeRead(
   if (pending) {
     // Someone else is already paying for this exact request: ride along.
     recordOnshapeUsage(label, "hit");
-    return pending;
+    const value = await pending;
+    onSource?.("shared");
+    return value;
   }
 
   if (budgetReached()) {
     if (cached.hit) {
       recordOnshapeUsage(label, "hit");
+      onSource?.("cache");
       return cached.value;
     }
     throw new OnshapeDailyBudgetError();
@@ -319,7 +335,9 @@ export async function onshapeRead(
   })();
   inflight.set(key, flight);
   try {
-    return await flight;
+    const value = await flight;
+    onSource?.("upstream");
+    return value;
   } finally {
     if (inflight.get(key) === flight) inflight.delete(key);
   }

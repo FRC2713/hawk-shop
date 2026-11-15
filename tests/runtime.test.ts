@@ -555,7 +555,10 @@ test("cached CAD remains private and a missing connection does not expire Suite"
   assert.equal((await call("/auth/onshape")).status, 404);
   const status = await call("/onshape");
   assert.equal(status.status, 200);
-  assert.match(await status.text(), /Onshape API access is not configured/);
+  const statusPage = await status.text();
+  assert.match(statusPage, /Onshape API access is not configured/);
+  // Webhook upkeep has no timer: a fresh boot has never run a repair pass.
+  assert.match(statusPage, /Last repair pass:[\s\S]{0,80}?never/);
   const logout = await call("/auth/logout");
   assert.equal(
     logout.headers.get("location"),

@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
-import { recordOnshapeWebhookEvent } from "~/lib/onshapeApi/webhooks";
+import { onshapeWebhookUpkeep } from "~/lib/onshapeApi/webhooks";
 import {
   isOnshapeWebhookSecret,
   ONSHAPE_DOCUMENT_CHANGE_EVENTS,
@@ -61,7 +61,7 @@ export const POST: APIRoute = async ({ request }) => {
   >;
   // Any authenticated delivery shows the webhook works, pings included.
   if (typeof documentId === "string" && documentId)
-    recordOnshapeWebhookEvent(documentId);
+    onshapeWebhookUpkeep.deliverySeen(documentId);
   if (
     typeof event === "string" &&
     ONSHAPE_DOCUMENT_CHANGE_EVENTS.has(event) &&
