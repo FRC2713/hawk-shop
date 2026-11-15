@@ -20,6 +20,10 @@ import { fetchPartsFromOnshape } from "../utils/partsQuery.server";
 import { getCardVersionId } from "../utils/versionUtils";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
+import {
+  materialSnapshot,
+  versionNameSnapshot,
+} from "~/server/kanbanApi/cardSnapshot";
 
 /**
  * Zod schema for adding a card to the Kanban board
@@ -164,6 +168,8 @@ export async function handleAddKanbanCard(
     // Local manufacturing cards have no CAD scope. A partial CAD scope must
     // never bypass the server's release checks.
     let releaseIssues: ReleaseIssue[] = [];
+    let onshapeMaterial: string | undefined;
+    let onshapeVersionName: string | undefined;
     const hasCadScope = [
       data.documentId,
       data.instanceId,
@@ -218,6 +224,11 @@ export async function handleAddKanbanCard(
       // The cached part is authoritative, including its current part number.
       data.partNumber = part.partNumber!;
       data.microversionId = part.microversionId;
+      // Card details read these from the card instead of asking Onshape.
+      // The version read is cached and the connector has usually made it.
+      onshapeMaterial = materialSnapshot(part);
+      onshapeVersionName =
+        (await versionNameSnapshot(data.documentId, versionId)) ?? undefined;
     }
 
     // Build image URL from raw thumbnail URL (same strategy as PartCardThumbnail)
@@ -261,6 +272,8 @@ export async function handleAddKanbanCard(
         onshapeVersionId: versionId,
         // From the parts read the connector already did: no extra call.
         onshapeMicroversionId: data.microversionId || undefined,
+        onshapeMaterial,
+        onshapeVersionName,
       },
       actor
     );
