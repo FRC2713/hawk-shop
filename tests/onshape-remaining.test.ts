@@ -129,8 +129,8 @@ test("each endpoint family keeps its own count; the latest observed leads", asyn
       { headers: { "x-rate-limit-remaining": "3000" } }
     )
   );
-  const { onshapeApiRequest } = await import("../src/lib/onshapeApi/auth");
-  await onshapeApiRequest("/v6/users/sessioninfo");
+  const { onshapeFetch } = await import("../src/lib/onshapeApi/auth");
+  await onshapeFetch("https://cad.onshape.com/api/v6/users/sessioninfo");
   const body = await readUsage();
   assert.deepEqual(
     { label: body.remaining.label, value: body.remaining.value },

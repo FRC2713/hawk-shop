@@ -119,8 +119,9 @@ export function signedOnshapeHeaders(
   return headers;
 }
 
-/** The sole HTTP transport for generated clients, hand-written calls and images.
- * Never auto-follow a redirect with an old signature. Re-sign a bounded Onshape
+/** The signed HTTP transport behind the Onshape gateway (`gateway.ts`). Nothing
+ * else calls it: every Onshape request goes through the gateway so it is
+ * tallied, guarded and mapped the same way. Never auto-follow a redirect with an old signature. Re-sign a bounded Onshape
  * 307/308 redirect and reject every other destination or redirect policy. */
 export async function onshapeFetch(
   input: RequestInfo | URL,
@@ -164,14 +165,4 @@ export async function onshapeFetch(
     url = next.href;
   }
   throw new Error("Onshape redirect limit exceeded.");
-}
-
-export async function onshapeApiRequest(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  const url = endpoint.startsWith("https://")
-    ? endpoint
-    : `${onshapeOrigin()}/api${endpoint}`;
-  return onshapeFetch(url, options);
 }

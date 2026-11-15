@@ -51,7 +51,7 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Only 2xx and 3xx responses count.** API-key calls that return 4xx or 5xx are not charged.
   - Label: documented
   - Source: [API Limits](https://onshape-public.github.io/docs/auth/limits/)
-  - Relied on by: the Onshape gateway (a failed response is not counted or cached), `recordOnshapeUsage`, the part-number release's response interceptor (counts `response.ok` only)
+  - Relied on by: the Onshape gateway (a failed response is not counted or cached; a successful one is counted as soon as it arrives, before its body is read)
 
 - **A followed 307 redirect is probably charged twice**: once for the 307 and once for the request to its destination, since 3xx counts. `recordOnshapeUsage` counts it once.
   - Label: unverified
@@ -176,11 +176,6 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
   - Source: #48 and FRCDesignApp's microversion-keyed caching (seen with OAuth)
   - Relied on by: the thumbnail route's microversion-keyed rows. If it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, the connector would keep showing the old picture. Cards keep their release microversion regardless.
 
-- **The parts list is either a bare array or `{ parts: [...] }`.**
-  - Label: unverified
-  - Source: defensive handling in the hand-written `OnshapeClient.getParts`
-  - Relied on by: `OnshapeClient.getParts`
-
 - **Part metadata is read with `getWMVEPMetadata` and written with a body of `jsonType: "metadata-part"` and a `properties` array of `{ propertyId, value }`.** The part-number property is found by name ("Part number") in the read.
   - Label: documented
   - Source: [Metadata](https://onshape-public.github.io/docs/api-adv/metadata/)
@@ -212,8 +207,8 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
 
 - **Part thumbnails can also be fetched from `/api/v10/thumbnails/d/{did}/{wvm}/{wvmid}/e/{eid}/p/{pid}?outputFormat=PNG&pixelSize=300`.** That part-level path is not in the OpenAPI spec the generated client was built from, which lists element and document thumbnails only.
   - Label: unverified
-  - Source: URL built by `uploadOnshapeThumbnail` (which has no caller)
-  - Relied on by: `uploadOnshapeThumbnail`
+  - Source: URL formerly built by `uploadOnshapeThumbnail` and the release action's fallback, both removed
+  - Relied on by: nothing
 
 - **The thumbnail hrefs in the parts list point at `cad.onshape.com`, and an API-key-signed GET returns the PNG.** An unsigned request was not tried.
   - Label: observed
@@ -228,22 +223,22 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
 - **A thumbnail image answers 200 to `Accept: */*` and to `Accept: image/png` (same bytes and ETag), and 406 "Request not acceptable." to `Accept: application/json`.** The signer sends `application/json` unless the caller sets an `Accept`, so image fetches must set one. The image response carries `Cache-Control: must-revalidate,no-cache,no-store` and an `ETag`.
   - Label: observed
   - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
-  - Relied on by: `/api/onshape/thumbnail` and `uploadOnshapeThumbnail` (send `Accept: */*`)
+  - Relied on by: `/api/onshape/thumbnail` (sends `Accept: */*`)
 
 - **A thumbnail fetch counts against the allocation like any other API call.** It follows from "API-key calls that return 2xx or 3xx count", but no one has seen it on Onshape's usage page. #55 records observations here.
   - Label: unverified
   - Source: inferred from [API Limits](https://onshape-public.github.io/docs/auth/limits/)
-  - Relied on by: the shared `part_thumbnails` cache keyed by source URL, `recordOnshapeUsage("thumbnail", …)`
+  - Relied on by: the shared `part_thumbnails` cache keyed by source URL, the gateway's single-flight for concurrent misses, the `thumbnail` usage label
 
 - **A thumbnail at a fixed version never changes,** so one stored copy per source URL is safe to keep forever.
   - Label: unverified
   - Source: assumption in the thumbnail route
   - Relied on by: `/api/onshape/thumbnail`, `deleteCardImage` (leaves `thumbnails/` alone because cards share them)
 
-- **Whether a part's thumbnail href (its 40-hex id) changes when the part's geometry changes.** Two readings are possible: the id is per part, so the same URL serves a new picture after an edit; or it is per rendering, so an edit yields a new URL. Hawk Shop handles both: thumbnails are keyed by microversion _and_ URL, and a workspace card's `image_url` follows the part's current href on each parts read.
+- **Whether a part's thumbnail href (its 40-hex id) changes when the part's geometry changes.** Two readings are possible: the id is per part, so the same URL serves a new picture after an edit; or it is per rendering, so an edit yields a new URL. Hawk Shop handles both: thumbnails are keyed by microversion _and_ URL. Released cards keep their release href, so the question only affects connector rows.
   - Label: unverified
   - Source: needs a geometry edit to observe, which was not made on 2026-11-09
-  - Relied on by: `/api/onshape/thumbnail` (`findStoredThumbnail`), `syncWorkspaceCardMicroversions`
+  - Relied on by: `/api/onshape/thumbnail` (`findStoredThumbnail`)
 
 - **A thumbnail that is still rendering answers 404 to `Accept: */*`.** (FRCDesignApp also saw 406 for `image/*`; for a rendered per-part thumbnail we saw `image/png` succeed.)
   - Label: unverified
@@ -288,7 +283,7 @@ How registration behaves (`src/lib/onshapeApi/webhooks.ts`, covered by `tests/on
   - leaves webhooks that deliver anywhere else alone;
   - sets `last_checked_at` on every row, only after the whole check succeeded.
 - With no tracked documents, a check makes no calls.
-- Calls are tallied as `webhook-register`, `webhook-list` and `webhook-delete` in `/api/onshape/usage`. They're never cached. Failures aren't counted, like every other call.
+- Calls go through the Onshape gateway and are tallied as `webhook-register`, `webhook-list` and `webhook-delete` in `/api/onshape/usage`. They're never cached. Failures aren't counted, like every other call. Once `ONSHAPE_DAILY_CALL_LIMIT` is reached they're refused, and a later read or check tries again.
 - With webhooks disabled, nothing registers, lists or deletes.
 - `/onshape` and the `webhooks` field of `/api/onshape/usage` show `disabled`, or the registered document count, the latest `last_event_at` and the latest `last_checked_at`.
 
@@ -393,10 +388,10 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
   - Source: comment in the version route
   - Relied on by: `/api/onshape/version`
 
-- **Error bodies carry the message in `message`, `error` or `errorMessage`.**
+- **Error bodies carry the message in `message`.**
   - Label: unverified
-  - Source: defensive handling in `OnshapeClient`
-  - Relied on by: `OnshapeClient`
+  - Source: defensive handling in the Onshape gateway (`failureDetail`), which falls back to the first 200 characters of the body
+  - Relied on by: `OnshapeRequestError.detail`, shown in part-number failures
 
 Hawk Shop's own codes are separate: a missing key pair returns 409 from Hawk Shop (`OnshapeConfigurationError`), and a Suite sign-in failure returns 401. Neither comes from Onshape.
 

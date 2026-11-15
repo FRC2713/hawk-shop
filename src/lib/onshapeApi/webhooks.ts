@@ -11,10 +11,10 @@ import "virtual:hawk-shop/server-only";
  *   webhooks, registers again any that Onshape dropped, and deletes strays that
  *   point at this app but aren't tracked.
  *
- * Every call goes through `onshapeFetch` and is tallied under its own usage
- * label. Webhook management isn't cacheable. When webhooks are disabled, none of
- * this calls Onshape. Nothing here throws to its caller: a failed registration
- * must never fail a parts read.
+ * Every call goes through the Onshape gateway, is tallied under its own usage
+ * label and obeys the daily ceiling. Webhook management isn't cacheable. When
+ * webhooks are disabled, none of this calls Onshape. Nothing here throws to its
+ * caller: a failed registration must never fail a parts read.
  */
 
 import { eq, inArray } from "drizzle-orm";
@@ -27,14 +27,7 @@ import {
   onshapeWebhookSettings,
   type OnshapeWebhookSettings,
 } from "~/server/onshape-webhook";
-import { assertOnshapeAllocation, onshapeApiRequest } from "./auth";
-import { recordOnshapeUsage } from "./cache";
-
-export const WEBHOOK_USAGE_LABELS = {
-  register: "webhook-register",
-  list: "webhook-list",
-  delete: "webhook-delete",
-} as const;
+import { onshapeRead, OnshapeRequestError, onshapeWrite } from "./gateway";
 
 export const WEBHOOK_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -66,22 +59,20 @@ async function register(
   settings: OnshapeWebhookSettings,
   documentId: string
 ): Promise<string> {
-  const response = await onshapeApiRequest("/v6/webhooks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      events: [...ONSHAPE_DOCUMENT_CHANGE_EVENTS],
-      filter: filterFor(documentId),
-      options: { collapseEvents: false },
-      url: onshapeWebhookCallbackUrl(settings),
-      isTransient: false,
-    }),
+  const body = await onshapeWrite<{ id?: unknown } | null>({
+    label: "webhook-register",
+    request: {
+      path: "/v6/webhooks",
+      body: {
+        events: [...ONSHAPE_DOCUMENT_CHANGE_EVENTS],
+        filter: filterFor(documentId),
+        options: { collapseEvents: false },
+        url: onshapeWebhookCallbackUrl(settings),
+        isTransient: false,
+      },
+    },
   });
-  assertOnshapeAllocation(response);
-  if (!response.ok) throw new Error(`registration answered ${response.status}`);
-  const body = (await response.json()) as { id?: unknown };
-  recordOnshapeUsage(WEBHOOK_USAGE_LABELS.register, "call");
-  if (typeof body.id !== "string" || !body.id)
+  if (typeof body?.id !== "string" || !body.id)
     throw new Error("registration returned no webhook id");
   return body.id;
 }
@@ -92,35 +83,40 @@ async function listWebhooks(): Promise<ListedWebhook[]> {
   const hooks: ListedWebhook[] = [];
   let next: string | null = "/v6/webhooks?limit=20";
   for (let page = 0; next && page < 50; page++) {
-    const response = await onshapeApiRequest(next);
-    assertOnshapeAllocation(response);
-    if (!response.ok) throw new Error(`listing answered ${response.status}`);
-    const body = (await response.json()) as {
+    const body: {
       items?: { id?: unknown; url?: unknown }[];
       next?: unknown;
-    };
-    recordOnshapeUsage(WEBHOOK_USAGE_LABELS.list, "call");
-    for (const item of body.items ?? [])
+    } | null = await onshapeRead({
+      label: "webhook-list",
+      dedupKey: `webhook-list::${next}`,
+      request: { path: next },
+    });
+    for (const item of body?.items ?? [])
       if (typeof item.id === "string")
         hooks.push({
           id: item.id,
           url: typeof item.url === "string" ? item.url : undefined,
         });
-    next = typeof body.next === "string" && body.next ? body.next : null;
+    next = typeof body?.next === "string" && body.next ? body.next : null;
   }
   return hooks;
 }
 
 async function deleteWebhook(webhookId: string): Promise<void> {
-  const response = await onshapeApiRequest(
-    `/v6/webhooks/${encodeURIComponent(webhookId)}`,
-    { method: "DELETE" }
-  );
-  assertOnshapeAllocation(response);
-  // Already gone is as good as deleted.
-  if (!response.ok && response.status !== 404)
-    throw new Error(`deletion answered ${response.status}`);
-  if (response.ok) recordOnshapeUsage(WEBHOOK_USAGE_LABELS.delete, "call");
+  try {
+    await onshapeWrite({
+      label: "webhook-delete",
+      responseType: "none",
+      request: {
+        method: "DELETE",
+        path: `/v6/webhooks/${encodeURIComponent(webhookId)}`,
+      },
+    });
+  } catch (error) {
+    // Already gone is as good as deleted.
+    if (!(error instanceof OnshapeRequestError && error.status === 404))
+      throw error;
+  }
 }
 
 function save(documentId: string, webhookId: string): void {
