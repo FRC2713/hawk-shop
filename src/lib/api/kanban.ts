@@ -9,6 +9,11 @@ import type {
   KanbanColumn,
   KanbanConfig,
 } from "~/server/kanbanApi/columnTypes";
+import {
+  needsOnshapeSnapshot,
+  type CardSnapshot,
+  type CardSnapshotFields,
+} from "~/lib/cardSnapshot";
 import { apiFetch } from "./client";
 import { queryKeys } from "./keys";
 
@@ -70,6 +75,27 @@ export function kanbanCardDetailsQuery(id: string) {
       });
       return card;
     },
+  });
+}
+
+/**
+ * A card's Onshape snapshot (material, version name). Runs only for a card
+ * released before snapshots existed: the server fills it once and saves it, so
+ * every other card answers from its own row without this request.
+ */
+export function kanbanCardSnapshotQuery(
+  card: CardSnapshotFields & { id: string }
+) {
+  return queryOptions({
+    queryKey: queryKeys.kanban.cardSnapshot(card.id),
+    queryFn: () =>
+      apiFetch<CardSnapshot>(
+        `/api/kanban/cards/${encodeURIComponent(card.id)}/snapshot`,
+        { method: "POST", fallbackError: "Failed to load part details" }
+      ),
+    enabled: needsOnshapeSnapshot(card),
+    staleTime: Infinity,
+    retry: false,
   });
 }
 
