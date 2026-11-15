@@ -37,7 +37,7 @@ export const VERSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /**
  * In-flight upstream requests, keyed the same way as the table. The gateway's
  * single-flight lives here so invalidation can detach reads that started
- * before an edit.
+ * before an edit. Reached only through the functions below.
  *
  * Parked on `globalThis` for the same reason the db handle is: dev-mode module
  * reloads would otherwise strand the map and lose the dedup.
@@ -45,11 +45,10 @@ export const VERSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const globalForCache = globalThis as unknown as {
   __onshapeInflight?: Map<string, Promise<unknown>>;
 };
-export const onshapeInflight: Map<
+const inflight: Map<
   string,
   Promise<unknown>
 > = (globalForCache.__onshapeInflight ??= new Map());
-const inflight = onshapeInflight;
 
 const KEY_SEPARATOR = "::";
 
@@ -71,6 +70,16 @@ export function invalidateOnshapeCache(key: string): void {
  */
 export function detachOnshapeRead(key: string): void {
   inflight.delete(key);
+}
+
+/** The read in flight under `key`, if any (the gateway's single-flight). */
+export function pendingOnshapeRead(key: string): Promise<unknown> | undefined {
+  return inflight.get(key);
+}
+
+/** Register a read in flight under `key`, so identical reads share it. */
+export function startOnshapeRead(key: string, read: Promise<unknown>): void {
+  inflight.set(key, read);
 }
 
 /** Keys of reads currently in flight. */
@@ -165,12 +174,21 @@ export function onshapeCacheRows(prefix: string): OnshapeCacheRow[] {
     }));
 }
 
-/** Move one row's expiry, leaving its payload and fetch time alone. */
-export function setOnshapeCacheExpiry(key: string, expiresAt: Date): void {
-  db.update(onshapeApiCache)
-    .set({ expires_at: expiresAt.toISOString() })
-    .where(eq(onshapeApiCache.cache_key, key))
-    .run();
+/**
+ * Move rows' expiries in one transaction, leaving their payloads and fetch
+ * times alone.
+ */
+export function setOnshapeCacheExpiries(
+  expiries: { key: string; expiresAt: Date }[]
+): void {
+  if (expiries.length === 0) return;
+  db.transaction((tx) => {
+    for (const { key, expiresAt } of expiries)
+      tx.update(onshapeApiCache)
+        .set({ expires_at: expiresAt.toISOString() })
+        .where(eq(onshapeApiCache.cache_key, key))
+        .run();
+  });
 }
 
 /**

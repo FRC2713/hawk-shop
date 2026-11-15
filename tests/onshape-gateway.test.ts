@@ -12,6 +12,7 @@ const { getHandler, inRequest, sessionRequest } =
   await import("./request-context");
 const { memoryOnshape } = await import("./onshape-memory-adapter");
 const gateway = await import("../src/lib/onshapeApi/gateway");
+const { OnshapeRequestError } = await import("../src/lib/onshapeApi/auth");
 const usage = await import("../src/pages/api/onshape/usage");
 
 type UsageRow = { day: string; label: string; calls: number; hits: number };
@@ -91,7 +92,7 @@ test("a failed response is neither cached nor counted", async (t) => {
       request: { path: "/v12/parts/d/failing/w/ws/e/e" },
     });
   await assert.rejects(read, (error: unknown) => {
-    assert.ok(error instanceof gateway.OnshapeRequestError);
+    assert.ok(error instanceof OnshapeRequestError);
     assert.equal(error.status, 401);
     assert.match(error.message, /Unauthenticated API request/);
     return true;

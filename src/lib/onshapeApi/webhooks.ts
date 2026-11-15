@@ -36,26 +36,34 @@ import {
   onshapeWebhookSettings,
   type OnshapeWebhookSettings,
 } from "~/server/onshape-webhook";
-import {
-  onshapeBudgetStatus,
-  onshapeRead,
-  OnshapeRequestError,
-  onshapeWrite,
-} from "./gateway";
+import { OnshapeRequestError } from "./auth";
+import { onshapeBudgetStatus, onshapeRead, onshapeWrite } from "./gateway";
 
 /** The shortest gap between two repair passes. */
-export const WEBHOOK_REPAIR_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const WEBHOOK_REPAIR_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** Why a repair pass ran, as `/onshape` and `/api/onshape/usage` show it. */
 export type WebhookRepairReason = "missed-delivery" | "callback-changed";
 
 const UPKEEP_ROW = "default";
 
+type Observation = { fingerprint: string; observedAt: string };
+type Observations = Record<string, Observation>;
+
 const globalForWebhooks = globalThis as unknown as {
   __onshapeWebhookWork?: Map<string, Promise<void>>;
+  __onshapeUnregisteredObservations?: Map<string, Observations>;
 };
 /** Registrations and repair passes still running, keyed by document (or "repair"). */
 const work = (globalForWebhooks.__onshapeWebhookWork ??= new Map());
+
+/**
+ * Observations made before the document's webhook row existed (the first read
+ * of a document comes before its registration), saved with the registration
+ * and dropped if it fails.
+ */
+const unregisteredObservations =
+  (globalForWebhooks.__onshapeUnregisteredObservations ??= new Map());
 
 /** Resolves once every registration or repair pass started so far has settled. */
 export async function onshapeWebhookWork(): Promise<void> {
@@ -149,9 +157,6 @@ function callbackHash(settings: OnshapeWebhookSettings): string {
     .digest("hex");
 }
 
-type Observation = { fingerprint: string; observedAt: string };
-type Observations = Record<string, Observation>;
-
 function parseObservations(raw: string | null): Observations {
   if (!raw) return {};
   try {
@@ -161,12 +166,6 @@ function parseObservations(raw: string | null): Observations {
     return {};
   }
 }
-
-/**
- * Observations made before the document's webhook row existed (the first read
- * of a document comes before its registration), saved with the registration.
- */
-const unregisteredObservations = new Map<string, Observations>();
 
 function save(
   settings: OnshapeWebhookSettings,
@@ -241,7 +240,14 @@ function ensure(documentId: string): Promise<void> {
     return Promise.resolve();
   }
   return track(`register:${documentId}`, async () => {
-    save(settings, documentId, await register(settings, documentId));
+    let webhookId: string;
+    try {
+      webhookId = await register(settings, documentId);
+    } catch (error) {
+      unregisteredObservations.delete(documentId);
+      throw error;
+    }
+    save(settings, documentId, webhookId);
   });
 }
 

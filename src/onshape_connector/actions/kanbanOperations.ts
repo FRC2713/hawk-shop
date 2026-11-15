@@ -17,6 +17,7 @@ import {
   type ReleaseIssue,
 } from "../utils/partEligibility";
 import { fetchPartsFromOnshape } from "../utils/partsQuery.server";
+import { findPart } from "../utils/findPart";
 import { getCardVersionId } from "../utils/versionUtils";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
@@ -196,9 +197,7 @@ export async function handleAddKanbanCard(
       if (!isVersionInstance(data.instanceType))
         return { success: false, error: NOT_A_VERSION_ISSUE.message };
       const parts = await fetchPartsFromOnshape(queryParams);
-      const part = parts.find(
-        (part) => (part.partId || part.id) === data.partId
-      );
+      const part = findPart(parts, data.partId);
       if (!part)
         return {
           success: false,

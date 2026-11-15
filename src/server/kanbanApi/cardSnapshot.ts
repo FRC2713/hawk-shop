@@ -10,6 +10,7 @@ import {
   type CardSnapshot,
 } from "~/lib/cardSnapshot";
 import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
+import { findPart } from "~/onshape_connector/utils/findPart";
 import { fetchVersionFromOnshape } from "~/onshape_connector/utils/versionQuery.server";
 
 /**
@@ -23,16 +24,26 @@ export function materialSnapshot(part: {
 }
 
 /**
- * The version name a card records, read through the cached version path.
- * Null when Onshape could not answer; the card is backfilled later instead of
- * failing the caller.
+ * A version's name, read through the cached version path: `""` when it has
+ * none. Throws when Onshape cannot answer.
+ */
+async function versionName(
+  documentId: string,
+  versionId: string
+): Promise<string> {
+  return (await fetchVersionFromOnshape(documentId, versionId)).name ?? "";
+}
+
+/**
+ * The version name a card records. Null when Onshape could not answer; the
+ * card is backfilled later instead of failing the caller.
  */
 export async function versionNameSnapshot(
   documentId: string,
   versionId: string
 ): Promise<string | null> {
   try {
-    return (await fetchVersionFromOnshape(documentId, versionId)).name ?? "";
+    return await versionName(documentId, versionId);
   } catch (error) {
     console.error("[CARD SNAPSHOT] Version read failed:", error);
     return null;
@@ -69,29 +80,26 @@ export async function backfillCardSnapshot(
   try {
     // Read through Part Studio freshness directly, not the connector's parts
     // query: opening an old card must not register a webhook for its document.
-    const parts = await partStudioFreshness.get({
-      documentId: card.onshape_document_id!,
-      instanceType: card.onshape_instance_type!,
-      instanceId: card.onshape_instance_id!,
-      elementId: card.onshape_element_id!,
-    });
+    // The version read is `versionName`, not `versionNameSnapshot`: that
+    // swallows a failure so a release never fails over a name. Here a failed
+    // read must throw, so the catch below saves nothing and answers unknown,
+    // and a later open tries again.
+    const [parts, name] = await Promise.all([
+      partStudioFreshness.get({
+        documentId: card.onshape_document_id!,
+        instanceType: card.onshape_instance_type!,
+        instanceId: card.onshape_instance_id!,
+        elementId: card.onshape_element_id!,
+      }),
+      versionId ? versionName(card.onshape_document_id!, versionId) : null,
+    ]);
     const title = card.title.trim().toLowerCase();
     const part =
-      parts.find(
-        (part) =>
-          !!card.onshape_part_id &&
-          (part.partId || part.id) === card.onshape_part_id
-      ) ??
+      findPart(parts, card.onshape_part_id) ??
       parts.find((part) => part.partNumber?.trim().toLowerCase() === title);
     snapshot = {
       onshape_material: part ? materialSnapshot(part) : MATERIAL_UNKNOWN,
-      // Not `versionNameSnapshot`: that swallows a failure so a release never
-      // fails over a name. Here a failed read must throw, so the catch below
-      // saves nothing and answers unknown, and a later open tries again.
-      onshape_version_name: versionId
-        ? ((await fetchVersionFromOnshape(card.onshape_document_id!, versionId))
-            .name ?? "")
-        : null,
+      onshape_version_name: name,
     };
   } catch (error) {
     console.error("[CARD SNAPSHOT] Backfill failed:", error);

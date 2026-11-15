@@ -1,9 +1,16 @@
 import { logServerError } from "~/server/errors";
 import { onshapeErrorResponse } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
-import { OnshapeRequestError } from "~/lib/onshapeApi/gateway";
 import { fetchVersionFromOnshape } from "~/onshape_connector/utils/versionQuery.server";
 import { requireAuth } from "~/lib/requireAuth";
+
+/** A 404 from Onshape (its message names the status), or any error that says
+ * "not found", is a missing version. */
+function failure(error: Error) {
+  return error.message.includes("not found") || error.message.includes("404")
+    ? { error: "Version not found", status: 404 }
+    : { error: error.message, status: 500 };
+}
 
 /**
  * API endpoint to fetch version information from Onshape
@@ -39,45 +46,18 @@ export const GET: APIRoute = async ({ request }) => {
     return Response.json(data);
   } catch (error) {
     const errorId = logServerError("ONSHAPE", error);
-
-    // Provide more specific error messages
-    let errorMessage = "Failed to fetch version";
-    let statusCode = 500;
-
-    const known = onshapeErrorResponse(error);
+    const known = onshapeErrorResponse(error, {
+      errorId,
+      requestFailed: failure,
+    });
     if (known) return known;
-    if (error instanceof OnshapeRequestError && error.status === 404) {
-      errorMessage = "Version not found";
-      statusCode = 404;
-    } else if (
-      error instanceof OnshapeRequestError &&
-      (error.status === 401 || error.status === 403)
-    ) {
-      errorMessage =
-        "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";
-      statusCode = 409;
-    } else if (error instanceof Error) {
-      if (
-        error.message.includes("Not authenticated") ||
-        error.message.includes("invalid_token")
-      ) {
-        errorMessage =
-          "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";
-        statusCode = 409;
-      } else if (
-        error.message.includes("not found") ||
-        error.message.includes("404")
-      ) {
-        errorMessage = "Version not found";
-        statusCode = 404;
-      } else {
-        errorMessage = error.message;
-      }
-    }
-
+    const answer =
+      error instanceof Error
+        ? failure(error)
+        : { error: "Failed to fetch version", status: 500 };
     return Response.json(
-      { error: errorMessage, errorId },
-      { status: statusCode }
+      { error: answer.error, errorId },
+      { status: answer.status }
     );
   }
 };

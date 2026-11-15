@@ -2,17 +2,18 @@ import "virtual:hawk-shop/server-only";
 import {
   isOnshapeConfigured,
   OnshapeDailyBudgetError,
+  OnshapeRequestError,
 } from "~/lib/onshapeApi/auth";
 import {
   onshapeOperation,
   onshapeRead,
-  OnshapeRequestError,
   onshapeWrite,
   type OnshapeRequest,
 } from "~/lib/onshapeApi/gateway";
 import {
   isPartNumberProperty,
   partStudioFreshness,
+  partStudioPath,
 } from "~/lib/onshapeApi/partStudioFreshness";
 import { createErrorResponse } from "../utils/errorHandling";
 import type { ActionResponse } from "../utils/types";
@@ -26,9 +27,12 @@ function propertiesFrom(metadata: unknown) {
   return metadata.properties.filter(isRecord);
 }
 
-/** A non-OK Onshape answer as an action failure that keeps Onshape's reason. */
-function rejection(error: unknown, message: string): ActionResponse | null {
-  if (!(error instanceof OnshapeRequestError)) return null;
+/**
+ * A non-OK Onshape answer as an action failure that keeps Onshape's reason.
+ * Anything else is rethrown.
+ */
+function rejection(error: unknown, message: string): ActionResponse {
+  if (!(error instanceof OnshapeRequestError)) throw error;
   return createErrorResponse(
     { error: { message: error.detail || message }, status: error.status },
     message
@@ -74,7 +78,8 @@ export async function handlePartNumberUpdate(
       };
     }
 
-    const metadataPath = `/v12/metadata/d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}/p/${encodeURIComponent(partId)}`;
+    const partStudio = { documentId, instanceType, instanceId, elementId };
+    const metadataPath = `/v12/metadata/${partStudioPath(partStudio)}/p/${encodeURIComponent(partId)}`;
     const readMetadata = () =>
       onshapeRead<unknown>({
         label: "metadata-read",
@@ -93,9 +98,7 @@ export async function handlePartNumberUpdate(
       try {
         discovered = await readMetadata();
       } catch (error: unknown) {
-        const failure = rejection(error, "Failed to retrieve part metadata");
-        if (failure) return failure;
-        throw error;
+        return rejection(error, "Failed to retrieve part metadata");
       }
       const properties = propertiesFrom(discovered);
       if (!properties) {
@@ -135,14 +138,8 @@ export async function handlePartNumberUpdate(
           },
         });
       } catch (error: unknown) {
-        const failure = rejection(
-          error,
-          "Onshape rejected the part number update"
-        );
-        if (failure) return failure;
-        throw error;
+        return rejection(error, "Onshape rejected the part number update");
       }
-      const partStudio = { documentId, instanceType, instanceId, elementId };
       // Onshape accepted the write: apply it to the cached parts read rather
       // than discarding it, so the connector shows the number without another
       // parts read. If verification then disagrees, the read is discarded.
@@ -161,7 +158,8 @@ export async function handlePartNumberUpdate(
         return unconfirmed("The parts cache could not be refreshed.");
       }
 
-      const failure = await (async () => {
+      /** Read the metadata back. Null when it shows the new number. */
+      const verify = async (): Promise<ActionResponse | null> => {
         try {
           const verified = await readMetadata();
           const updatedProperty = propertiesFrom(verified)?.find(
@@ -180,7 +178,9 @@ export async function handlePartNumberUpdate(
           console.error("[ACTION] Error verifying part number update:", error);
           return unconfirmed("The verification request failed.");
         }
-      })();
+      };
+
+      const failure = await verify();
       if (failure) {
         try {
           partStudioFreshness.discard(partStudio);

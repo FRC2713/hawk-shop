@@ -17,7 +17,7 @@ import {
 import { KanbanCardHeader } from "./KanbanCardHeader";
 import { KanbanCardDetails } from "./KanbanCardDetails";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
-import { thumbnailProxyUrl } from "~/lib/api/onshape";
+import { cardThumbnailUrl } from "~/lib/api/onshape";
 
 /**
  * Format a date string for display
@@ -104,20 +104,17 @@ export const KanbanCard = memo(function KanbanCard({
   const [sheetOpen, setSheetOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const imageUrl = useMemo(() => {
-    if (hideImages) return undefined;
-    if (!card.image_url && !card.onshape_document_id) return undefined;
-    return thumbnailProxyUrl({
-      cardId: card.id,
-      microversionId: card.onshape_microversion_id,
-    });
-  }, [
-    card.id,
-    card.image_url,
-    card.onshape_document_id,
-    card.onshape_microversion_id,
-    hideImages,
-  ]);
+  const imageUrl = useMemo(
+    () =>
+      hideImages
+        ? undefined
+        : cardThumbnailUrl({
+            id: card.id,
+            image_url: card.image_url,
+            onshape_document_id: card.onshape_document_id,
+          }),
+    [card.id, card.image_url, card.onshape_document_id, hideImages]
+  );
 
   // Reset error state when imageUrl changes
   useEffect(() => {

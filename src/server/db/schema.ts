@@ -121,8 +121,8 @@ export const kanbanCards = sqliteTable(
     onshape_element_id: text("onshape_element_id"),
     onshape_part_id: text("onshape_part_id"),
     onshape_version_id: text("onshape_version_id"),
-    // The part's microversion when it was released (or last seen by a
-    // workspace parts read). Thumbnails are cached under it.
+    // The part's microversion when it was released. Cards are released only
+    // from versions, so it never changes. Thumbnails are cached under it.
     onshape_microversion_id: text("onshape_microversion_id"),
     // Onshape facts captured at release so card details never call Onshape.
     // Null means never captured (backfilled once when details open); an empty

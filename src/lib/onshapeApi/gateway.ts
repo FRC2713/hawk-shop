@@ -31,14 +31,18 @@ import {
   OnshapeDailyBudgetError,
   onshapeFetch,
   onshapeOrigin,
+  OnshapeRequestError,
 } from "./auth";
 import {
+  detachOnshapeRead,
   onshapeCallsToday,
-  onshapeInflight as inflight,
+  pendingOnshapeRead,
   readOnshapeCache,
   recordOnshapeUsage,
+  startOnshapeRead,
   writeOnshapeCache,
 } from "./cache";
+import { positiveIntEnv } from "./remaining";
 
 /** Fixed usage labels, one per feature, as they appear in `/api/onshape/usage`. */
 export type OnshapeUsageLabel =
@@ -68,17 +72,6 @@ export type OnshapeAdapter = (request: Request) => Promise<Response>;
 /** What a binary read (`responseType: "binary"`) resolves to. */
 export type OnshapeBinary = { bytes: Uint8Array; contentType: string | null };
 
-/** A non-OK Onshape response other than 402. Never cached, never counted. */
-export class OnshapeRequestError extends Error {
-  constructor(
-    readonly status: number,
-    /** Onshape's own reason, when its answer carried one. */
-    readonly detail: string
-  ) {
-    super(`Onshape API error ${status}${detail ? `: ${detail}` : ""}`);
-  }
-}
-
 const signedTransport: OnshapeAdapter = (request) => onshapeFetch(request);
 
 const globalForGateway = globalThis as unknown as {
@@ -104,10 +97,7 @@ function adapter(): OnshapeAdapter {
  * before until an operator opts in.
  */
 export function onshapeDailyCallLimit(): number | null {
-  const raw = process.env.ONSHAPE_DAILY_CALL_LIMIT?.trim();
-  if (!raw || !/^\d+$/.test(raw)) return null;
-  const limit = Number(raw);
-  return Number.isSafeInteger(limit) && limit > 0 ? limit : null;
+  return positiveIntEnv("ONSHAPE_DAILY_CALL_LIMIT");
 }
 
 /** The configured limit, today's (UTC) tallied calls, and whether the guard is active. */
@@ -207,21 +197,15 @@ async function send(
   return text ? JSON.parse(text) : null;
 }
 
-/**
- * Where a read's answer came from: `upstream` when this read paid for an
- * Onshape call, `cache` for a stored answer (fresh, or expired and served
- * under the daily ceiling), `shared` when it rode along on another read's call.
- */
-export type OnshapeReadSource = "upstream" | "cache" | "shared";
-
 type ReadOptions = {
   label: OnshapeUsageLabel;
   request: OnshapeRequest;
   /**
-   * Told where a successful answer came from, before it is returned. Only the
-   * read that made the Onshape call hears `upstream`. Must not throw.
+   * Called before a successful answer is returned, only by the read that paid
+   * for the Onshape call (not a cache hit, not a read that rode along on
+   * another's call). Must not throw.
    */
-  onSource?: (source: OnshapeReadSource) => void;
+  onUpstream?: () => void;
 } & (
   | {
       /** Durable cache entry; `ttlMs: null` never expires. */
@@ -264,7 +248,7 @@ export function onshapeRead(
 export async function onshapeRead(
   options: ReadOptions & { responseType?: "json" | "binary" }
 ): Promise<unknown> {
-  const { label, cache, request, responseType = "json", onSource } = options;
+  const { label, cache, request, responseType = "json", onUpstream } = options;
   const key = cache?.key ?? options.dedupKey;
 
   const cached = cache
@@ -272,24 +256,21 @@ export async function onshapeRead(
     : ({ hit: false } as const);
   if (cached.hit && !cached.expired) {
     recordOnshapeUsage(label, "hit");
-    onSource?.("cache");
     return cached.value;
   }
 
-  const pending = key === undefined ? undefined : inflight.get(key);
+  const pending = key === undefined ? undefined : pendingOnshapeRead(key);
   if (pending) {
     // Someone else is already paying for this exact request: ride along. The
     // hit is recorded only once it succeeds; failed reads are never counted.
     const value = await pending;
     recordOnshapeUsage(label, "hit");
-    onSource?.("shared");
     return value;
   }
 
   if (budgetReached()) {
     if (cached.hit) {
       recordOnshapeUsage(label, "hit");
-      onSource?.("cache");
       return cached.value;
     }
     throw new OnshapeDailyBudgetError();
@@ -297,24 +278,24 @@ export async function onshapeRead(
 
   if (key === undefined) {
     const value = await send(label, request, responseType);
-    onSource?.("upstream");
+    onUpstream?.();
     return value;
   }
 
   let flight!: Promise<unknown>;
   flight = (async () => {
     const value = await send(label, request, responseType);
-    if (cache && inflight.get(key) === flight)
+    if (cache && pendingOnshapeRead(key) === flight)
       writeOnshapeCache(cache.key, value, cache.ttlMs);
     return value;
   })();
-  inflight.set(key, flight);
+  startOnshapeRead(key, flight);
   try {
     const value = await flight;
-    onSource?.("upstream");
+    onUpstream?.();
     return value;
   } finally {
-    if (inflight.get(key) === flight) inflight.delete(key);
+    if (pendingOnshapeRead(key) === flight) detachOnshapeRead(key);
   }
 }
 

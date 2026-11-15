@@ -18,11 +18,7 @@ import {
   storagePathFromUrl,
 } from "~/server/storage/files";
 import { isOnshapeUrl, onshapeErrorResponse } from "~/lib/onshapeApi/auth";
-import {
-  onshapeRead,
-  OnshapeRequestError,
-  type OnshapeBinary,
-} from "~/lib/onshapeApi/gateway";
+import { onshapeRead, type OnshapeBinary } from "~/lib/onshapeApi/gateway";
 
 /**
  * A same-origin relative redirect. The app sits behind a TLS-terminating
@@ -158,13 +154,13 @@ export const GET: APIRoute = async ({ request }) => {
       request: { path: imageUrl, headers: { Accept: "*/*" } },
     });
   } catch (error) {
-    const known = onshapeErrorResponse(error);
+    const known = onshapeErrorResponse(error, {
+      requestFailed: (error) => ({
+        error: `Failed to fetch thumbnail: ${error.message}`,
+        status: error.status,
+      }),
+    });
     if (known) return known;
-    if (error instanceof OnshapeRequestError)
-      return Response.json(
-        { error: `Failed to fetch thumbnail: ${error.message}` },
-        { status: error.status }
-      );
     throw error;
   }
 

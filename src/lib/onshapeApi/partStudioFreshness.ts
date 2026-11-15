@@ -30,9 +30,10 @@ import {
   onshapeCacheRows,
   onshapeReadsInFlight,
   patchOnshapeCache,
-  setOnshapeCacheExpiry,
+  setOnshapeCacheExpiries,
 } from "./cache";
 import { onshapeRead } from "./gateway";
+import { positiveIntEnv } from "./remaining";
 import { onshapeWebhookUpkeep } from "./webhooks";
 import { onshapeWebhookSettings } from "~/server/onshape-webhook";
 
@@ -46,7 +47,7 @@ export type PartStudio = {
 };
 
 /** What a successful write changed on one part. */
-export type PartPatch = { partNumber: string };
+type PartPatch = { partNumber: string };
 
 const LABEL = "parts";
 const DEFAULT_WORKSPACE_TTL_SECONDS = 300;
@@ -81,7 +82,7 @@ function isElementKey(key: string, documentId: string, elementId?: string) {
  * stale and 24 hours is the safety net; otherwise five minutes. A finite,
  * positive `ONSHAPE_CACHE_TTL_SECONDS` overrides either default.
  */
-export function workspaceTtlMs(): number {
+function workspaceTtlMs(): number {
   const raw = Number(process.env.ONSHAPE_CACHE_TTL_SECONDS);
   if (Number.isFinite(raw) && raw > 0) return raw * 1000;
   return (
@@ -104,12 +105,9 @@ function ttlMs(instanceType: string): number | null {
  * the default of 300.
  */
 export function minRefreshMs(): number {
-  const raw = process.env.ONSHAPE_MIN_REFRESH_SECONDS?.trim();
-  const seconds = raw && /^\d+$/.test(raw) ? Number(raw) : NaN;
   return (
-    (Number.isSafeInteger(seconds) && seconds > 0
-      ? seconds
-      : DEFAULT_MIN_REFRESH_SECONDS) * 1000
+    (positiveIntEnv("ONSHAPE_MIN_REFRESH_SECONDS") ??
+      DEFAULT_MIN_REFRESH_SECONDS) * 1000
   );
 }
 
@@ -117,14 +115,24 @@ export function minRefreshMs(): number {
  * A stable digest of a Part Studio read: each part's id and microversion,
  * order-independent. Two reads with the same fingerprint saw the same parts.
  */
-export function partStudioFingerprint(parts: unknown): string {
-  const entries = (Array.isArray(parts) ? parts : [])
-    .map((part: { partId?: unknown; microversionId?: unknown } | null) => [
+function partStudioFingerprint(parts: BtPartMetadataInfo[]): string {
+  const entries = parts
+    .map((part) => [
       String(part?.partId ?? ""),
       String(part?.microversionId ?? ""),
     ])
     .sort(([a, x], [b, y]) => (a + "\0" + x < b + "\0" + y ? -1 : 1));
   return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+/** A Part Studio's URL segment, `d/{did}/{wvm}/{wvmid}/e/{eid}`, encoded. */
+export function partStudioPath({
+  documentId,
+  instanceType,
+  instanceId,
+  elementId,
+}: PartStudio): string {
+  return `d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}`;
 }
 
 /**
@@ -134,14 +142,14 @@ export function partStudioFingerprint(parts: unknown): string {
  * about whether the document changed).
  */
 async function get(partStudio: PartStudio): Promise<BtPartMetadataInfo[]> {
-  const { documentId, instanceType, instanceId, elementId } = partStudio;
+  const { documentId, instanceType, elementId } = partStudio;
   let upstream = false;
   const parts = await onshapeRead<BtPartMetadataInfo[]>({
     label: LABEL,
-    onSource: (source) => (upstream = source === "upstream"),
+    onUpstream: () => (upstream = true),
     cache: { key: keyOf(partStudio), ttlMs: ttlMs(instanceType) },
     request: {
-      path: `/v12/parts/d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}`,
+      path: `/v12/parts/${partStudioPath(partStudio)}`,
       query: { withThumbnails: true, includePropertyDefaults: true },
     },
   });
@@ -167,13 +175,15 @@ function changed(documentId: string, elementId?: string): void {
 
   const now = Date.now();
   const window = minRefreshMs();
+  const expiries: { key: string; expiresAt: Date }[] = [];
   for (const row of onshapeCacheRows(workspacePrefix(documentId))) {
     if (!isElementKey(row.key, documentId, elementId)) continue;
     const floor = Math.max(now, row.fetchedAt.getTime() + window);
     const expiry = Math.min(row.expiresAt?.getTime() ?? Infinity, floor);
     if (expiry !== row.expiresAt?.getTime())
-      setOnshapeCacheExpiry(row.key, new Date(expiry));
+      expiries.push({ key: row.key, expiresAt: new Date(expiry) });
   }
+  setOnshapeCacheExpiries(expiries);
 }
 
 /**

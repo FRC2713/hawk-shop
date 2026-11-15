@@ -53,12 +53,8 @@ export type ThumbnailProxyTarget =
       part?: Partial<OnshapePartMicroversion>;
     }
   | {
+      /** The server resolves the card's image and microversion from its row. */
       cardId: string;
-      /**
-       * Only a cache-buster for the browser: the server ignores it and reads
-       * the microversion from the card row.
-       */
-      microversionId?: string | null;
     };
 
 /**
@@ -68,10 +64,7 @@ export type ThumbnailProxyTarget =
 export function thumbnailProxyUrl(target: ThumbnailProxyTarget): string {
   const query =
     "cardId" in target
-      ? searchParams({
-          cardId: target.cardId,
-          microversionId: target.microversionId ?? undefined,
-        })
+      ? searchParams({ cardId: target.cardId })
       : searchParams({
           url: target.url,
           documentId: target.part?.documentId,
@@ -80,6 +73,20 @@ export function thumbnailProxyUrl(target: ThumbnailProxyTarget): string {
           microversionId: target.part?.microversionId,
         });
   return `${THUMBNAIL_PROXY_PATH}?${query}`;
+}
+
+/**
+ * A card's thumbnail URL, or undefined when it has no image to show. Cards are
+ * released only from versions, which never change, so the URL needs no
+ * cache-buster.
+ */
+export function cardThumbnailUrl(card: {
+  id: string;
+  image_url: string | null;
+  onshape_document_id: string | null;
+}): string | undefined {
+  if (!card.image_url && !card.onshape_document_id) return undefined;
+  return thumbnailProxyUrl({ cardId: card.id });
 }
 
 /** The thumbnail href a part offers, preferring 300x300. */
