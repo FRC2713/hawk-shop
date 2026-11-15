@@ -2,6 +2,7 @@ import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { summarizeOnshapeUsage } from "~/lib/onshapeApi/cache";
+import { onshapeBudgetStatus } from "~/lib/onshapeApi/gateway";
 import { readOnshapeRemaining } from "~/lib/onshapeApi/remaining";
 import { onshapeWebhookStatus } from "~/lib/onshapeApi/webhooks";
 
@@ -17,6 +18,10 @@ import { onshapeWebhookStatus } from "~/lib/onshapeApi/webhooks";
  * `remainingByLabel` has one entry per endpoint family. That header is not the
  * yearly allocation, which only Onshape's developer portal shows.
  *
+ * `budget` is the daily ceiling (`ONSHAPE_DAILY_CALL_LIMIT`, null when unset),
+ * today's (UTC) tallied calls, and whether the guard is active. While it is,
+ * reads are served from cache even if expired and nothing new is fetched.
+ *
  * Read-only and gated like every other DB-backed route.
  */
 export const GET: APIRoute = async () => {
@@ -31,6 +36,7 @@ export const GET: APIRoute = async () => {
       remaining: latest ?? null,
       remainingByLabel,
       webhooks: onshapeWebhookStatus(),
+      budget: onshapeBudgetStatus(),
     });
   } catch (error) {
     const errorId = logServerError("ONSHAPE USAGE", error);

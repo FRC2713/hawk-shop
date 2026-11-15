@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, beforeEach, test } from "node:test";
+import { after, beforeEach, test, type TestContext } from "node:test";
 
 const dataDir = await mkdtemp(join(tmpdir(), "hawk-onshape-webhook-reg-"));
 process.env.DATA_DIR = dataDir;
@@ -13,8 +13,7 @@ const { getHandler, inRequest, sessionRequest } =
 const partsRoute = await import("../src/pages/api/onshape/parts");
 const usageRoute = await import("../src/pages/api/onshape/usage");
 const webhookRoute = await import("../src/pages/api/onshape/webhook");
-const { onshapeWebhookWork, startOnshapeWebhookChecks } =
-  await import("../src/lib/onshapeApi/webhooks");
+const { onshapeWebhookWork } = await import("../src/lib/onshapeApi/webhooks");
 
 const SECRET = "correct-horse-battery-staple";
 const BASE = "https://shop.example.org";
@@ -30,13 +29,21 @@ type Hook = { id: string; url: string; filter: string };
 /** Onshape's list of webhooks outlives each test, like the app's database. */
 const onshapeHooks = { list: [] as Hook[], nextId: 1 };
 
+const DAY = 24 * 60 * 60 * 1000;
+// Each test runs in its own week, so the 24-hour repair limit never carries over.
+let nextStart = Date.parse("2026-11-01T12:00:00Z");
+
 /**
- * A fake Onshape: parts reads succeed, and `/webhooks` keeps a list of
- * registered webhooks that a test can drop entries from, as Onshape does.
- * Counters start at zero for each test.
+ * A fake Onshape with a mocked clock: parts reads succeed, and `/webhooks`
+ * keeps a list of registered webhooks that a test can drop entries from, as
+ * Onshape does. `edit` gives the part a new microversion. Counters start at
+ * zero for each test.
  */
-function fakeOnshape(t: { mock: { method: Function } }) {
+function fakeOnshape(t: TestContext) {
+  const start = (nextStart += 7 * DAY);
+  t.mock.timers.enable({ apis: ["Date"], now: start });
   const state = {
+    microversion: 0,
     get hooks() {
       return onshapeHooks.list;
     },
@@ -58,7 +65,13 @@ function fakeOnshape(t: { mock: { method: Function } }) {
       const url = new URL(request.url);
       if (/\/parts\/d\//.test(url.pathname)) {
         state.partsReads++;
-        return Response.json([{ partId: "part", name: "Part" }]);
+        return Response.json([
+          {
+            partId: "part",
+            name: "Part",
+            microversionId: `mv-${state.microversion}`,
+          },
+        ]);
       }
       if (/^\/api\/v\d+\/webhooks$/.test(url.pathname)) {
         if (request.method === "POST") {
@@ -97,7 +110,17 @@ function fakeOnshape(t: { mock: { method: Function } }) {
   const registeredFor = (documentId: string) =>
     state.registered.filter((entry) => entry.filter.includes(`'${documentId}'`))
       .length;
-  return { state, registeredFor };
+  /**
+   * The evidence for a missed delivery: the document changes in Onshape, no
+   * delivery arrives, and the next read (after the cached one expires) goes
+   * upstream and sees the change.
+   */
+  async function changeSilently(documentId: string) {
+    state.microversion++;
+    t.mock.timers.setTime(Date.now() + DAY + 60_000);
+    await readParts(documentId);
+  }
+  return { state, registeredFor, changeSilently };
 }
 
 async function readParts(documentId: string, instanceType = "w") {
@@ -175,19 +198,18 @@ test("a failed registration doesn't fail the parts read and is retried by the ne
 
 test("webhooks disabled: no registration, listing or deletion calls", async (t) => {
   delete process.env.ONSHAPE_WEBHOOK_SECRET;
-  const { state } = fakeOnshape(t);
+  const { state, changeSilently } = fakeOnshape(t);
   await readParts("disabled");
-  const stop = startOnshapeWebhookChecks(() => () => {});
-  await onshapeWebhookWork();
-  stop();
+  await changeSilently("disabled");
+  assert.equal(state.partsReads, 2);
   assert.equal(state.registered.length, 0);
   assert.equal(state.listed, 0);
   assert.equal(state.deleted.length, 0);
   assert.deepEqual((await readUsage()).webhooks, { enabled: false });
 });
 
-test("the boot and daily checks re-register a dropped webhook exactly once", async (t) => {
-  const { registeredFor, state } = fakeOnshape(t);
+test("a repair pass re-registers a dropped webhook and leaves healthy ones alone", async (t) => {
+  const { registeredFor, state, changeSilently } = fakeOnshape(t);
   await readParts("kept");
   await readParts("dropped");
   assert.equal(registeredFor("dropped"), 1);
@@ -196,23 +218,10 @@ test("the boot and daily checks re-register a dropped webhook exactly once", asy
     (hook) => !hook.filter.includes("'dropped'")
   );
 
-  let daily: (() => void) | undefined;
-  let interval = 0;
-  const stop = startOnshapeWebhookChecks((run, everyMs) => {
-    daily = run;
-    interval = everyMs;
-    return () => (daily = undefined);
-  });
-  await onshapeWebhookWork();
-  assert.equal(interval, 24 * 60 * 60 * 1000);
-  assert.equal(registeredFor("dropped"), 2, "boot check re-registers it");
+  await changeSilently("dropped");
+  assert.equal(state.listed, 1);
+  assert.equal(registeredFor("dropped"), 2, "the pass re-registers it");
   assert.equal(registeredFor("kept"), 1);
-
-  daily!();
-  await onshapeWebhookWork();
-  assert.equal(registeredFor("dropped"), 2, "a healthy webhook is left alone");
-  assert.equal(state.listed, 2);
-  stop();
 
   const { webhooks } = await readUsage();
   assert.equal(webhooks.enabled, true);
@@ -220,24 +229,24 @@ test("the boot and daily checks re-register a dropped webhook exactly once", asy
   assert.ok(Date.parse(webhooks.lastCheckedAt) > 0);
 });
 
-test("a check deletes strays pointing here and replaces webhooks with an old secret", async (t) => {
+test("a new secret deletes strays pointing here and replaces webhooks with the old one", async (t) => {
   const { registeredFor, state } = fakeOnshape(t);
   await readParts("rotated");
   const [rotated] = state.hooks.filter((hook) =>
     hook.filter.includes("'rotated'")
   );
-  rotated.url = `${BASE}/api/onshape/webhook?secret=old`;
+  process.env.ONSHAPE_WEBHOOK_SECRET = "new-secret";
+  const callback = `${BASE}/api/onshape/webhook?secret=new-secret`;
   state.hooks.push(
-    { id: "stray", url: CALLBACK, filter: "{$DocumentId} = 'x'" },
+    { id: "stray", url: callback, filter: "{$DocumentId} = 'x'" },
     {
       id: "someone-else",
       url: "https://elsewhere.example.org/hook",
       filter: "{$DocumentId} = 'y'",
     }
   );
-  const stop = startOnshapeWebhookChecks(() => () => {});
-  await onshapeWebhookWork();
-  stop();
+  await readParts("rotated"); // the changed callback is the evidence
+  assert.equal(state.listed, 1);
   assert.ok(state.deleted.includes("stray"));
   assert.ok(state.deleted.includes(rotated.id));
   assert.ok(!state.deleted.includes("someone-else"));
@@ -245,34 +254,29 @@ test("a check deletes strays pointing here and replaces webhooks with an old sec
   const replacement = state.hooks.find(
     (hook) => hook.filter.includes("'rotated'") && hook.id !== rotated.id
   );
-  assert.equal(replacement?.url, CALLBACK);
+  assert.equal(replacement?.url, callback);
 });
 
-test("a check leaves alone a webhook whose stored URL differs only in form", async (t) => {
-  const { state } = fakeOnshape(t);
+test("a repair pass leaves alone a webhook whose stored URL differs only in form", async (t) => {
+  const { registeredFor, state, changeSilently } = fakeOnshape(t);
   await readParts("normalised");
   const [hook] = state.hooks.filter((entry) =>
     entry.filter.includes("'normalised'")
   );
   // Same callback as Onshape might store it: host case, default port, trailing slash.
   hook.url = `https://SHOP.example.org:443/api/onshape/webhook/?secret=${SECRET}`;
-  const registeredBefore = state.registered.length;
-  const stop = startOnshapeWebhookChecks(() => () => {});
-  await onshapeWebhookWork();
-  stop();
+  await changeSilently("normalised");
   assert.equal(state.listed, 1);
-  assert.equal(state.registered.length, registeredBefore);
-  assert.deepEqual(state.deleted, []);
+  assert.equal(registeredFor("normalised"), 1);
+  assert.ok(!state.deleted.includes(hook.id));
 });
 
 test("registration, listing and deletion are tallied under their own labels", async (t) => {
   const before = await readUsage();
-  const { state } = fakeOnshape(t);
+  const { state, changeSilently } = fakeOnshape(t);
   await readParts("tallied");
   state.hooks.push({ id: "stray-2", url: CALLBACK, filter: "" });
-  const stop = startOnshapeWebhookChecks(() => () => {});
-  await onshapeWebhookWork();
-  stop();
+  await changeSilently("tallied");
   const usage = await readUsage();
   const delta = (label: string) =>
     callsFor(usage, label) - callsFor(before, label);

@@ -2,15 +2,17 @@ import { ApiError, redirectToSignIn } from "./client";
 import type { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./keys";
 import type { ActionResponse } from "~/onshape_connector/utils/types";
+import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 /**
  * `/api/mfg/parts/actions` — the one endpoint that does not go through
  * `apiFetch`.
  *
- * It answers a rejected operation with HTTP 400 *and* a `{ success: false,
- * error }` body, and the UI wants that body: the error is a validation message
- * to show inline, not a transport failure. So the status is ignored and the
- * body is the contract.
+ * It answers a rejected operation with HTTP 400 (503 for a part-number edit
+ * refused by the daily Onshape ceiling) *and* a `{ success: false, error }`
+ * body, and the UI wants that body: the error is a message to show inline,
+ * not a transport failure. So the status is ignored and the body is the
+ * contract.
  *
  * What is still worth guarding is the content type. The auth middleware can
  * answer a signed-out request with an HTML redirect, and `response.json()` on
@@ -136,13 +138,27 @@ export async function updatePartNumber(
   }
   const result = await postAction(body);
   if (result.success) {
-    // Both thumbnail variants share this Part Studio prefix. Query refresh
-    // failures do not reject the accepted edit or trigger another write.
+    // Both thumbnail variants share this Part Studio prefix. The server has
+    // already applied the confirmed number to its cached read, so the edit is
+    // applied here too instead of refetching. Query failures here do not
+    // reject the accepted edit or trigger another write.
     const affectedParts = { queryKey: queryKeys.onshape.partsScope(input) };
-    // Invalidation alone reuses initial reads without data. Cancel those old
-    // flights so their pre-edit responses cannot become fresh query data.
+    // A fetch already in flight may carry the old number: stop it so its
+    // answer cannot land on top of the edit.
     await queryClient.cancelQueries(affectedParts);
-    await queryClient.invalidateQueries(affectedParts);
+    queryClient.setQueriesData<BtPartMetadataInfo[]>(affectedParts, (parts) =>
+      parts?.map((part) =>
+        part.partId === input.partId
+          ? { ...part, partNumber: input.partNumber }
+          : part
+      )
+    );
+    // A query still loading its first answer has nothing to patch; it asks
+    // Hawk Shop again, whose cached read already carries the edit.
+    await queryClient.invalidateQueries({
+      ...affectedParts,
+      predicate: (query) => query.state.data === undefined,
+    });
   }
   return result;
 }

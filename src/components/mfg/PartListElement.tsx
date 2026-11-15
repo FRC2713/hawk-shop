@@ -7,6 +7,7 @@ import type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
 import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 import { ManufacturingStateBadge } from "./ManufacturingStateBadge";
 import { cn } from "~/lib/utils";
+import { partThumbnailHref, thumbnailProxyUrl } from "~/lib/api/onshape";
 
 interface PartListElementProps {
   part: BtPartMetadataInfo;
@@ -23,13 +24,10 @@ interface PartListElementProps {
  * Small thumbnail component for list view
  */
 function PartListThumbnail({ part }: { part: BtPartMetadataInfo }) {
-  const rawThumbnailUrl =
-    part.thumbnailInfo?.sizes?.find((s) => s.size === "300x300")?.href ||
-    part.thumbnailInfo?.sizes?.[0]?.href ||
-    part.thumbnailInfo?.sizes?.find((s) => s.size === "600x340")?.href;
+  const rawThumbnailUrl = partThumbnailHref(part);
 
   const thumbnailHref = rawThumbnailUrl
-    ? `/api/onshape/thumbnail?url=${encodeURIComponent(rawThumbnailUrl)}`
+    ? thumbnailProxyUrl({ url: rawThumbnailUrl })
     : null;
 
   const [thumbnailError, setThumbnailError] = useState(false);

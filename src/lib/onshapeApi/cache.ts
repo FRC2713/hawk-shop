@@ -1,54 +1,29 @@
 import "virtual:hawk-shop/server-only";
 
 /**
- * Server-side cache for Onshape API responses, plus the usage tally that tells
- * you whether it is working.
+ * Cache keys, TTLs, invalidation and the usage tally behind the Onshape
+ * gateway (`./gateway`). Every read and write of `onshape_api_cache` rows is
+ * here. Two modules use them: the gateway, which owns the read policy and
+ * single-flight and reads and writes rows (`readOnshapeCache`,
+ * `writeOnshapeCache`), and Part Studio freshness (`./partStudioFreshness`),
+ * which marks rows stale and patches them after a write. Nothing else touches
+ * the cache rows.
  *
  * Onshape's allowance is yearly, so staleness is cheap and a cache miss is not
  * (see docs/ONSHAPE.md#allocation-and-billing). Anything with an immutable
  * upstream (a version, a microversion) is cached with no expiry at all.
- *
- * Two layers sit here:
- *
- * - **SQLite** (`onshape_api_cache`) so the cache survives `docker compose up`.
- *   An in-memory cache would re-buy the whole board after every restart.
- * - **In-process single-flight** so the ten browsers that hit the board when
- *   the shop opens produce one upstream call rather than ten. The SQLite layer
- *   alone cannot do this: none of the ten have written a row yet.
  *
  * Single-process by design, like `~/server/events/bus` — a second replica would
  * duplicate at most one call per key per TTL, so this degrades gracefully
  * rather than breaking.
  */
 
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, like, sql } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { onshapeApiCache, onshapeApiUsage } from "~/server/db/schema";
-import { onshapeWebhookSettings } from "~/server/onshape-webhook";
 
 /** Pass as `ttlMs` for a response whose upstream can never change. */
 export const NEVER_EXPIRES = null;
-
-const DEFAULT_WORKSPACE_TTL_SECONDS = 300;
-const WEBHOOK_WORKSPACE_TTL_SECONDS = 24 * 60 * 60;
-
-/**
- * TTL for reads against a **workspace** (`wvm=w`), the one Part Studio scope
- * that changes under you as students edit CAD.
- *
- * With configured webhooks, document changes invalidate the cache and a
- * 24-hour TTL is the safety net. Otherwise it expires after five minutes.
- * A finite, positive `ONSHAPE_CACHE_TTL_SECONDS` overrides either default.
- */
-export function workspaceTtlMs(): number {
-  const raw = Number(process.env.ONSHAPE_CACHE_TTL_SECONDS);
-  if (Number.isFinite(raw) && raw > 0) return raw * 1000;
-  return (
-    (onshapeWebhookSettings()
-      ? WEBHOOK_WORKSPACE_TTL_SECONDS
-      : DEFAULT_WORKSPACE_TTL_SECONDS) * 1000
-  );
-}
 
 /**
  * TTL for version metadata.
@@ -60,18 +35,9 @@ export function workspaceTtlMs(): number {
 export const VERSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Parts at a version or microversion are immutable; at a workspace they are
- * not. Callers pass the scope through and get the right expiry without having
- * to remember which is which.
- */
-export function partsTtlMs(instanceType: string): number | null {
-  return instanceType === "v" || instanceType === "m"
-    ? NEVER_EXPIRES
-    : workspaceTtlMs();
-}
-
-/**
- * In-flight upstream requests, keyed the same way as the table.
+ * In-flight upstream requests, keyed the same way as the table. The gateway's
+ * single-flight lives here so invalidation can detach reads that started
+ * before an edit. Reached only through the functions below.
  *
  * Parked on `globalThis` for the same reason the db handle is: dev-mode module
  * reloads would otherwise strand the map and lose the dedup.
@@ -79,7 +45,10 @@ export function partsTtlMs(instanceType: string): number | null {
 const globalForCache = globalThis as unknown as {
   __onshapeInflight?: Map<string, Promise<unknown>>;
 };
-const inflight = (globalForCache.__onshapeInflight ??= new Map());
+const inflight: Map<
+  string,
+  Promise<unknown>
+> = (globalForCache.__onshapeInflight ??= new Map());
 
 const KEY_SEPARATOR = "::";
 
@@ -94,7 +63,37 @@ export function invalidateOnshapeCache(key: string): void {
   db.delete(onshapeApiCache).where(eq(onshapeApiCache.cache_key, key)).run();
 }
 
-function readCache<T>(key: string): { hit: true; value: T } | { hit: false } {
+/**
+ * Detach a read in flight so its answer is returned to whoever awaits it but
+ * never stored: it started before an edit and would store a pre-edit payload
+ * as freshly fetched.
+ */
+export function detachOnshapeRead(key: string): void {
+  inflight.delete(key);
+}
+
+/** The read in flight under `key`, if any (the gateway's single-flight). */
+export function pendingOnshapeRead(key: string): Promise<unknown> | undefined {
+  return inflight.get(key);
+}
+
+/** Register a read in flight under `key`, so identical reads share it. */
+export function startOnshapeRead(key: string, read: Promise<unknown>): void {
+  inflight.set(key, read);
+}
+
+/** Keys of reads currently in flight. */
+export function onshapeReadsInFlight(): string[] {
+  return [...inflight.keys()];
+}
+
+/**
+ * One durable row's payload, and whether it has expired. The gateway decides
+ * what to do with it. A corrupt row or unreadable volume reads as a miss.
+ */
+export function readOnshapeCache(
+  key: string
+): { hit: true; value: unknown; expired: boolean } | { hit: false } {
   try {
     const [row] = db
       .select({
@@ -105,12 +104,14 @@ function readCache<T>(key: string): { hit: true; value: T } | { hit: false } {
       .where(eq(onshapeApiCache.cache_key, key))
       .limit(1)
       .all();
-
     if (!row) return { hit: false };
-    if (row.expires_at && new Date(row.expires_at) <= new Date()) {
-      return { hit: false };
-    }
-    return { hit: true, value: JSON.parse(row.payload) as T };
+    return {
+      hit: true,
+      value: JSON.parse(row.payload),
+      expired: Boolean(
+        row.expires_at && new Date(row.expires_at) <= new Date()
+      ),
+    };
   } catch (error) {
     // A corrupt row or unreadable volume must degrade to "just call Onshape",
     // never to a failed page.
@@ -119,29 +120,115 @@ function readCache<T>(key: string): { hit: true; value: T } | { hit: false } {
   }
 }
 
-function writeCache(key: string, value: unknown, ttlMs: number | null): void {
+/**
+ * Store a freshly fetched payload: fetch time now, expiry `ttlMs` from now
+ * (`null` never expires). A failed write is logged, never thrown.
+ */
+export function writeOnshapeCache(
+  key: string,
+  value: unknown,
+  ttlMs: number | null
+): void {
   try {
-    const expiresAt =
-      ttlMs === null ? null : new Date(Date.now() + ttlMs).toISOString();
+    const now = new Date();
+    const row = {
+      payload: JSON.stringify(value),
+      created_at: now.toISOString(),
+      expires_at:
+        ttlMs === null ? null : new Date(now.getTime() + ttlMs).toISOString(),
+    };
     db.insert(onshapeApiCache)
-      .values({
-        cache_key: key,
-        payload: JSON.stringify(value),
-        created_at: new Date().toISOString(),
-        expires_at: expiresAt,
-      })
-      .onConflictDoUpdate({
-        target: onshapeApiCache.cache_key,
-        set: {
-          payload: JSON.stringify(value),
-          created_at: new Date().toISOString(),
-          expires_at: expiresAt,
-        },
-      })
+      .values({ cache_key: key, ...row })
+      .onConflictDoUpdate({ target: onshapeApiCache.cache_key, set: row })
       .run();
   } catch (error) {
     console.error("[ONSHAPE CACHE] write failed:", error);
   }
+}
+
+/** A durable cache row without its payload. */
+export type OnshapeCacheRow = {
+  key: string;
+  /** When the payload was fetched (or last observed to be current). */
+  fetchedAt: Date;
+  /** `null` never expires. */
+  expiresAt: Date | null;
+};
+
+/** Every durable row whose key starts with `prefix`. */
+export function onshapeCacheRows(prefix: string): OnshapeCacheRow[] {
+  const pattern = prefix.replace(/[\\%_]/g, (char) => `\\${char}`) + "%";
+  return db
+    .select({
+      key: onshapeApiCache.cache_key,
+      created_at: onshapeApiCache.created_at,
+      expires_at: onshapeApiCache.expires_at,
+    })
+    .from(onshapeApiCache)
+    .where(sql`${like(onshapeApiCache.cache_key, pattern)} ESCAPE '\\'`)
+    .all()
+    .map((row) => ({
+      key: row.key,
+      fetchedAt: new Date(row.created_at),
+      expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+    }));
+}
+
+/**
+ * Move rows' expiries in one transaction, leaving their payloads and fetch
+ * times alone.
+ */
+export function setOnshapeCacheExpiries(
+  expiries: { key: string; expiresAt: Date }[]
+): void {
+  if (expiries.length === 0) return;
+  db.transaction((tx) => {
+    for (const { key, expiresAt } of expiries)
+      tx.update(onshapeApiCache)
+        .set({ expires_at: expiresAt.toISOString() })
+        .where(eq(onshapeApiCache.cache_key, key))
+        .run();
+  });
+}
+
+/**
+ * Rewrite a stored payload in place and treat it as freshly observed: fetch
+ * time is now. Expiry never moves later than it already is: it becomes
+ * `min(current expiry, now + ttlMs)` (`null` never expires), so a row a change
+ * event marked stale stays stale. Returns false, changing nothing, when no row
+ * exists; nothing is fetched.
+ */
+export function patchOnshapeCache(
+  key: string,
+  patch: (payload: unknown) => unknown,
+  ttlMs: number | null
+): boolean {
+  const [row] = db
+    .select({
+      payload: onshapeApiCache.payload,
+      expires_at: onshapeApiCache.expires_at,
+    })
+    .from(onshapeApiCache)
+    .where(eq(onshapeApiCache.cache_key, key))
+    .limit(1)
+    .all();
+  if (!row) return false;
+  const now = Date.now();
+  const expiry = Math.min(
+    row.expires_at ? Date.parse(row.expires_at) : Infinity,
+    ttlMs === null ? Infinity : now + ttlMs
+  );
+  db.update(onshapeApiCache)
+    .set({
+      payload: JSON.stringify(patch(JSON.parse(row.payload))),
+      created_at: new Date(now).toISOString(),
+      expires_at: Number.isFinite(expiry)
+        ? new Date(expiry).toISOString()
+        : null,
+    })
+    .where(eq(onshapeApiCache.cache_key, key))
+    .run();
+  return true;
 }
 
 /**
@@ -175,6 +262,17 @@ export function recordOnshapeUsage(label: string, kind: "call" | "hit"): void {
   }
 }
 
+/** Calls tallied today (UTC) across all labels: what the daily ceiling counts. */
+export function onshapeCallsToday(): number {
+  const day = new Date().toISOString().slice(0, 10);
+  const [row] = db
+    .select({ calls: sql<number>`coalesce(sum(${onshapeApiUsage.calls}), 0)` })
+    .from(onshapeApiUsage)
+    .where(eq(onshapeApiUsage.day, day))
+    .all();
+  return Number(row?.calls ?? 0);
+}
+
 /** The per-day tally, newest first, with totals and the cache hit rate. */
 export function summarizeOnshapeUsage() {
   const byDay = db
@@ -201,76 +299,4 @@ export function summarizeOnshapeUsage() {
     },
     byDay,
   };
-}
-
-/**
- * Serve `label`/`key` from cache, or call `fetcher` at most once across all
- * concurrent callers and cache what it returns.
- *
- * A throwing `fetcher` is never cached and never counted: an expired token or a
- * 5xx would otherwise poison the entry for the whole TTL.
- */
-export async function withOnshapeCache<T>({
-  label,
-  key,
-  ttlMs,
-  fetcher,
-}: {
-  label: string;
-  key: string;
-  ttlMs: number | null;
-  fetcher: () => Promise<T>;
-}): Promise<T> {
-  const cached = readCache<T>(key);
-  if (cached.hit) {
-    recordOnshapeUsage(label, "hit");
-    return cached.value;
-  }
-
-  const pending = inflight.get(key);
-  if (pending) {
-    // Someone else is already paying for this exact request — ride along.
-    recordOnshapeUsage(label, "hit");
-    return pending as Promise<T>;
-  }
-
-  let request!: Promise<T>;
-  request = (async () => {
-    const value = await fetcher();
-    recordOnshapeUsage(label, "call");
-    if (inflight.get(key) === request) writeCache(key, value, ttlMs);
-    return value;
-  })();
-
-  inflight.set(key, request);
-  try {
-    return await request;
-  } finally {
-    if (inflight.get(key) === request) inflight.delete(key);
-  }
-}
-
-/**
- * Forget every **workspace** (`wvm=w`) read of one document, durable rows and
- * in-flight requests alike, so the next read goes upstream once.
- *
- * Relies on the key layout `cacheKey(label, documentId, wvm, ...)`. Version and
- * microversion entries are immutable and stay, as do keys of any other shape.
- * Called when an Onshape webhook reports that the document changed.
- */
-export function invalidateOnshapeCacheForDocument(documentId: string): void {
-  // What follows the label in every workspace key of this document.
-  const tail = cacheKey(documentId, "w", "");
-  const afterLabel = (key: string) =>
-    key.slice(key.indexOf(KEY_SEPARATOR) + KEY_SEPARATOR.length);
-  for (const key of [...inflight.keys()])
-    if (afterLabel(key).startsWith(tail)) inflight.delete(key);
-
-  const pattern = tail.replace(/[\\%_]/g, (char) => `\\${char}`) + "%";
-  const key = onshapeApiCache.cache_key;
-  db.delete(onshapeApiCache)
-    .where(
-      sql`substr(${key}, instr(${key}, ${KEY_SEPARATOR}) + ${KEY_SEPARATOR.length}) LIKE ${pattern} ESCAPE '\\'`
-    )
-    .run();
 }

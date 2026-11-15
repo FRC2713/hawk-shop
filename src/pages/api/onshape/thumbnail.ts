@@ -17,12 +17,8 @@ import {
   saveFile,
   storagePathFromUrl,
 } from "~/server/storage/files";
-import {
-  assertOnshapeAllocation,
-  isOnshapeUrl,
-  onshapeErrorResponse,
-  onshapeFetch,
-} from "~/lib/onshapeApi/auth";
+import { isOnshapeUrl, onshapeErrorResponse } from "~/lib/onshapeApi/auth";
+import { onshapeRead, type OnshapeBinary } from "~/lib/onshapeApi/gateway";
 
 /**
  * A same-origin relative redirect. The app sits behind a TLS-terminating
@@ -145,28 +141,31 @@ export const GET: APIRoute = async ({ request }) => {
     );
   }
 
-  let response: Response;
+  let image: OnshapeBinary;
   try {
-    // The signer defaults to `Accept: application/json`, which Onshape
-    // answers with 406 for an image (observed 2026-11-09, docs/ONSHAPE.md).
-    response = await onshapeFetch(imageUrl, { headers: { Accept: "*/*" } });
-    assertOnshapeAllocation(response);
+    // Concurrent misses for one href (a whole board loading right after a part
+    // changed) share one call. The signer defaults to `Accept:
+    // application/json`, which Onshape answers with 406 for an image
+    // (observed 2026-11-09, docs/ONSHAPE.md).
+    image = await onshapeRead({
+      label: "thumbnail",
+      dedupKey: `thumbnail::${imageUrl}`,
+      responseType: "binary",
+      request: { path: imageUrl, headers: { Accept: "*/*" } },
+    });
   } catch (error) {
-    const known = onshapeErrorResponse(error);
+    const known = onshapeErrorResponse(error, {
+      requestFailed: (error) => ({
+        error: `Failed to fetch thumbnail: ${error.message}`,
+        status: error.status,
+      }),
+    });
     if (known) return known;
     throw error;
   }
-  if (!response.ok) {
-    return Response.json(
-      { error: `Failed to fetch thumbnail: ${response.statusText}` },
-      { status: response.status }
-    );
-  }
 
-  recordOnshapeUsage("thumbnail", "call");
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const contentType = response.headers.get("Content-Type") || "image/png";
+  const buffer = Buffer.from(image.bytes);
+  const contentType = image.contentType || "image/png";
 
   // Derive the path from the row key so the same image is not duplicated
   // per card.

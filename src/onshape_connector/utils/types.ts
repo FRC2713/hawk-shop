@@ -28,6 +28,9 @@ export interface ActionResponse {
   errorId?: string;
   data?: unknown;
   redirect?: string;
+  /** HTTP status for a failure; the route answers 400 when absent. Not sent
+   * in the body. */
+  status?: number;
   headers?: {
     "Set-Cookie": string;
   };

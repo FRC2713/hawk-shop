@@ -341,4 +341,12 @@ export const migrationFixtures: SeedFixture = {
       last_checked_at: null,
     },
   ],
+  onshape_webhook_upkeep: [
+    {
+      id: "default",
+      last_repair_at: updated,
+      last_repair_reason: "missed-delivery",
+      last_repair_document_id: "doc-a",
+    },
+  ],
 };

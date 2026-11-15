@@ -17,6 +17,7 @@ import { ManufacturingStateBadge } from "./ManufacturingStateBadge";
 import { PartCardThumbnail } from "./PartCardThumbnail";
 import { PartMfgState } from "./PartMfgState";
 import { PartNumberInput } from "./PartNumberInput";
+import { partThumbnailHref } from "~/lib/api/onshape";
 
 interface PartCardProps {
   part: BtPartMetadataInfo;
@@ -43,13 +44,7 @@ export function PartCard({
   index,
 }: PartCardProps) {
   // Extract thumbnail URL once (memoized to avoid recalculation)
-  const thumbnailUrl = useMemo(() => {
-    return (
-      part.thumbnailInfo?.sizes?.find((s) => s.size === "300x300")?.href ||
-      part.thumbnailInfo?.sizes?.[0]?.href ||
-      part.thumbnailInfo?.sizes?.find((s) => s.size === "600x340")?.href
-    );
-  }, [part.thumbnailInfo?.sizes]);
+  const thumbnailUrl = useMemo(() => partThumbnailHref(part), [part]);
 
   // Extract onshape params only if documentId exists (memoized)
   const onshapeParams = useMemo(() => {

@@ -1,13 +1,7 @@
 import "virtual:hawk-shop/server-only";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
-import {
-  createOnshapeApiClient,
-  getPartsWmve,
-} from "~/lib/onshapeApi/generated-wrapper";
-import { cacheKey, partsTtlMs, withOnshapeCache } from "~/lib/onshapeApi/cache";
-import { assertOnshapeAllocation } from "~/lib/onshapeApi/auth";
-import { ensureOnshapeWebhook } from "~/lib/onshapeApi/webhooks";
-import { syncWorkspaceCardMicroversions } from "~/server/kanbanApi/cards";
+import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
+import { onshapeWebhookUpkeep } from "~/lib/onshapeApi/webhooks";
 import type { PartsPageSearchParams } from "./types";
 
 /**
@@ -15,7 +9,8 @@ import type { PartsPageSearchParams } from "./types";
  * This is used by both the API route and server-side prefetching
  * SERVER-ONLY: Uses server-side authentication
  *
- * Reads go through the shared server cache (`~/lib/onshapeApi/cache`). The Part
+ * Reads go through Part Studio freshness (`~/lib/onshapeApi/partStudioFreshness`),
+ * which owns the cache key, TTL and staleness rules on top of the gateway. The Part
  * Studio contents are the same for every user who can see the document, so a
  * whole shop opening the connector at once costs one Onshape call rather than
  * one per student — and at `wvm=v` the answer is immutable, so it costs one
@@ -26,79 +21,21 @@ import type { PartsPageSearchParams } from "./types";
 export async function fetchPartsFromOnshape(
   queryParams: PartsPageSearchParams
 ): Promise<BtPartMetadataInfo[]> {
-  const parts = await withOnshapeCache<BtPartMetadataInfo[]>({
-    label: "parts",
-    key: cacheKey(
-      "parts",
-      queryParams.documentId,
-      queryParams.instanceType,
-      queryParams.instanceId,
-      queryParams.elementId
-    ),
-    ttlMs: partsTtlMs(queryParams.instanceType),
-    fetcher: () => fetchPartsUncached(queryParams),
+  const { documentId, instanceType, instanceId, elementId } = queryParams;
+  const parts = await partStudioFreshness.get({
+    documentId,
+    instanceType,
+    instanceId,
+    elementId,
   });
 
-  // A workspace changes under its cards. When this read shows a part at a new
-  // microversion, its cards follow so their thumbnails refresh. Versions and
-  // microversions are frozen, so their cards never need this.
+  // Cards keep the microversion and thumbnail they were released with, so a
+  // workspace read leaves them alone.
   if (queryParams.instanceType === "w" && Array.isArray(parts)) {
-    syncWorkspaceCardMicroversions(
-      {
-        documentId: queryParams.documentId,
-        workspaceId: queryParams.instanceId,
-        elementId: queryParams.elementId,
-      },
-      parts
-    );
     // Hear about the next edit to this document instead of waiting out the
     // TTL. Not awaited: registration must never slow or fail a parts read.
-    void ensureOnshapeWebhook(queryParams.documentId);
+    void onshapeWebhookUpkeep.ensure(queryParams.documentId);
   }
 
   return parts;
-}
-
-async function fetchPartsUncached(
-  queryParams: PartsPageSearchParams
-): Promise<BtPartMetadataInfo[]> {
-  const client = await createOnshapeApiClient();
-
-  const response = await getPartsWmve({
-    client,
-    path: {
-      did: queryParams.documentId,
-      wvm: queryParams.instanceType,
-      wvmid: queryParams.instanceId,
-      eid: queryParams.elementId,
-    },
-    query: {
-      withThumbnails: true,
-      includePropertyDefaults: true,
-    },
-  });
-
-  assertOnshapeAllocation(response.response);
-
-  // Check for errors in the response
-  if ((response as any).error) {
-    const errorMessage = (response as any).error;
-
-    // Check if it's an authentication error
-    if (
-      typeof errorMessage === "string" &&
-      errorMessage.includes("invalid_token")
-    ) {
-      throw new Error("Not authenticated with Onshape. Please sign in again.");
-    }
-
-    throw new Error(`Onshape API error: ${errorMessage}`);
-  }
-
-  // Check if response.data exists
-  if (!response.data) {
-    throw new Error("Onshape API returned no data");
-  }
-
-  return response.data || [];
 }

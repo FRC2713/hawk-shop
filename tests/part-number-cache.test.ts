@@ -46,7 +46,7 @@ const metadata = (value: string) => ({
   properties: [{ name: "Part number", propertyId: "pn", value }],
 });
 
-test("confirmed edit refreshes ordinary parts reads while unrelated immutable scopes stay cached", async (t) => {
+test("confirmed edit is written through to the cached read while unrelated scopes stay cached", async (t) => {
   let value = "old";
   let reads = 0;
   t.mock.method(
@@ -71,7 +71,7 @@ test("confirmed edit refreshes ordinary parts reads while unrelated immutable sc
   assert.deepEqual(await edit("confirmed"), { success: true });
   assert.equal((await read("confirmed"))[0].partNumber, "new");
   assert.equal((await read("unrelated"))[0].partNumber, "old");
-  assert.equal(reads, 3);
+  assert.equal(reads, 2, "no parts read follows the edit");
 });
 
 test("accepted but unconfirmed edits evict old parts before verification finishes", async (t) => {
@@ -196,7 +196,7 @@ test("usage counts successful metadata HTTP traffic including malformed data and
   assert.equal((await calls()) - before, 4);
 });
 
-test("accepted write with invalid JSON is confirmed by metadata and evicts stale immutable parts", async (t) => {
+test("accepted write with invalid JSON is confirmed by metadata and written through", async (t) => {
   let saved = false;
   let writes = 0;
   let partsReads = 0;
@@ -208,7 +208,9 @@ test("accepted write with invalid JSON is confirmed by metadata and evicts stale
         input instanceof Request ? input : new Request(input, init);
       if (request.url.includes("/parts/")) {
         partsReads++;
-        return Response.json([{ partNumber: saved ? "new" : "old" }]);
+        return Response.json([
+          { partId: "part", partNumber: saved ? "new" : "old" },
+        ]);
       }
       if (request.method === "POST") {
         writes++;
@@ -227,7 +229,7 @@ test("accepted write with invalid JSON is confirmed by metadata and evicts stale
   assert.equal((await usageCalls()) - before, 3);
   assert.equal((await read("invalid-write-json"))[0].partNumber, "new");
   assert.deepEqual(result, { success: true });
-  assert.equal(partsReads, 2);
+  assert.equal(partsReads, 1);
   assert.equal(writes, 1);
 });
 
@@ -296,7 +298,7 @@ test("invalid initial metadata JSON counts its successful HTTP response without 
   assert.equal((await usageCalls()) - before, 1);
 });
 
-test("accepted write with a failed body stream still evicts old parts and confirms through independent metadata", async (t) => {
+test("accepted write with a failed body stream is still written through and confirmed by independent metadata", async (t) => {
   let saved = false;
   let writes = 0;
   t.mock.method(
@@ -306,7 +308,9 @@ test("accepted write with a failed body stream still evicts old parts and confir
       const request =
         input instanceof Request ? input : new Request(input, init);
       if (request.url.includes("/parts/"))
-        return Response.json([{ partNumber: saved ? "new" : "old" }]);
+        return Response.json([
+          { partId: "part", partNumber: saved ? "new" : "old" },
+        ]);
       if (request.method === "POST") {
         writes++;
         saved = true;
@@ -328,6 +332,6 @@ test("accepted write with a failed body stream still evicts old parts and confir
   assert.equal((await read("failed-write-body"))[0].partNumber, "new");
   assert.deepEqual(result, { success: true });
   assert.equal(writes, 1);
-  // Three metadata calls plus the ordinary parts read after eviction.
-  assert.equal((await usageCalls()) - before, 4);
+  // Three metadata calls; the parts read after the edit is a cache hit.
+  assert.equal((await usageCalls()) - before, 3);
 });

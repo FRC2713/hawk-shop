@@ -1,7 +1,8 @@
 import { useState } from "react";
 import {
-  onshapeThumbnailSrc,
   partMicroversionOf,
+  partThumbnailHref,
+  thumbnailProxyUrl,
   type OnshapePartsScope,
 } from "~/lib/api/onshape";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
@@ -16,16 +17,15 @@ interface PartCardThumbnailProps {
  * Component to display part thumbnail with error handling
  */
 export function PartCardThumbnail({ part, scope }: PartCardThumbnailProps) {
-  // Always prefer 300x300 thumbnail from sizes array
   // The main href is just a JSON link, not an image
-  const rawThumbnailUrl =
-    part.thumbnailInfo?.sizes?.find((s) => s.size === "300x300")?.href ||
-    part.thumbnailInfo?.sizes?.[0]?.href ||
-    part.thumbnailInfo?.sizes?.find((s) => s.size === "600x340")?.href;
+  const rawThumbnailUrl = partThumbnailHref(part);
 
   // Use proxy endpoint for authenticated thumbnail access
   const thumbnailHref = rawThumbnailUrl
-    ? onshapeThumbnailSrc(rawThumbnailUrl, partMicroversionOf(scope, part))
+    ? thumbnailProxyUrl({
+        url: rawThumbnailUrl,
+        part: partMicroversionOf(scope, part),
+      })
     : null;
 
   const [thumbnailError, setThumbnailError] = useState(false);

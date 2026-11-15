@@ -16,6 +16,8 @@ const post = endpoint(
 );
 const { fetchPartsFromOnshape } =
   await import("../src/onshape_connector/utils/partsQuery.server");
+const { fetchVersionFromOnshape } =
+  await import("../src/onshape_connector/utils/versionQuery.server");
 const read = endpoint(
   await import("../src/pages/api/kanban/cards/index"),
   "GET"
@@ -98,6 +100,8 @@ test("server uses cached part facts for every blocker and allows warnings withou
   await inRequest(request, async () =>
     Response.json(await fetchPartsFromOnshape({ ...scope, documentId }))
   );
+  // The connector reads the version it shows; release reuses that answer.
+  await fetchVersionFromOnshape(documentId, scope.instanceId);
   const missingNumber = await release("unnumbered", { documentId });
   assert.equal(missingNumber.status, 400);
   assert.deepEqual(await missingNumber.json(), {
@@ -143,7 +147,7 @@ test("server uses cached part facts for every blocker and allows warnings withou
   const unknown = await release("not-in-studio", { documentId });
   assert.equal(unknown.status, 400);
   assert.match((await unknown.json()).error, /not found/);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
 });
 
 test("partial or invalid CAD scope cannot bypass checks", async (t) => {
@@ -256,17 +260,9 @@ test("workspace edits and card updates preserve a legacy workspace card's warnin
     material: { displayName: "6061 Aluminum" },
     microversionId: "after",
   };
-  const { invalidateOnshapeCache, cacheKey } =
-    await import("../src/lib/onshapeApi/cache");
-  invalidateOnshapeCache(
-    cacheKey(
-      "parts",
-      workspace.documentId,
-      "w",
-      workspace.instanceId,
-      workspace.elementId
-    )
-  );
+  const { partStudioFreshness } =
+    await import("../src/lib/onshapeApi/partStudioFreshness");
+  partStudioFreshness.discard({ ...workspace, instanceType: "w" });
   await inRequest(sessionRequest("student"), async () =>
     Response.json(await fetchPartsFromOnshape(workspace))
   );
@@ -290,7 +286,8 @@ test("workspace edits and card updates preserve a legacy workspace card's warnin
   const persisted = (await readCards()).find(
     (card: { id: string }) => card.id === created.id
   );
-  assert.equal(persisted.onshape_microversion_id, "after");
+  // The card keeps the microversion it was released with.
+  assert.equal(persisted.onshape_microversion_id, "before");
   assert.equal(persisted.quantity_to_make, 8);
   assert.deepEqual(persisted.release_issues, created.release_issues);
 });

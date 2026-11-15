@@ -10,7 +10,7 @@ const scope = {
   instanceId: "workspace",
   elementId: "studio",
 };
-test("browser confirmed edit refreshes both parts variants and preserves unrelated query data", async (t) => {
+test("browser confirmed edit updates both parts variants in place without refetching", async (t) => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -28,7 +28,10 @@ test("browser confirmed edit refreshes both parts variants and preserves unrelat
         return Response.json({ success: true });
       }
       partReads++;
-      return Response.json([{ partNumber: saved ? "new" : "old" }]);
+      return Response.json([
+        { partId: "part", partNumber: saved ? "new" : "old" },
+        { partId: "neighbour", partNumber: "kept" },
+      ]);
     }
   );
   const variants = [
@@ -45,11 +48,14 @@ test("browser confirmed edit refreshes both parts variants and preserves unrelat
     client
   );
   for (const query of variants)
-    assert.equal(client.getQueryData(query.queryKey)?.[0]?.partNumber, "new");
+    assert.deepEqual(
+      client.getQueryData(query.queryKey)?.map((part) => part.partNumber),
+      ["new", "kept"]
+    );
   const results = await Promise.all(variants.map((q) => client.fetchQuery(q)));
   for (const result of results) assert.equal(result[0]?.partNumber, "new");
   assert.equal((await client.fetchQuery(unrelated))[0]?.partNumber, "old");
-  assert.equal(partReads, 5);
+  assert.equal(partReads, 3, "the edit triggers no parts refetch");
   subscriptions.forEach((unsubscribe) => unsubscribe());
   client.clear();
 });

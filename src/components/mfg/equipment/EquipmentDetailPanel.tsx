@@ -16,6 +16,7 @@ import {
 } from "~/lib/api";
 import { EquipmentImageLightbox } from "./EquipmentImageLightbox";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
+import { cardThumbnailUrl } from "~/lib/api/onshape";
 
 interface EquipmentDetailPanelProps {
   equipment: EquipmentWithProcesses;
@@ -34,14 +35,6 @@ function shortDate(iso: string | null | undefined) {
   }
 }
 
-function cardThumbnail(card: KanbanCardWithProcesses) {
-  if (!card.image_url && !card.onshape_document_id) return null;
-  const version = card.onshape_microversion_id
-    ? `&microversionId=${encodeURIComponent(card.onshape_microversion_id)}`
-    : "";
-  return `/api/onshape/thumbnail?cardId=${card.id}${version}`;
-}
-
 function AssignedPart({
   card,
   columnTitle,
@@ -50,7 +43,7 @@ function AssignedPart({
   columnTitle?: string;
 }) {
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
-  const thumbnail = cardThumbnail(card);
+  const thumbnail = cardThumbnailUrl(card);
   const due = shortDate(card.due_date);
   return (
     <li className="flex items-center gap-3 border-t py-2">

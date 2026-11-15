@@ -36,10 +36,19 @@ export function endpointFamily(url: string): string {
   return /^[a-z][a-z0-9-]*$/.test(family) ? family : "other";
 }
 
-function parseRemaining(raw: string | null): number | null {
-  if (raw === null || !/^\d+$/.test(raw.trim())) return null;
+function parseRemaining(raw: string | null | undefined): number | null {
+  if (raw == null || !/^\d+$/.test(raw.trim())) return null;
   const value = Number(raw.trim());
   return Number.isSafeInteger(value) ? value : null;
+}
+
+/**
+ * A positive integer environment variable, or null when it is unset, empty,
+ * zero, negative or not an integer.
+ */
+export function positiveIntEnv(name: string): number | null {
+  const value = parseRemaining(process.env[name]);
+  return value !== null && value > 0 ? value : null;
 }
 
 /**

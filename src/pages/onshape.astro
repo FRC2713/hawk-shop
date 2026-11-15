@@ -3,15 +3,19 @@ import { OctagonX, TriangleAlert } from "lucide-react";
 import AppLayout from "../layouts/AppLayout.astro";
 import { isOnshapeConfigured, onshapeOrigin } from "../lib/onshapeApi/auth";
 import { summarizeOnshapeUsage } from "../lib/onshapeApi/cache";
+import { onshapeBudgetStatus } from "../lib/onshapeApi/gateway";
 import {
   formatCount as count,
   formatObservedAt as when,
   onshapeRemainingStatus,
 } from "../lib/onshapeApi/remaining";
+import { minRefreshMs } from "../lib/onshapeApi/partStudioFreshness";
 import { onshapeWebhookStatus } from "../lib/onshapeApi/webhooks";
 const configured = isOnshapeConfigured();
 const webhooks = onshapeWebhookStatus();
 const { totals, byDay } = summarizeOnshapeUsage();
+const budget = onshapeBudgetStatus();
+const refreshMinutes = minRefreshMs() / 60_000;
 const { rows, latest, warnAt, exhausted, low } = onshapeRemainingStatus();
 // Brand callout: Light Grey panel, 4px red rail, 12/14px padding.
 const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
@@ -43,6 +47,23 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
       )
     }
 
+    {
+      budget.reached && (
+        <div role="alert" class={callout}>
+          <h2 class="flex items-center gap-2 text-base">
+            <OctagonX aria-hidden="true" className="size-5 shrink-0" />
+            Daily Onshape budget reached
+          </h2>
+          <p>
+            Hawk Shop has sent{" "}
+            <span class="brand-figures">{count(budget.today)}</span> calls today
+            (UTC), the daily limit. CAD data is served from cache, even if it is
+            stale, and anything not cached is unavailable until tomorrow.
+          </p>
+        </div>
+      )
+    }
+
     <section class="space-y-2" aria-labelledby="usage-heading">
       <h2 id="usage-heading" class="text-xl">Hawk Shop usage</h2>
       <p class="text-lg">
@@ -51,6 +72,20 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
         > · Served from cache: <span class="brand-figures"
           >{count(totals.hits)}</span
         > (<span class="brand-figures">{totals.hitRate}%</span>)
+      </p>
+      <p>
+        Today (UTC): <span class="brand-figures">{count(budget.today)}</span>
+        {
+          budget.limit === null ? (
+            " calls · no daily limit"
+          ) : (
+            <>
+              {" "}
+              of <span class="brand-figures">{count(budget.limit)}</span> daily
+              calls
+            </>
+          )
+        }
       </p>
       {
         byDay.length > 0 && (
@@ -140,16 +175,49 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
               {webhooks.registered === 1 ? "document" : "documents"}.
             </p>
             <ul class="text-muted-foreground text-sm">
-              {[
-                ["Last event", webhooks.lastEventAt],
-                ["Last check", webhooks.lastCheckedAt],
-              ].map(([label, at]) => (
-                <li>
-                  {label}:{" "}
-                  {at ? <span class="brand-figures">{when(at)}</span> : "never"}
-                </li>
-              ))}
+              <li>
+                Last event:{" "}
+                {webhooks.lastEventAt ? (
+                  <span class="brand-figures">
+                    {when(webhooks.lastEventAt)}
+                  </span>
+                ) : (
+                  "never"
+                )}
+              </li>
+              <li>
+                Last repair pass:{" "}
+                {webhooks.lastRepairAt ? (
+                  <>
+                    <span class="brand-figures">
+                      {when(webhooks.lastRepairAt)}
+                    </span>
+                    , because{" "}
+                    {webhooks.lastRepairReason === "callback-changed"
+                      ? "the callback URL changed"
+                      : "a document changed in Onshape without a delivery"}
+                    {webhooks.lastRepairDocumentId &&
+                      ` (document ${webhooks.lastRepairDocumentId})`}
+                    .
+                  </>
+                ) : (
+                  "never"
+                )}
+              </li>
             </ul>
+            <p class="text-muted-foreground text-sm">
+              A repair pass lists the webhooks and fixes missing or misdirected
+              ones. It runs only on evidence that one stopped delivering, at
+              most once a day.
+            </p>
+            <p class="text-muted-foreground text-sm">
+              After a CAD edit, a Part Studio is read from Onshape again at most
+              once every{" "}
+              <span class="brand-figures">{count(refreshMinutes)}</span>{" "}
+              {refreshMinutes === 1 ? "minute" : "minutes"}, and only when
+              someone opens it, so parts can lag Onshape by that long. Set
+              ONSHAPE_MIN_REFRESH_SECONDS to change the window.
+            </p>
           </>
         ) : (
           <p>

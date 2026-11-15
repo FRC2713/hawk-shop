@@ -17,9 +17,16 @@ import {
   type ReleaseIssue,
 } from "../utils/partEligibility";
 import { fetchPartsFromOnshape } from "../utils/partsQuery.server";
+import { findPart } from "../utils/findPart";
 import { getCardVersionId } from "../utils/versionUtils";
 import { extractVersionId } from "../utils/versionUtils";
 import type { PartsPageSearchParams } from "../utils/types";
+import {
+  materialSnapshot,
+  versionNameSnapshot,
+} from "~/server/kanbanApi/cardSnapshot";
+import { partThumbnailHref, thumbnailProxyUrl } from "~/lib/api/onshape";
+import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 /**
  * Zod schema for adding a card to the Kanban board
@@ -164,6 +171,9 @@ export async function handleAddKanbanCard(
     // Local manufacturing cards have no CAD scope. A partial CAD scope must
     // never bypass the server's release checks.
     let releaseIssues: ReleaseIssue[] = [];
+    let onshapeMaterial: string | undefined;
+    let onshapeVersionName: string | undefined;
+    let releasedPart: BtPartMetadataInfo | undefined;
     const hasCadScope = [
       data.documentId,
       data.instanceId,
@@ -187,9 +197,7 @@ export async function handleAddKanbanCard(
       if (!isVersionInstance(data.instanceType))
         return { success: false, error: NOT_A_VERSION_ISSUE.message };
       const parts = await fetchPartsFromOnshape(queryParams);
-      const part = parts.find(
-        (part) => (part.partId || part.id) === data.partId
-      );
+      const part = findPart(parts, data.partId);
       if (!part)
         return {
           success: false,
@@ -215,31 +223,25 @@ export async function handleAddKanbanCard(
           error: errors.map((issue) => issue.message).join(" "),
         };
       releaseIssues = issues.filter((issue) => issue.severity === "warning");
+      releasedPart = part;
       // The cached part is authoritative, including its current part number.
       data.partNumber = part.partNumber!;
       data.microversionId = part.microversionId;
+      // Card details read these from the card instead of asking Onshape.
+      // The version read is cached and the connector has usually made it.
+      onshapeMaterial = materialSnapshot(part);
+      onshapeVersionName =
+        (await versionNameSnapshot(data.documentId, versionId)) ?? undefined;
     }
 
-    // Build image URL from raw thumbnail URL (same strategy as PartCardThumbnail)
-    // Ensure thumbnail uses version-specific parameters if we need to rebuild it
-    let imageUrl = "";
-    if (data.rawThumbnailUrl) {
-      // Use proxy endpoint for authenticated thumbnail access
-      // The rawThumbnailUrl from Onshape is already version-specific since it comes
-      // from the parts query which uses the version-specific instanceId
-      imageUrl = `/api/onshape/thumbnail?url=${encodeURIComponent(data.rawThumbnailUrl)}`;
-    } else if (
-      data.documentId &&
-      data.instanceId &&
-      data.elementId &&
-      data.partId
-    ) {
-      // Fallback: build thumbnail URL using version-specific parameters
-      const wvm =
-        data.instanceType === "w" ? "w" : data.instanceType === "v" ? "v" : "m";
-      const thumbnailUrl = `https://cad.onshape.com/api/v10/thumbnails/d/${data.documentId}/${wvm}/${data.instanceId}/e/${data.elementId}/p/${encodeURIComponent(data.partId)}?outputFormat=PNG&pixelSize=300`;
-      imageUrl = `/api/onshape/thumbnail?url=${encodeURIComponent(thumbnailUrl)}`;
-    }
+    // The card keeps the thumbnail it was released with. The connector sends
+    // the href from the parts read it showed; without one, the cached part
+    // read above has it.
+    const thumbnailHref =
+      data.rawThumbnailUrl || (releasedPart && partThumbnailHref(releasedPart));
+    const imageUrl = thumbnailHref
+      ? thumbnailProxyUrl({ url: thumbnailHref })
+      : "";
 
     // Create card with version ID
     // Keep title as just partNumber - matching will use composite key (partNumber::versionId)
@@ -261,6 +263,8 @@ export async function handleAddKanbanCard(
         onshapeVersionId: versionId,
         // From the parts read the connector already did: no extra call.
         onshapeMicroversionId: data.microversionId || undefined,
+        onshapeMaterial,
+        onshapeVersionName,
       },
       actor
     );

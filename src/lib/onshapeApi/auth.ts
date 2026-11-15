@@ -17,19 +17,74 @@ export class OnshapeAllocationExhaustedError extends Error {
   }
 }
 
+/** The daily ceiling (`ONSHAPE_DAILY_CALL_LIMIT`) is reached and nothing is
+ * cached to answer with. Routes answer 503. */
+export class OnshapeDailyBudgetError extends Error {
+  constructor() {
+    super(
+      "Daily Onshape budget reached. CAD data that is not already cached is unavailable until tomorrow (UTC)."
+    );
+  }
+}
+
 /** Call before turning a non-OK Onshape response into any other error, so a
  * 402 reads the same on every path (see docs/ONSHAPE.md#allocation-and-billing). */
 export function assertOnshapeAllocation(response: Response | undefined): void {
   if (response?.status === 402) throw new OnshapeAllocationExhaustedError();
 }
 
-/** The route answer for errors that mean the same everywhere: 409 when no key
- * is configured, 402 when the allocation is used up. Null for anything else. */
-export function onshapeErrorResponse(error: unknown): Response | null {
+/** A non-OK Onshape response other than 402. Never cached, never counted. */
+export class OnshapeRequestError extends Error {
+  constructor(
+    readonly status: number,
+    /** Onshape's own reason, when its answer carried one. */
+    readonly detail: string
+  ) {
+    super(`Onshape API error ${status}${detail ? `: ${detail}` : ""}`);
+  }
+}
+
+const CREDENTIALS_REJECTED =
+  "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";
+
+/**
+ * The route answer for Onshape errors: 409 when no key is configured, 402 when
+ * the allocation is used up, 503 when the daily ceiling is reached. An
+ * `OnshapeRequestError` answers 409 when Onshape rejected the key (401/403);
+ * any other status is the route's `requestFailed` answer (default: 500 with
+ * the error's message). `errorId`, when given, is added to request-error
+ * bodies. Null for anything that is not an Onshape error.
+ */
+export function onshapeErrorResponse(
+  error: unknown,
+  options: {
+    errorId?: string;
+    requestFailed?: (error: OnshapeRequestError) => {
+      error: string;
+      status: number;
+    };
+  } = {}
+): Response | null {
   if (error instanceof OnshapeConfigurationError)
     return Response.json({ error: error.message }, { status: 409 });
   if (error instanceof OnshapeAllocationExhaustedError)
     return Response.json({ error: error.message }, { status: 402 });
+  if (error instanceof OnshapeDailyBudgetError)
+    return Response.json({ error: error.message }, { status: 503 });
+  if (error instanceof OnshapeRequestError) {
+    const answer =
+      error.status === 401 || error.status === 403
+        ? { error: CREDENTIALS_REJECTED, status: 409 }
+        : (options.requestFailed?.(error) ?? {
+            error: error.message,
+            status: 500,
+          });
+    const { errorId } = options;
+    return Response.json(
+      errorId ? { error: answer.error, errorId } : { error: answer.error },
+      { status: answer.status }
+    );
+  }
   return null;
 }
 
@@ -106,8 +161,9 @@ export function signedOnshapeHeaders(
   return headers;
 }
 
-/** The sole HTTP transport for generated clients, hand-written calls and images.
- * Never auto-follow a redirect with an old signature. Re-sign a bounded Onshape
+/** The signed HTTP transport behind the Onshape gateway (`gateway.ts`). Nothing
+ * else calls it: every Onshape request goes through the gateway so it is
+ * tallied, guarded and mapped the same way. Never auto-follow a redirect with an old signature. Re-sign a bounded Onshape
  * 307/308 redirect and reject every other destination or redirect policy. */
 export async function onshapeFetch(
   input: RequestInfo | URL,
@@ -151,14 +207,4 @@ export async function onshapeFetch(
     url = next.href;
   }
   throw new Error("Onshape redirect limit exceeded.");
-}
-
-export async function onshapeApiRequest(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  const url = endpoint.startsWith("https://")
-    ? endpoint
-    : `${onshapeOrigin()}/api${endpoint}`;
-  return onshapeFetch(url, options);
 }

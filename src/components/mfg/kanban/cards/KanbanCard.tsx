@@ -17,6 +17,7 @@ import {
 import { KanbanCardHeader } from "./KanbanCardHeader";
 import { KanbanCardDetails } from "./KanbanCardDetails";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
+import { cardThumbnailUrl } from "~/lib/api/onshape";
 
 /**
  * Format a date string for display
@@ -103,23 +104,17 @@ export const KanbanCard = memo(function KanbanCard({
   const [sheetOpen, setSheetOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const imageUrl = useMemo(() => {
-    if (hideImages) return undefined;
-    if (!card.image_url && !card.onshape_document_id) return undefined;
-    // The microversion is in the src so an edited part's new picture replaces
-    // the one the browser already showed. It is only a cache-buster: the
-    // server ignores it and reads the microversion from the card row.
-    const version = card.onshape_microversion_id
-      ? `&microversionId=${encodeURIComponent(card.onshape_microversion_id)}`
-      : "";
-    return `/api/onshape/thumbnail?cardId=${card.id}${version}`;
-  }, [
-    card.id,
-    card.image_url,
-    card.onshape_document_id,
-    card.onshape_microversion_id,
-    hideImages,
-  ]);
+  const imageUrl = useMemo(
+    () =>
+      hideImages
+        ? undefined
+        : cardThumbnailUrl({
+            id: card.id,
+            image_url: card.image_url,
+            onshape_document_id: card.onshape_document_id,
+          }),
+    [card.id, card.image_url, card.onshape_document_id, hideImages]
+  );
 
   // Reset error state when imageUrl changes
   useEffect(() => {
