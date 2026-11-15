@@ -2,6 +2,7 @@ import { ApiError, redirectToSignIn } from "./client";
 import type { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./keys";
 import type { ActionResponse } from "~/onshape_connector/utils/types";
+import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 
 /**
  * `/api/mfg/parts/actions` — the one endpoint that does not go through
@@ -136,13 +137,27 @@ export async function updatePartNumber(
   }
   const result = await postAction(body);
   if (result.success) {
-    // Both thumbnail variants share this Part Studio prefix. Query refresh
-    // failures do not reject the accepted edit or trigger another write.
+    // Both thumbnail variants share this Part Studio prefix. The server has
+    // already applied the confirmed number to its cached read, so the edit is
+    // applied here too instead of refetching. Query failures here do not
+    // reject the accepted edit or trigger another write.
     const affectedParts = { queryKey: queryKeys.onshape.partsScope(input) };
-    // Invalidation alone reuses initial reads without data. Cancel those old
-    // flights so their pre-edit responses cannot become fresh query data.
+    // A fetch already in flight may carry the old number: stop it so its
+    // answer cannot land on top of the edit.
     await queryClient.cancelQueries(affectedParts);
-    await queryClient.invalidateQueries(affectedParts);
+    queryClient.setQueriesData<BtPartMetadataInfo[]>(affectedParts, (parts) =>
+      parts?.map((part) =>
+        part.partId === input.partId
+          ? { ...part, partNumber: input.partNumber }
+          : part
+      )
+    );
+    // A query still loading its first answer has nothing to patch; it asks
+    // Hawk Shop again, whose cached read already carries the edit.
+    await queryClient.invalidateQueries({
+      ...affectedParts,
+      predicate: (query) => query.state.data === undefined,
+    });
   }
   return result;
 }

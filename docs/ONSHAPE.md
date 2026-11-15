@@ -21,7 +21,7 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **The allowance is annual and set per plan.** EDU Enterprise gets 10,000 calls per enterprise per year. Other plans scale with users (Enterprise: 10,000 per full user; Professional: 5,000 per user; Free, Standard and EDU Student: 2,500 per user; EDU Educator, Pro and Discovery: 2,500 per company). Limits apply at the company level.
   - Label: documented
   - Source: [API Limits](https://onshape-public.github.io/docs/auth/limits/)
-  - Relied on by: the Onshape gateway (`src/lib/onshapeApi/gateway.ts`: why staleness is preferred to a miss, and why `ONSHAPE_DAILY_CALL_LIMIT` serves expired cache rather than calling), `partsTtlMs`, `VERSION_TTL_MS`
+  - Relied on by: the Onshape gateway (`src/lib/onshapeApi/gateway.ts`: why staleness is preferred to a miss, and why `ONSHAPE_DAILY_CALL_LIMIT` serves expired cache rather than calling), Part Studio freshness (`partStudioFreshness`), `VERSION_TTL_MS`
 
 - **The company "Red Hawk Robotics" has a 10,000-request yearly limit.** On 2026-11-09 the developer portal showed 9,345 / 10,000 requests used (93.45%), day 309 of 365 in the billing cycle, and a tracking start date of Feb 19, 2026. The start date had a warning icon next to it; what that means is unknown.
   - Label: observed
@@ -152,7 +152,7 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Paths name a document, then a workspace (`w`), version (`v`) or microversion (`m`) and its id, then an element.** Writes always go to a workspace, because versions and microversions are immutable. Every edit creates a new microversion.
   - Label: documented
   - Source: [API Guide introduction](https://onshape-public.github.io/docs/api-intro/)
-  - Relied on by: `partsTtlMs` (parts at `v` or `m` are cached with no expiry), `fetchPartsFromOnshape`, `handlePartNumberUpdate` (defaults to `w`)
+  - Relied on by: `partStudioFreshness` (parts at `v` or `m` are cached with no expiry and ignore change events), `fetchPartsFromOnshape`, `handlePartNumberUpdate` (defaults to `w`)
 
 - **A version's name can be edited after it is cut**, even though its contents can't.
   - Label: unverified
@@ -254,13 +254,21 @@ Not Onshape behavior, but often mistaken for it: card `image_url` values written
 
 ## Webhooks
 
-Hawk Shop registers one webhook per document whose workspace it reads, and keeps it registered. `POST /api/onshape/webhook` clears a document's cached workspace (`wvm=w`) reads when Onshape reports a change, so the next connector read sees the edit instead of waiting out `ONSHAPE_CACHE_TTL_SECONDS`.
+Hawk Shop registers one webhook per document whose workspace it reads, and keeps it registered. `POST /api/onshape/webhook` marks a document's cached workspace (`wvm=w`) Part Studio reads stale when Onshape reports a change, so the connector sees the edit within the refresh window instead of waiting out `ONSHAPE_CACHE_TTL_SECONDS`.
+
+**Part Studio freshness** (`src/lib/onshapeApi/partStudioFreshness.ts`, covered through the parts, webhook and actions routes in `tests/part-studio-freshness.test.ts`) owns the parts cache key, the TTL for each scope and every reason a read goes stale. No caller builds a Part Studio key by hand.
+
+- **Mark stale with a floor.** A change event doesn't delete reads. A matching workspace read's expiry moves to `min(current expiry, max(now, fetched + window))`, where the window is `ONSHAPE_MIN_REFRESH_SECONDS` (a positive integer; default 300, and anything else keeps the default). A read younger than the window stays in use until it reaches the window; an older one is due at once. Repeated events never push expiry later and never cause a read by themselves, so a burst of CAD edits costs at most one parts read per Part Studio per window, and nothing for a document nobody opens.
+- **Reads in flight are detached** when a change event matches them, so a read that started before the edit returns to its caller but is not stored.
+- **Element scope.** When a delivery names an element, only that element's workspace reads are marked. A delivery with no `elementId`, an empty one or Onshape's all-zero placeholder marks every workspace read of the document. `createversion` and `metadata` deliveries follow the same rule. An edit in one Part Studio that changes another through a derived feature is not seen in the other until its own expiry or a delivery that names it.
+- **Write-through.** When Onshape accepts a part-number write, the module sets that part's `partNumber` and its part-number property in the cached read and treats the entry as freshly fetched, so the next connector read shows the number with no extra parts read. With nothing cached, nothing is fetched. If verification then disagrees or fails, the cached read is discarded. The browser updates its own parts query data the same way instead of refetching.
+- **Refresh button.** The connector's Refresh re-reads Hawk Shop's cache. It never forces an Onshape read by itself.
 
 Workspace cache policy (`workspaceTtlMs`, covered by mocked route reads in `tests/onshape-workspace-ttl.test.ts`):
 
 - The default is 86,400 seconds (24 hours) only when `onshapeWebhookSettings()` returns configured settings: a nonblank secret and an HTTP(S) base URL. Missing, blank or invalid settings keep the 300-second (five-minute) default.
 - A finite, positive `ONSHAPE_CACHE_TTL_SECONDS` overrides either default, including fractional seconds. Unset, blank, nonnumeric, zero, negative or non-finite values use the applicable default. Leave the example override commented out to use automatic defaults.
-- Version and microversion parts reads still never expire. Webhook invalidation still clears workspace entries immediately; the TTL limits staleness if a delivery is missed. Persisted entries keep the expiry written when fetched, so configuration changes apply on the next cache fill.
+- Version and microversion parts reads still never expire, and change events leave them alone. The TTL limits staleness if a delivery is missed; a change event can only bring expiry earlier. Persisted entries keep the expiry written when fetched, so configuration changes apply on the next cache fill.
 
 The 24-hour default is a Hawk Shop policy authorized for #59, not an observation of Onshape reliability. Production delivery after CAD edits and re-registration of dropped webhooks remain unverified. Configuration alone selects the default; it does not prove the callback is reachable or deliveries are healthy. Operators can set an explicit shorter TTL while assessing `/onshape` webhook state and the usage tally.
 
@@ -268,8 +276,8 @@ How the receiver behaves (Hawk Shop's own contract, covered by `tests/onshape-we
 
 - Enabled only when `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOOK_BASE_URL` are both set (`onshapeWebhookSettings`). Otherwise every request gets 404.
 - The callback URL is `<ONSHAPE_WEBHOOK_BASE_URL>/api/onshape/webhook?secret=<ONSHAPE_WEBHOOK_SECRET>` (`onshapeWebhookCallbackUrl`). The secret is compared in constant time (`isOnshapeWebhookSecret`). A missing or wrong secret gets the same empty 404 as a disabled route.
-- With the right secret every delivery gets an empty 200, even one it ignores, because a non-200 cancels a new registration. `onshape.model.lifecycle.changed`, `onshape.model.lifecycle.createversion` and `onshape.model.lifecycle.metadata` run `invalidateOnshapeCacheForDocument(documentId)` inline. It deletes that document's workspace rows and drops their in-flight reads. Version and microversion entries and other documents stay cached. Other events, including `webhook.register`, change nothing.
-- No debounce. Invalidation is idempotent, and single-flight collapses the reads that follow a burst into one upstream call.
+- With the right secret every delivery gets an empty 200, even one it ignores, because a non-200 cancels a new registration. `onshape.model.lifecycle.changed`, `onshape.model.lifecycle.createversion` and `onshape.model.lifecycle.metadata` run `partStudioFreshness.changed(documentId, elementId?)` inline. It marks that document's workspace rows stale (only the named element's when there is one) and detaches their in-flight reads. Version and microversion entries and other documents stay cached. Other events, including `webhook.register`, change nothing.
+- No debounce. The refresh window's floor does that job: repeated events never bring a read forward, and single-flight collapses concurrent reads into one upstream call.
 - The middleware exempts exactly `POST /api/onshape/webhook` from Suite identity and the same-origin check. A trailing slash, subpath, neighbouring path or other method still needs identity. The response carries no shop data.
 - Any authenticated delivery that names a `documentId` sets that document's `last_event_at`, pings included.
 
@@ -345,6 +353,21 @@ Caddy's `path` matcher without a `*` is exact, so `/api/onshape/webhook/` and su
   - Label: unverified
   - Source: example notifications on the [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/) page; no delivery has been seen with our key
   - Relied on by: the webhook route
+
+- **`onshape.model.lifecycle.changed` deliveries carry an `elementId` field.** The documented example lists `timestamp`, `event`, `workspaceId`, `elementId`, `webhookId`, `messageId`, `data`, `documentId` and `versionId`, with the placeholder `000000000000000000000000` as its value.
+  - Label: documented
+  - Source: [Webhooks, Example Notifications](https://onshape-public.github.io/docs/app-dev/webhook/#example-notifications), read 2026-11-14
+  - Relied on by: the webhook route (passes `elementId` to `partStudioFreshness.changed`)
+
+- **That `elementId` names the Part Studio that was edited** (rather than being empty or a placeholder on real edits), and whether an edit to one element ever arrives naming a different one.
+  - Label: unverified
+  - Source: the documented example only shows a placeholder; no delivery has been seen with our key
+  - Relied on by: `partStudioFreshness.changed` element scoping. The route treats a missing, empty or all-zero `elementId` as the whole document, so a delivery without a real element id can't leave a Part Studio stale past the window.
+
+- **Whether `onshape.model.lifecycle.createversion` and `onshape.model.lifecycle.metadata` deliveries carry `elementId`.** The Webhooks page shows no example payload for either (`metadata` isn't mentioned at all).
+  - Label: unverified
+  - Source: [Webhooks](https://onshape-public.github.io/docs/app-dev/webhook/), read 2026-11-14
+  - Relied on by: the webhook route, which scopes them by `elementId` when present and marks the whole document otherwise
 
 - **Onshape keeps the callback URL's query string when it delivers**, so the secret arrives with every notification.
   - Label: unverified

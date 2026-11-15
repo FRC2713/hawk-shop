@@ -9,11 +9,13 @@ import {
   formatObservedAt as when,
   onshapeRemainingStatus,
 } from "../lib/onshapeApi/remaining";
+import { minRefreshMs } from "../lib/onshapeApi/partStudioFreshness";
 import { onshapeWebhookStatus } from "../lib/onshapeApi/webhooks";
 const configured = isOnshapeConfigured();
 const webhooks = onshapeWebhookStatus();
 const { totals, byDay } = summarizeOnshapeUsage();
 const budget = onshapeBudgetStatus();
+const refreshMinutes = minRefreshMs() / 60_000;
 const { rows, latest, warnAt, exhausted, low } = onshapeRemainingStatus();
 // Brand callout: Light Grey panel, 4px red rail, 12/14px padding.
 const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
@@ -183,6 +185,14 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
                 </li>
               ))}
             </ul>
+            <p class="text-muted-foreground text-sm">
+              After a CAD edit, a Part Studio is read from Onshape again at most
+              once every{" "}
+              <span class="brand-figures">{count(refreshMinutes)}</span>{" "}
+              {refreshMinutes === 1 ? "minute" : "minutes"}, and only when
+              someone opens it, so parts can lag Onshape by that long. Set
+              ONSHAPE_MIN_REFRESH_SECONDS to change the window.
+            </p>
           </>
         ) : (
           <p>

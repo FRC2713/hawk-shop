@@ -1,7 +1,6 @@
 import "virtual:hawk-shop/server-only";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
-import { cacheKey, partsTtlMs } from "~/lib/onshapeApi/cache";
-import { onshapeRead } from "~/lib/onshapeApi/gateway";
+import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
 import { ensureOnshapeWebhook } from "~/lib/onshapeApi/webhooks";
 import type { PartsPageSearchParams } from "./types";
 
@@ -10,7 +9,8 @@ import type { PartsPageSearchParams } from "./types";
  * This is used by both the API route and server-side prefetching
  * SERVER-ONLY: Uses server-side authentication
  *
- * Reads go through the Onshape gateway (`~/lib/onshapeApi/gateway`). The Part
+ * Reads go through Part Studio freshness (`~/lib/onshapeApi/partStudioFreshness`),
+ * which owns the cache key, TTL and staleness rules on top of the gateway. The Part
  * Studio contents are the same for every user who can see the document, so a
  * whole shop opening the connector at once costs one Onshape call rather than
  * one per student — and at `wvm=v` the answer is immutable, so it costs one
@@ -22,16 +22,11 @@ export async function fetchPartsFromOnshape(
   queryParams: PartsPageSearchParams
 ): Promise<BtPartMetadataInfo[]> {
   const { documentId, instanceType, instanceId, elementId } = queryParams;
-  const parts = await onshapeRead<BtPartMetadataInfo[]>({
-    label: "parts",
-    cache: {
-      key: cacheKey("parts", documentId, instanceType, instanceId, elementId),
-      ttlMs: partsTtlMs(instanceType),
-    },
-    request: {
-      path: `/v12/parts/d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}`,
-      query: { withThumbnails: true, includePropertyDefaults: true },
-    },
+  const parts = await partStudioFreshness.get({
+    documentId,
+    instanceType,
+    instanceId,
+    elementId,
   });
 
   // Cards keep the microversion and thumbnail they were released with, so a

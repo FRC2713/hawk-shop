@@ -23,8 +23,8 @@ const cardRoute = await import("../src/pages/api/kanban/cards/[id]");
 const { thumbnailProxyUrl } = await import("../src/lib/api/onshape");
 
 const cookie = await signIn();
-const { invalidateOnshapeCacheForDocument } =
-  await import("../src/lib/onshapeApi/cache");
+const { partStudioFreshness } =
+  await import("../src/lib/onshapeApi/partStudioFreshness");
 
 /**
  * A fake Onshape: one Part Studio whose parts' microversions the test sets.
@@ -113,7 +113,14 @@ function fakeOnshape(
 }
 
 async function readParts(documentId: string, instanceType = "w") {
-  invalidateOnshapeCacheForDocument(documentId);
+  // Every read in these tests sees Onshape's latest workspace.
+  if (instanceType === "w")
+    partStudioFreshness.discard({
+      documentId,
+      instanceType,
+      instanceId: "ws",
+      elementId: "studio",
+    });
   const query = new URLSearchParams({
     documentId,
     instanceType,

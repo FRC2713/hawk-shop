@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, beforeEach, test } from "node:test";
+import { after, beforeEach, test, type TestContext } from "node:test";
 
 const dataDir = await mkdtemp(join(tmpdir(), "hawk-onshape-webhook-"));
 process.env.DATA_DIR = dataDir;
@@ -85,6 +85,13 @@ async function deliver(
   ).POST({ request });
 }
 
+/** Move the clock past the refresh window, so a marked read would be re-read. */
+function pastRefreshWindow(t: {
+  mock: { timers: TestContext["mock"]["timers"] };
+}) {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 300_000 });
+}
+
 const changed = (documentId: string) => ({
   event: "onshape.model.lifecycle.changed",
   documentId,
@@ -93,13 +100,17 @@ const changed = (documentId: string) => ({
   messageId: "message",
 });
 
-test("a change event clears only that document's workspace reads", async (t) => {
+test("a change event marks only that document's workspace reads stale", async (t) => {
+  const start = Date.parse("2026-11-09T12:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: start });
   const reads = countPartsReads(t);
   const edited = { documentId: "edited", instanceType: "w" } as const;
   const released = { documentId: "edited", instanceType: "v" } as const;
   const other = { documentId: "other", instanceType: "w" } as const;
   for (const scope of [edited, released, other]) await readParts(scope);
 
+  // Past the five-minute refresh window, so the marked read is due at once.
+  t.mock.timers.setTime(start + 300_000);
   const response = await deliver(changed("edited"));
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "");
@@ -138,10 +149,11 @@ test("a read already in flight when the change arrives is not cached", async (t)
   assert.equal(reads, 2);
 });
 
-test("a wrong or missing secret gets an empty 404 and clears nothing", async (t) => {
+test("a wrong or missing secret gets an empty 404 and marks nothing", async (t) => {
   const reads = countPartsReads(t);
   const scope = { documentId: "guarded", instanceType: "w" } as const;
   await readParts(scope);
+  pastRefreshWindow(t);
   for (const secret of [
     null,
     "",
@@ -161,6 +173,7 @@ test("unconfigured webhooks answer 404 even to the old secret", async (t) => {
   const reads = countPartsReads(t);
   const scope = { documentId: "unconfigured", instanceType: "w" } as const;
   await readParts(scope);
+  pastRefreshWindow(t);
   for (const unset of ["ONSHAPE_WEBHOOK_SECRET", "ONSHAPE_WEBHOOK_BASE_URL"]) {
     process.env.ONSHAPE_WEBHOOK_SECRET = SECRET;
     process.env.ONSHAPE_WEBHOOK_BASE_URL = "https://shop.example.org";
@@ -171,10 +184,11 @@ test("unconfigured webhooks answer 404 even to the old secret", async (t) => {
   assert.equal(reads(scope), 1);
 });
 
-test("registration pings and malformed deliveries are acknowledged without clearing", async (t) => {
+test("registration pings and malformed deliveries are acknowledged without marking", async (t) => {
   const reads = countPartsReads(t);
   const scope = { documentId: "pinged", instanceType: "w" } as const;
   await readParts(scope);
+  pastRefreshWindow(t);
   for (const body of [
     { event: "webhook.register", documentId: "pinged", webhookId: "hook" },
     { event: "onshape.model.lifecycle.changed" },

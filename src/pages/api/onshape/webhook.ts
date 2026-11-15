@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { invalidateOnshapeCacheForDocument } from "~/lib/onshapeApi/cache";
+import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
 import { recordOnshapeWebhookEvent } from "~/lib/onshapeApi/webhooks";
 import {
   isOnshapeWebhookSecret,
@@ -11,8 +11,8 @@ import {
 /**
  * Receives Onshape webhook deliveries. The only route reachable without Hawk
  * Suite identity (see `src/middleware.ts`), so it answers with empty bodies
- * and never touches shop data: a change event only clears that document's
- * workspace cache entries.
+ * and never touches shop data: a change event only marks that document's
+ * workspace Part Studio reads stale (see `partStudioFreshness.changed`).
  *
  * Disabled, wrong secret and missing secret all look the same: 404.
  */
@@ -28,6 +28,16 @@ const acknowledged = () =>
     headers: { "Cache-Control": "no-store" },
   });
 
+/**
+ * The element a delivery names, or undefined to mark the whole document. Onshape's
+ * documented example shows a placeholder of zeros, which names no real element.
+ */
+function changedElement(elementId: unknown): string | undefined {
+  if (typeof elementId !== "string") return undefined;
+  const trimmed = elementId.trim();
+  return trimmed && !/^0+$/.test(trimmed) ? trimmed : undefined;
+}
+
 export const POST: APIRoute = async ({ request }) => {
   const settings = onshapeWebhookSettings();
   if (!settings) return notFound();
@@ -37,15 +47,18 @@ export const POST: APIRoute = async ({ request }) => {
   if (!isOnshapeWebhookSecret(settings, provided)) return notFound();
 
   // Acknowledge whatever arrives: a non-200 makes Onshape cancel a new
-  // registration or retry. Invalidation is a few SQLite deletes, so it runs
-  // inline before answering.
+  // registration or retry. Marking is a few SQLite updates, so it runs inline
+  // before answering.
   let delivery: unknown;
   try {
     delivery = await request.json();
   } catch {
     return acknowledged();
   }
-  const { event, documentId } = (delivery ?? {}) as Record<string, unknown>;
+  const { event, documentId, elementId } = (delivery ?? {}) as Record<
+    string,
+    unknown
+  >;
   // Any authenticated delivery shows the webhook works, pings included.
   if (typeof documentId === "string" && documentId)
     recordOnshapeWebhookEvent(documentId);
@@ -56,9 +69,9 @@ export const POST: APIRoute = async ({ request }) => {
     documentId
   ) {
     try {
-      invalidateOnshapeCacheForDocument(documentId);
+      partStudioFreshness.changed(documentId, changedElement(elementId));
     } catch (error) {
-      console.error("[ONSHAPE WEBHOOK] invalidation failed:", error);
+      console.error("[ONSHAPE WEBHOOK] marking stale failed:", error);
     }
   }
   return acknowledged();

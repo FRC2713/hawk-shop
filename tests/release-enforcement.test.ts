@@ -260,17 +260,9 @@ test("workspace edits and card updates preserve a legacy workspace card's warnin
     material: { displayName: "6061 Aluminum" },
     microversionId: "after",
   };
-  const { invalidateOnshapeCache, cacheKey } =
-    await import("../src/lib/onshapeApi/cache");
-  invalidateOnshapeCache(
-    cacheKey(
-      "parts",
-      workspace.documentId,
-      "w",
-      workspace.instanceId,
-      workspace.elementId
-    )
-  );
+  const { partStudioFreshness } =
+    await import("../src/lib/onshapeApi/partStudioFreshness");
+  partStudioFreshness.discard({ ...workspace, instanceType: "w" });
   await inRequest(sessionRequest("student"), async () =>
     Response.json(await fetchPartsFromOnshape(workspace))
   );

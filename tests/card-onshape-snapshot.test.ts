@@ -209,9 +209,9 @@ test("an older card is backfilled once with one parts read and one version read"
   // Saved on the card, so later opens never touch Onshape or its cache.
   const { invalidateOnshapeCache, cacheKey } =
     await import("../src/lib/onshapeApi/cache");
-  invalidateOnshapeCache(
-    cacheKey("parts", scope.documentId, "v", scope.instanceId, scope.elementId)
-  );
+  const { partStudioFreshness } =
+    await import("../src/lib/onshapeApi/partStudioFreshness");
+  partStudioFreshness.discard({ ...scope, instanceType: "v" });
   invalidateOnshapeCache(
     cacheKey("version", scope.documentId, scope.instanceId)
   );

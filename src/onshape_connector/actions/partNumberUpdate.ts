@@ -1,5 +1,4 @@
 import "virtual:hawk-shop/server-only";
-import { cacheKey, invalidateOnshapeCache } from "~/lib/onshapeApi/cache";
 import { isOnshapeConfigured } from "~/lib/onshapeApi/auth";
 import {
   onshapeOperation,
@@ -8,6 +7,7 @@ import {
   onshapeWrite,
   type OnshapeRequest,
 } from "~/lib/onshapeApi/gateway";
+import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
 import { createErrorResponse } from "../utils/errorHandling";
 import type { ActionResponse } from "../utils/types";
 
@@ -149,35 +149,52 @@ export async function handlePartNumberUpdate(
         if (failure) return failure;
         throw error;
       }
+      const partStudio = { documentId, instanceType, instanceId, elementId };
+      // Onshape accepted the write: apply it to the cached parts read rather
+      // than discarding it, so the connector shows the number without another
+      // parts read. If verification then disagrees, the read is discarded.
       try {
-        invalidateOnshapeCache(
-          cacheKey("parts", documentId, instanceType, instanceId, elementId)
-        );
+        partStudioFreshness.wrote(partStudio, partId, { partNumber });
       } catch (error: unknown) {
         console.error(
-          "[ACTION] Error invalidating parts after accepted write:",
+          "[ACTION] Error updating cached parts after accepted write:",
           error
         );
+        try {
+          partStudioFreshness.discard(partStudio);
+        } catch {
+          // Already reported; the unconfirmed answer below covers it.
+        }
         return unconfirmed("The parts cache could not be refreshed.");
       }
 
-      try {
-        const verified = await readMetadata("verification");
-        const updatedProperty = propertiesFrom(verified)?.find(
-          (candidate) => candidate.propertyId === property.propertyId
-        );
-        if (updatedProperty?.value !== partNumber) {
-          return unconfirmed(
-            "Verification did not return the requested part number."
+      const failure = await (async () => {
+        try {
+          const verified = await readMetadata("verification");
+          const updatedProperty = propertiesFrom(verified)?.find(
+            (candidate) => candidate.propertyId === property.propertyId
           );
+          if (updatedProperty?.value !== partNumber)
+            return unconfirmed(
+              "Verification did not return the requested part number."
+            );
+          return null;
+        } catch (error: unknown) {
+          if (error instanceof OnshapeRequestError)
+            return unconfirmed(
+              `Verification metadata request failed: ${error.detail || `status ${error.status}`}.`
+            );
+          console.error("[ACTION] Error verifying part number update:", error);
+          return unconfirmed("The verification request failed.");
         }
-      } catch (error: unknown) {
-        if (error instanceof OnshapeRequestError)
-          return unconfirmed(
-            `Verification metadata request failed: ${error.detail || `status ${error.status}`}.`
-          );
-        console.error("[ACTION] Error verifying part number update:", error);
-        return unconfirmed("The verification request failed.");
+      })();
+      if (failure) {
+        try {
+          partStudioFreshness.discard(partStudio);
+        } catch (error: unknown) {
+          console.error("[ACTION] Error discarding unconfirmed parts:", error);
+        }
+        return failure;
       }
       return { success: true } satisfies ActionResponse;
     });
