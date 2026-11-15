@@ -1,18 +1,13 @@
 import "virtual:hawk-shop/server-only";
+import { cacheKey, invalidateOnshapeCache } from "~/lib/onshapeApi/cache";
+import { isOnshapeConfigured } from "~/lib/onshapeApi/auth";
 import {
-  createOnshapeApiClient,
-  getWmvepMetadata,
-  updateWvepMetadata,
-} from "~/lib/onshapeApi/generated-wrapper";
-import {
-  cacheKey,
-  invalidateOnshapeCache,
-  recordOnshapeUsage,
-} from "~/lib/onshapeApi/cache";
-import {
-  assertOnshapeAllocation,
-  isOnshapeConfigured,
-} from "~/lib/onshapeApi/auth";
+  onshapeOperation,
+  onshapeRead,
+  OnshapeRequestError,
+  onshapeWrite,
+  type OnshapeRequest,
+} from "~/lib/onshapeApi/gateway";
 import { createErrorResponse } from "../utils/errorHandling";
 import type { ActionResponse } from "../utils/types";
 
@@ -38,21 +33,11 @@ function isPartNumberProperty(property: Record<string, unknown>) {
   );
 }
 
-function upstreamFailure(
-  result: { error?: unknown; response: Response },
-  message: string
-): ActionResponse | null {
-  if (result.error === undefined && result.response.ok) return null;
-  // Throws to the action's outer catch, which keeps the { success: false } shape.
-  assertOnshapeAllocation(result.response);
+/** A non-OK Onshape answer as an action failure that keeps Onshape's reason. */
+function rejection(error: unknown, message: string): ActionResponse | null {
+  if (!(error instanceof OnshapeRequestError)) return null;
   return createErrorResponse(
-    {
-      error:
-        typeof result.error === "string"
-          ? { message: result.error }
-          : result.error,
-      status: result.response.status,
-    },
+    { error: { message: error.detail || message }, status: error.status },
     message
   );
 }
@@ -96,109 +81,106 @@ export async function handlePartNumberUpdate(
       };
     }
 
-    const client = await createOnshapeApiClient();
-    // Count successful HTTP traffic before the generated decoder runs, even
-    // when a metadata response contains invalid JSON.
-    client.interceptors.response.use((response) => {
-      if (response.ok) recordOnshapeUsage("metadata", "call");
-      return response;
-    });
-    const path = {
-      did: documentId,
-      wvm: instanceType as "w" | "v" | "m",
-      wvmid: instanceId,
-      eid: elementId,
-      iden: "p" as const,
-      pid: partId,
-    };
-    const metadataResponse = await getWmvepMetadata({
-      client,
-      path,
-      query: { includeComputedProperties: true },
-    });
-    const metadataFailure = upstreamFailure(
-      metadataResponse,
-      "Failed to retrieve part metadata"
-    );
-    if (metadataFailure) return metadataFailure;
-    const properties = propertiesFrom(metadataResponse.data);
-    if (!properties) {
-      return {
-        success: false,
-        error:
-          "Failed to retrieve part metadata: properties are missing or malformed",
-      };
-    }
-    const property = properties.find(isPartNumberProperty);
-    if (
-      !property ||
-      typeof property.propertyId !== "string" ||
-      !property.propertyId.trim()
-    ) {
-      return {
-        success: false,
-        error: "Part number property not found or malformed in part metadata",
-      };
-    }
-
-    // The generated schema calls this body a string. Its JSON serializer needs
-    // the object itself; a pre-serialized string would be encoded twice.
-    const body = {
-      jsonType: "metadata-part",
-      partId,
-      properties: [{ value: partNumber, propertyId: property.propertyId }],
-    } as unknown as string;
-    // The write body is unused. Do not consume it: decoding or stream errors
-    // must not hide acceptance or prevent eviction and independent verification.
-    const updateResponse = await updateWvepMetadata({
-      client,
-      path,
-      body,
-      parseAs: "stream",
-    });
-    const writeFailure = upstreamFailure(
-      updateResponse,
-      "Onshape rejected the part number update"
-    );
-    if (writeFailure) return writeFailure;
-    // Release the unused body without making confirmation depend on its stream.
-    void updateResponse.response.body?.cancel().catch(() => {});
-    try {
-      invalidateOnshapeCache(
-        cacheKey("parts", documentId, instanceType, instanceId, elementId)
-      );
-    } catch (error: unknown) {
-      console.error(
-        "[ACTION] Error invalidating parts after accepted write:",
-        error
-      );
-      return unconfirmed("The parts cache could not be refreshed.");
-    }
-
-    try {
-      const verification = await getWmvepMetadata({
-        client,
-        path,
-        query: { includeComputedProperties: true },
+    const metadataPath = `/v12/metadata/d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}/p/${encodeURIComponent(partId)}`;
+    const readMetadata = (step: string) =>
+      onshapeRead<unknown>({
+        label: "metadata-read",
+        // Each step must see Onshape's current answer, never a shared one.
+        dedupKey: `metadata-read::${step}::${crypto.randomUUID()}`,
+        request: {
+          path: metadataPath,
+          query: { includeComputedProperties: true },
+        } satisfies OnshapeRequest,
       });
-      const failure = upstreamFailure(
-        verification,
-        "Verification metadata request failed"
-      );
-      if (failure) return unconfirmed(`${failure.error}.`);
-      const updatedProperty = propertiesFrom(verification.data)?.find(
-        (candidate) => candidate.propertyId === property.propertyId
-      );
-      if (updatedProperty?.value !== partNumber) {
-        return unconfirmed(
-          "Verification did not return the requested part number."
-        );
+
+    // The daily ceiling is checked once, here: a write already past its
+    // discovery read finishes, so Onshape and the card never disagree.
+    return await onshapeOperation(async () => {
+      let discovered: unknown;
+      try {
+        discovered = await readMetadata("discovery");
+      } catch (error: unknown) {
+        const failure = rejection(error, "Failed to retrieve part metadata");
+        if (failure) return failure;
+        throw error;
       }
-    } catch (error: unknown) {
-      console.error("[ACTION] Error verifying part number update:", error);
-      return unconfirmed("The verification request failed.");
-    }
-    return { success: true };
+      const properties = propertiesFrom(discovered);
+      if (!properties) {
+        return {
+          success: false,
+          error:
+            "Failed to retrieve part metadata: properties are missing or malformed",
+        };
+      }
+      const property = properties.find(isPartNumberProperty);
+      if (
+        !property ||
+        typeof property.propertyId !== "string" ||
+        !property.propertyId.trim()
+      ) {
+        return {
+          success: false,
+          error: "Part number property not found or malformed in part metadata",
+        };
+      }
+
+      try {
+        // The write body is unused. Discarding it means decoding or stream
+        // errors cannot hide acceptance or prevent eviction and verification.
+        await onshapeWrite({
+          label: "metadata-write",
+          responseType: "none",
+          request: {
+            path: metadataPath,
+            body: {
+              jsonType: "metadata-part",
+              partId,
+              properties: [
+                { value: partNumber, propertyId: property.propertyId },
+              ],
+            },
+          },
+        });
+      } catch (error: unknown) {
+        const failure = rejection(
+          error,
+          "Onshape rejected the part number update"
+        );
+        if (failure) return failure;
+        throw error;
+      }
+      try {
+        invalidateOnshapeCache(
+          cacheKey("parts", documentId, instanceType, instanceId, elementId)
+        );
+      } catch (error: unknown) {
+        console.error(
+          "[ACTION] Error invalidating parts after accepted write:",
+          error
+        );
+        return unconfirmed("The parts cache could not be refreshed.");
+      }
+
+      try {
+        const verified = await readMetadata("verification");
+        const updatedProperty = propertiesFrom(verified)?.find(
+          (candidate) => candidate.propertyId === property.propertyId
+        );
+        if (updatedProperty?.value !== partNumber) {
+          return unconfirmed(
+            "Verification did not return the requested part number."
+          );
+        }
+      } catch (error: unknown) {
+        if (error instanceof OnshapeRequestError)
+          return unconfirmed(
+            `Verification metadata request failed: ${error.detail || `status ${error.status}`}.`
+          );
+        console.error("[ACTION] Error verifying part number update:", error);
+        return unconfirmed("The verification request failed.");
+      }
+      return { success: true } satisfies ActionResponse;
+    });
   } catch (error: unknown) {
     return createErrorResponse(error, "Failed to update part number");
   }

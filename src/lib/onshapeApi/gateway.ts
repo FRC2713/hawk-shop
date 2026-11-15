@@ -72,7 +72,8 @@ export type OnshapeBinary = { bytes: Uint8Array; contentType: string | null };
 export class OnshapeRequestError extends Error {
   constructor(
     readonly status: number,
-    detail: string
+    /** Onshape's own reason, when its answer carried one. */
+    readonly detail: string
   ) {
     super(`Onshape API error ${status}${detail ? `: ${detail}` : ""}`);
   }
@@ -172,9 +173,15 @@ async function failureDetail(response: Response): Promise<string> {
   }
 }
 
+/**
+ * Send one request and tally it. A successful response is counted as soon as it
+ * arrives, before its body is read: Onshape charged for it even if the body
+ * then turns out to be malformed or the stream breaks.
+ */
 async function send(
+  label: OnshapeUsageLabel,
   description: OnshapeRequest,
-  responseType: "json" | "binary"
+  responseType: "json" | "binary" | "none"
 ): Promise<unknown> {
   if (!isOnshapeConfigured()) throw new OnshapeConfigurationError();
   const response = await adapter()(buildRequest(description));
@@ -184,6 +191,12 @@ async function send(
       response.status,
       await failureDetail(response)
     );
+  }
+  recordOnshapeUsage(label, "call");
+  if (responseType === "none") {
+    // Release the unused body without letting its stream fail the caller.
+    void response.body?.cancel().catch(() => {});
+    return null;
   }
   if (responseType === "binary")
     return {
@@ -299,8 +312,7 @@ export async function onshapeRead(
 
   let flight!: Promise<unknown>;
   flight = (async () => {
-    const value = await send(request, responseType);
-    recordOnshapeUsage(label, "call");
+    const value = await send(label, request, responseType);
     if (cache && inflight.get(key) === flight)
       writeCache(cache.key, value, cache.ttlMs);
     return value;
@@ -317,16 +329,18 @@ export async function onshapeRead(
  * Write to Onshape. Never cached or deduplicated; tallied as a call on success
  * and refused with `OnshapeDailyBudgetError` once the daily ceiling is reached
  * (unless inside an `onshapeOperation` that was admitted before it).
+ * `responseType: "none"` discards the body, so a malformed or broken one
+ * cannot hide that Onshape accepted the write; it resolves to null.
  */
 export async function onshapeWrite<T>({
   label,
   request,
+  responseType = "json",
 }: {
   label: OnshapeUsageLabel;
   request: OnshapeRequest;
+  responseType?: "json" | "none";
 }): Promise<T> {
   if (budgetReached()) throw new OnshapeDailyBudgetError();
-  const value = await send({ method: "POST", ...request }, "json");
-  recordOnshapeUsage(label, "call");
-  return value as T;
+  return (await send(label, { method: "POST", ...request }, responseType)) as T;
 }

@@ -15,7 +15,7 @@ const thumbnail = await import("../src/pages/api/onshape/thumbnail");
 const usage = await import("../src/pages/api/onshape/usage");
 const { handlePartNumberUpdate } =
   await import("../src/onshape_connector/actions/partNumberUpdate");
-const { onshapeApiRequest } = await import("../src/lib/onshapeApi/auth");
+const { onshapeFetch } = await import("../src/lib/onshapeApi/auth");
 
 type Remaining = {
   label: string;
@@ -115,7 +115,7 @@ test("a redirect records only the final response's header, not each hop", async 
         })
       : Response.json({}, { headers: { "x-rate-limit-remaining": "222" } })
   );
-  await onshapeApiRequest("/v12/assemblies/hop");
+  await onshapeFetch("https://cad.onshape.com/api/v12/assemblies/hop");
   assert.equal(await remainingFor("assemblies"), undefined);
   assert.equal((await remainingFor("elements"))?.value, 222);
 });
@@ -127,7 +127,7 @@ test("after a 402, a later response without a valid header clears the used-up st
       { status: 402, headers: { "x-rate-limit-remaining": "7" } }
     )
   );
-  await onshapeApiRequest("/v12/featurestudios/spent");
+  await onshapeFetch("https://cad.onshape.com/api/v12/featurestudios/spent");
   const spent = await remainingFor("featurestudios");
   assert.deepEqual([spent?.value, spent?.lastStatus], [7, 402]);
 
@@ -136,14 +136,16 @@ test("after a 402, a later response without a valid header clears the used-up st
     Response.json({}, { headers: { "x-rate-limit-remaining": "lots" } })
   );
   await new Promise((resolve) => setTimeout(resolve, 5));
-  await onshapeApiRequest("/v12/featurestudios/recovered");
+  await onshapeFetch(
+    "https://cad.onshape.com/api/v12/featurestudios/recovered"
+  );
   const recovered = await remainingFor("featurestudios");
   assert.deepEqual([recovered?.value, recovered?.lastStatus], [7, 200]);
   assert.ok(recovered!.observedAt > spent!.observedAt);
 
   t.mock.restoreAll();
   upstream(t, () => Response.json({}, { status: 404 }));
-  await onshapeApiRequest("/v12/featurestudios/missing");
+  await onshapeFetch("https://cad.onshape.com/api/v12/featurestudios/missing");
   const later = await remainingFor("featurestudios");
   assert.deepEqual(later, recovered, "only a 402 is replaced without a header");
 });
