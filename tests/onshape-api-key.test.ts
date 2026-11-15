@@ -235,7 +235,7 @@ test("interleaved part-number writes are signed with the server key and verified
     }))
       form.set(key, value);
     return inRequest(request, async () =>
-      Response.json(await handlePartNumberUpdate(form, request))
+      Response.json(await handlePartNumberUpdate(form))
     );
   };
   for (const response of await Promise.all([run("alice"), run("bob")])) {

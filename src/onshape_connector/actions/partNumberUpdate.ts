@@ -66,8 +66,7 @@ function unconfirmed(reason: string): ActionResponse {
 
 /** Discover, write, and verify metadata using only the initiating request's identity. */
 export async function handlePartNumberUpdate(
-  formData: FormData,
-  request: Request
+  formData: FormData
 ): Promise<ActionResponse> {
   if (!isOnshapeConfigured()) {
     return { success: false, error: "Onshape API access is not configured." };

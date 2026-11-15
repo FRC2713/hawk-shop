@@ -63,8 +63,6 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
     cardByPartNumber,
     columnById,
     isLoading,
-    isError,
-    error,
     partsError,
     cardsError,
     columnsError,
@@ -209,7 +207,6 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
       e.stopPropagation();
 
       const isShiftClick = e.shiftKey;
-      const isModifierClick = e.metaKey || e.ctrlKey;
 
       setSelectedPartKeys((prev) => {
         const newSelection = new Set(prev);
@@ -518,8 +515,6 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
                       onSelect={(e) =>
                         handlePartSelect(e, partKey, index, allPartKeys)
                       }
-                      partKey={partKey}
-                      index={index}
                     />
                   );
                 })}
@@ -569,15 +564,12 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
                     <PartListElement
                       key={partKey}
                       part={part}
-                      queryParams={queryParams}
                       matchingCard={matchingCard}
                       currentColumn={currentColumn}
                       isSelected={selectedPartKeys.has(partKey)}
                       onSelect={(e) =>
                         handlePartSelect(e, partKey, index, allPartKeys)
                       }
-                      partKey={partKey}
-                      index={index}
                     />
                   );
                 })}

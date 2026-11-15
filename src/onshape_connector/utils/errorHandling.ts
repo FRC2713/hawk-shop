@@ -65,22 +65,13 @@ export function extractErrorDetails(
  */
 export function createErrorResponse(
   error: unknown,
-  defaultMessage: string,
-  cookie?: string
+  defaultMessage: string
 ): ActionResponse {
   const { message, status } = extractErrorDetails(error, defaultMessage);
 
-  const response: ActionResponse = {
+  return {
     success: false,
     error: status ? `${message} (Status: ${status})` : message,
     errorId: logServerError("PART ACTION", error),
   };
-
-  if (cookie) {
-    response.headers = {
-      "Set-Cookie": cookie,
-    };
-  }
-
-  return response;
 }

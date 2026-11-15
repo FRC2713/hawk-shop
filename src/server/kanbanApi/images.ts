@@ -1,61 +1,6 @@
 import "virtual:hawk-shop/server-only";
 
-import { logger } from "~/lib/logger";
-import {
-  deleteFileByUrl,
-  saveFile,
-  storagePathFromUrl,
-} from "~/server/storage/files";
-import { onshapeFetch, onshapeOrigin } from "~/lib/onshapeApi/auth";
-
-interface ThumbnailParams {
-  documentId: string;
-  instanceType: string;
-  instanceId: string;
-  elementId: string;
-  partId: string;
-}
-
-/**
- * Build Onshape thumbnail URL from individual parameters
- */
-function buildOnshapeThumbnailUrl(params: ThumbnailParams): string {
-  const { documentId, instanceType, instanceId, elementId, partId } = params;
-  // Use the Onshape API v10 thumbnail endpoint format
-  // wvm = workspace/version/microversion type indicator
-  const wvm = instanceType === "w" ? "w" : instanceType === "v" ? "v" : "m";
-  return `${onshapeOrigin()}/api/v10/thumbnails/d/${documentId}/${wvm}/${instanceId}/e/${elementId}/p/${encodeURIComponent(partId)}?outputFormat=PNG&pixelSize=300`;
-}
-
-/**
- * Fetch an Onshape thumbnail and copy it into local storage.
- * Returns the public URL of the stored image.
- */
-export async function uploadOnshapeThumbnail(
-  request: Request,
-  params: ThumbnailParams
-): Promise<string | null> {
-  try {
-    // An image asked for as JSON (the signer's default) answers 406.
-    const response = await onshapeFetch(buildOnshapeThumbnailUrl(params), {
-      headers: { Accept: "*/*" },
-    });
-    if (!response.ok) {
-      logger.error(
-        `[Images] Failed to fetch thumbnail from Onshape: ${response.status}`
-      );
-      return null;
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const fileName = `card-images/${params.partId}-${Date.now()}.png`;
-
-    return await saveFile(fileName, buffer);
-  } catch (error) {
-    logger.error("[Images] Error processing thumbnail:", error);
-    return null;
-  }
-}
+import { deleteFileByUrl, storagePathFromUrl } from "~/server/storage/files";
 
 /**
  * Delete a card's own uploaded image from local storage.

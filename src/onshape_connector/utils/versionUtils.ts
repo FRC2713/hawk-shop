@@ -35,23 +35,6 @@ export function getPartVersionKey(
 }
 
 /**
- * Parse a composite key back into part number and version ID
- * Returns null if the key format is invalid
- */
-export function parsePartVersionKey(
-  key: string
-): { partNumber: string; versionId: string } | null {
-  const parts = key.split("::");
-  if (parts.length !== 2) {
-    return null;
-  }
-  return {
-    partNumber: parts[0]!,
-    versionId: parts[1]!,
-  };
-}
-
-/**
  * Get version ID from a kanban card
  * Returns the onshape_version_id if available, otherwise falls back to
  * onshape_instance_id when instance_type is 'v'

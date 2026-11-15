@@ -5,7 +5,7 @@ import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KanbanSquare, Search, Settings2, Edit, Save, X } from "lucide-react";
+import { KanbanSquare, Search, X } from "lucide-react";
 import {
   KanbanBoard,
   KanbanBoardSkeleton,
@@ -65,7 +65,7 @@ export function MfgKanbanClient({
       queryClient.setQueryData(queryKeys.kanban.config(), config);
       toast.success("Configuration saved");
     },
-    onError: (error, variables, context) => {
+    onError: (error, _variables, context) => {
       // Rollback on error
       if (context?.previousConfig) {
         queryClient.setQueryData(
@@ -82,14 +82,6 @@ export function MfgKanbanClient({
       });
     },
   });
-
-  const handleConfigChange = (newConfig: KanbanConfig) => {
-    // Only update local state when in edit mode
-    // Actual save happens when user clicks Save button
-    if (isEditMode) {
-      queryClient.setQueryData(queryKeys.kanban.config(), newConfig);
-    }
-  };
 
   const handleEnterEditMode = () => {
     if (config) {
@@ -268,7 +260,6 @@ export function MfgKanbanClient({
           ) : config ? (
             <KanbanBoard
               config={config}
-              onConfigChange={handleConfigChange}
               isEditMode={isEditMode}
               hideImages={hideImages}
               processFilterIds={selectedProcessIds}

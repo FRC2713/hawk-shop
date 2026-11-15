@@ -1,7 +1,3 @@
-// Re-export Kanban types for convenience
-
-export type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
-
 /**
  * Query parameters for the Onshape connector page. Onshape supplies them when
  * it loads the iframe; the route is meaningless without them.
@@ -27,8 +23,4 @@ export interface ActionResponse {
   error?: string;
   errorId?: string;
   data?: unknown;
-  redirect?: string;
-  headers?: {
-    "Set-Cookie": string;
-  };
 }

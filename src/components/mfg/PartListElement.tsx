@@ -1,22 +1,18 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Badge } from "~/components/ui/badge";
 import { Checkbox } from "~/components/ui/checkbox";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
 import type { KanbanCardRow } from "~/server/db/types";
 import type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
-import type { PartsPageSearchParams } from "~/onshape_connector/utils/types";
 import { ManufacturingStateBadge } from "./ManufacturingStateBadge";
 import { cn } from "~/lib/utils";
 
 interface PartListElementProps {
   part: BtPartMetadataInfo;
-  queryParams: PartsPageSearchParams;
   matchingCard?: KanbanCardRow;
   currentColumn?: KanbanColumn;
   isSelected?: boolean;
   onSelect?: (e: React.MouseEvent) => void;
-  partKey?: string;
-  index?: number;
 }
 
 /**
@@ -59,13 +55,10 @@ function PartListThumbnail({ part }: { part: BtPartMetadataInfo }) {
  */
 export function PartListElement({
   part,
-  queryParams,
   matchingCard,
   currentColumn,
   isSelected = false,
   onSelect,
-  partKey,
-  index,
 }: PartListElementProps) {
   const partId = part.partId || part.id || "";
 

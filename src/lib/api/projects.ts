@@ -3,7 +3,7 @@ import type { ProjectRow, ProjectWithUsage } from "~/server/db/types";
 import { apiFetch } from "./client";
 import { queryKeys } from "./keys";
 
-export type { ProjectRow, ProjectWithUsage };
+export type { ProjectWithUsage };
 
 /** Mirrors the server constant; client code can't import the schema module. */
 export const MISCELLANEOUS_PROJECT_ID = "project-miscellaneous";
