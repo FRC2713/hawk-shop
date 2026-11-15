@@ -21,7 +21,7 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **The allowance is annual and set per plan.** EDU Enterprise gets 10,000 calls per enterprise per year. Other plans scale with users (Enterprise: 10,000 per full user; Professional: 5,000 per user; Free, Standard and EDU Student: 2,500 per user; EDU Educator, Pro and Discovery: 2,500 per company). Limits apply at the company level.
   - Label: documented
   - Source: [API Limits](https://onshape-public.github.io/docs/auth/limits/)
-  - Relied on by: `withOnshapeCache` (why staleness is preferred to a miss), `partsTtlMs`, `VERSION_TTL_MS`
+  - Relied on by: the Onshape gateway (`src/lib/onshapeApi/gateway.ts`: why staleness is preferred to a miss, and why `ONSHAPE_DAILY_CALL_LIMIT` serves expired cache rather than calling), `partsTtlMs`, `VERSION_TTL_MS`
 
 - **The company "Red Hawk Robotics" has a 10,000-request yearly limit.** On 2026-11-09 the developer portal showed 9,345 / 10,000 requests used (93.45%), day 309 of 365 in the billing cycle, and a tracking start date of Feb 19, 2026. The start date had a warning icon next to it; what that means is unknown.
   - Label: observed
@@ -51,7 +51,7 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Only 2xx and 3xx responses count.** API-key calls that return 4xx or 5xx are not charged.
   - Label: documented
   - Source: [API Limits](https://onshape-public.github.io/docs/auth/limits/)
-  - Relied on by: `withOnshapeCache` (a throwing fetcher is not counted or cached), `recordOnshapeUsage`, the part-number release's response interceptor (counts `response.ok` only)
+  - Relied on by: the Onshape gateway (a failed response is not counted or cached), `recordOnshapeUsage`, the part-number release's response interceptor (counts `response.ok` only)
 
 - **A followed 307 redirect is probably charged twice**: once for the 307 and once for the request to its destination, since 3xx counts. `recordOnshapeUsage` counts it once.
   - Label: unverified
