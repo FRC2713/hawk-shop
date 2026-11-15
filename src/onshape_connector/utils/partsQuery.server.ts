@@ -1,11 +1,7 @@
 import "virtual:hawk-shop/server-only";
 import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
-import {
-  createOnshapeApiClient,
-  getPartsWmve,
-} from "~/lib/onshapeApi/generated-wrapper";
-import { cacheKey, partsTtlMs, withOnshapeCache } from "~/lib/onshapeApi/cache";
-import { assertOnshapeAllocation } from "~/lib/onshapeApi/auth";
+import { cacheKey, partsTtlMs } from "~/lib/onshapeApi/cache";
+import { onshapeRead } from "~/lib/onshapeApi/gateway";
 import { ensureOnshapeWebhook } from "~/lib/onshapeApi/webhooks";
 import { syncWorkspaceCardMicroversions } from "~/server/kanbanApi/cards";
 import type { PartsPageSearchParams } from "./types";
@@ -15,7 +11,7 @@ import type { PartsPageSearchParams } from "./types";
  * This is used by both the API route and server-side prefetching
  * SERVER-ONLY: Uses server-side authentication
  *
- * Reads go through the shared server cache (`~/lib/onshapeApi/cache`). The Part
+ * Reads go through the Onshape gateway (`~/lib/onshapeApi/gateway`). The Part
  * Studio contents are the same for every user who can see the document, so a
  * whole shop opening the connector at once costs one Onshape call rather than
  * one per student — and at `wvm=v` the answer is immutable, so it costs one
@@ -26,17 +22,17 @@ import type { PartsPageSearchParams } from "./types";
 export async function fetchPartsFromOnshape(
   queryParams: PartsPageSearchParams
 ): Promise<BtPartMetadataInfo[]> {
-  const parts = await withOnshapeCache<BtPartMetadataInfo[]>({
+  const { documentId, instanceType, instanceId, elementId } = queryParams;
+  const parts = await onshapeRead<BtPartMetadataInfo[]>({
     label: "parts",
-    key: cacheKey(
-      "parts",
-      queryParams.documentId,
-      queryParams.instanceType,
-      queryParams.instanceId,
-      queryParams.elementId
-    ),
-    ttlMs: partsTtlMs(queryParams.instanceType),
-    fetcher: () => fetchPartsUncached(queryParams),
+    cache: {
+      key: cacheKey("parts", documentId, instanceType, instanceId, elementId),
+      ttlMs: partsTtlMs(instanceType),
+    },
+    request: {
+      path: `/v12/parts/d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}`,
+      query: { withThumbnails: true, includePropertyDefaults: true },
+    },
   });
 
   // A workspace changes under its cards. When this read shows a part at a new
@@ -57,48 +53,4 @@ export async function fetchPartsFromOnshape(
   }
 
   return parts;
-}
-
-async function fetchPartsUncached(
-  queryParams: PartsPageSearchParams
-): Promise<BtPartMetadataInfo[]> {
-  const client = await createOnshapeApiClient();
-
-  const response = await getPartsWmve({
-    client,
-    path: {
-      did: queryParams.documentId,
-      wvm: queryParams.instanceType,
-      wvmid: queryParams.instanceId,
-      eid: queryParams.elementId,
-    },
-    query: {
-      withThumbnails: true,
-      includePropertyDefaults: true,
-    },
-  });
-
-  assertOnshapeAllocation(response.response);
-
-  // Check for errors in the response
-  if ((response as any).error) {
-    const errorMessage = (response as any).error;
-
-    // Check if it's an authentication error
-    if (
-      typeof errorMessage === "string" &&
-      errorMessage.includes("invalid_token")
-    ) {
-      throw new Error("Not authenticated with Onshape. Please sign in again.");
-    }
-
-    throw new Error(`Onshape API error: ${errorMessage}`);
-  }
-
-  // Check if response.data exists
-  if (!response.data) {
-    throw new Error("Onshape API returned no data");
-  }
-
-  return response.data || [];
 }

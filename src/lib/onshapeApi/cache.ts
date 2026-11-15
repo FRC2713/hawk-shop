@@ -1,20 +1,13 @@
 import "virtual:hawk-shop/server-only";
 
 /**
- * Server-side cache for Onshape API responses, plus the usage tally that tells
- * you whether it is working.
+ * Cache keys, TTLs, invalidation and the usage tally behind the Onshape
+ * gateway (`./gateway`). The gateway owns reading and writing the durable
+ * cache and single-flight; nothing else reaches Onshape or the cache rows.
  *
  * Onshape's allowance is yearly, so staleness is cheap and a cache miss is not
  * (see docs/ONSHAPE.md#allocation-and-billing). Anything with an immutable
  * upstream (a version, a microversion) is cached with no expiry at all.
- *
- * Two layers sit here:
- *
- * - **SQLite** (`onshape_api_cache`) so the cache survives `docker compose up`.
- *   An in-memory cache would re-buy the whole board after every restart.
- * - **In-process single-flight** so the ten browsers that hit the board when
- *   the shop opens produce one upstream call rather than ten. The SQLite layer
- *   alone cannot do this: none of the ten have written a row yet.
  *
  * Single-process by design, like `~/server/events/bus` — a second replica would
  * duplicate at most one call per key per TTL, so this degrades gracefully
@@ -71,7 +64,9 @@ export function partsTtlMs(instanceType: string): number | null {
 }
 
 /**
- * In-flight upstream requests, keyed the same way as the table.
+ * In-flight upstream requests, keyed the same way as the table. The gateway's
+ * single-flight lives here so invalidation can detach reads that started
+ * before an edit.
  *
  * Parked on `globalThis` for the same reason the db handle is: dev-mode module
  * reloads would otherwise strand the map and lose the dedup.
@@ -79,7 +74,11 @@ export function partsTtlMs(instanceType: string): number | null {
 const globalForCache = globalThis as unknown as {
   __onshapeInflight?: Map<string, Promise<unknown>>;
 };
-const inflight = (globalForCache.__onshapeInflight ??= new Map());
+export const onshapeInflight: Map<
+  string,
+  Promise<unknown>
+> = (globalForCache.__onshapeInflight ??= new Map());
+const inflight = onshapeInflight;
 
 const KEY_SEPARATOR = "::";
 
@@ -92,56 +91,6 @@ export function cacheKey(label: string, ...parts: (string | number)[]): string {
 export function invalidateOnshapeCache(key: string): void {
   inflight.delete(key);
   db.delete(onshapeApiCache).where(eq(onshapeApiCache.cache_key, key)).run();
-}
-
-function readCache<T>(key: string): { hit: true; value: T } | { hit: false } {
-  try {
-    const [row] = db
-      .select({
-        payload: onshapeApiCache.payload,
-        expires_at: onshapeApiCache.expires_at,
-      })
-      .from(onshapeApiCache)
-      .where(eq(onshapeApiCache.cache_key, key))
-      .limit(1)
-      .all();
-
-    if (!row) return { hit: false };
-    if (row.expires_at && new Date(row.expires_at) <= new Date()) {
-      return { hit: false };
-    }
-    return { hit: true, value: JSON.parse(row.payload) as T };
-  } catch (error) {
-    // A corrupt row or unreadable volume must degrade to "just call Onshape",
-    // never to a failed page.
-    console.error("[ONSHAPE CACHE] read failed:", error);
-    return { hit: false };
-  }
-}
-
-function writeCache(key: string, value: unknown, ttlMs: number | null): void {
-  try {
-    const expiresAt =
-      ttlMs === null ? null : new Date(Date.now() + ttlMs).toISOString();
-    db.insert(onshapeApiCache)
-      .values({
-        cache_key: key,
-        payload: JSON.stringify(value),
-        created_at: new Date().toISOString(),
-        expires_at: expiresAt,
-      })
-      .onConflictDoUpdate({
-        target: onshapeApiCache.cache_key,
-        set: {
-          payload: JSON.stringify(value),
-          created_at: new Date().toISOString(),
-          expires_at: expiresAt,
-        },
-      })
-      .run();
-  } catch (error) {
-    console.error("[ONSHAPE CACHE] write failed:", error);
-  }
 }
 
 /**
@@ -175,6 +124,17 @@ export function recordOnshapeUsage(label: string, kind: "call" | "hit"): void {
   }
 }
 
+/** Calls tallied today (UTC) across all labels: what the daily ceiling counts. */
+export function onshapeCallsToday(): number {
+  const day = new Date().toISOString().slice(0, 10);
+  const [row] = db
+    .select({ calls: sql<number>`coalesce(sum(${onshapeApiUsage.calls}), 0)` })
+    .from(onshapeApiUsage)
+    .where(eq(onshapeApiUsage.day, day))
+    .all();
+  return Number(row?.calls ?? 0);
+}
+
 /** The per-day tally, newest first, with totals and the cache hit rate. */
 export function summarizeOnshapeUsage() {
   const byDay = db
@@ -201,53 +161,6 @@ export function summarizeOnshapeUsage() {
     },
     byDay,
   };
-}
-
-/**
- * Serve `label`/`key` from cache, or call `fetcher` at most once across all
- * concurrent callers and cache what it returns.
- *
- * A throwing `fetcher` is never cached and never counted: an expired token or a
- * 5xx would otherwise poison the entry for the whole TTL.
- */
-export async function withOnshapeCache<T>({
-  label,
-  key,
-  ttlMs,
-  fetcher,
-}: {
-  label: string;
-  key: string;
-  ttlMs: number | null;
-  fetcher: () => Promise<T>;
-}): Promise<T> {
-  const cached = readCache<T>(key);
-  if (cached.hit) {
-    recordOnshapeUsage(label, "hit");
-    return cached.value;
-  }
-
-  const pending = inflight.get(key);
-  if (pending) {
-    // Someone else is already paying for this exact request — ride along.
-    recordOnshapeUsage(label, "hit");
-    return pending as Promise<T>;
-  }
-
-  let request!: Promise<T>;
-  request = (async () => {
-    const value = await fetcher();
-    recordOnshapeUsage(label, "call");
-    if (inflight.get(key) === request) writeCache(key, value, ttlMs);
-    return value;
-  })();
-
-  inflight.set(key, request);
-  try {
-    return await request;
-  } finally {
-    if (inflight.get(key) === request) inflight.delete(key);
-  }
 }
 
 /**

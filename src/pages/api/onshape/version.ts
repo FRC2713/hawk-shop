@@ -1,18 +1,9 @@
 import { logServerError } from "~/server/errors";
-import {
-  assertOnshapeAllocation,
-  onshapeErrorResponse,
-} from "~/lib/onshapeApi/auth";
+import { onshapeErrorResponse } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
-import {
-  createOnshapeApiClient,
-  getVersion,
-} from "~/lib/onshapeApi/generated-wrapper";
-import {
-  VERSION_TTL_MS,
-  cacheKey,
-  withOnshapeCache,
-} from "~/lib/onshapeApi/cache";
+import type { BtVersionInfo } from "~/lib/onshapeApi/generated-wrapper";
+import { VERSION_TTL_MS, cacheKey } from "~/lib/onshapeApi/cache";
+import { onshapeRead, OnshapeRequestError } from "~/lib/onshapeApi/gateway";
 import { requireAuth } from "~/lib/requireAuth";
 
 /**
@@ -43,29 +34,16 @@ export const GET: APIRoute = async ({ request }) => {
   }
 
   try {
-    const data = await withOnshapeCache({
+    // A failed read (a 404 is usually a key problem) throws and is never
+    // cached, so it cannot hide the version for the whole week.
+    const data = await onshapeRead<BtVersionInfo>({
       label: "version",
-      key: cacheKey("version", documentId, versionId),
-      ttlMs: VERSION_TTL_MS,
-      fetcher: async () => {
-        // Create Onshape API client with authentication
-        const client = await createOnshapeApiClient();
-
-        // Fetch version information
-        const response = await getVersion({
-          client,
-          path: {
-            did: documentId,
-            vid: versionId,
-          },
-        });
-
-        assertOnshapeAllocation(response.response);
-        // Thrown rather than returned so the miss is not cached: a 404
-        // here is usually a token problem, and caching it for a week
-        // would hide the version until the TTL lapsed.
-        if (!response.data) throw new Error("Version not found");
-        return response.data;
+      cache: {
+        key: cacheKey("version", documentId, versionId),
+        ttlMs: VERSION_TTL_MS,
+      },
+      request: {
+        path: `/v12/documents/d/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}`,
       },
     });
 
@@ -80,7 +58,17 @@ export const GET: APIRoute = async ({ request }) => {
 
     const known = onshapeErrorResponse(error);
     if (known) return known;
-    if (error instanceof Error) {
+    if (error instanceof OnshapeRequestError && error.status === 404) {
+      errorMessage = "Version not found";
+      statusCode = 404;
+    } else if (
+      error instanceof OnshapeRequestError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      errorMessage =
+        "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";
+      statusCode = 409;
+    } else if (error instanceof Error) {
       if (
         error.message.includes("Not authenticated") ||
         error.message.includes("invalid_token")

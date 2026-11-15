@@ -1,5 +1,6 @@
 import { logServerError } from "~/server/errors";
 import { onshapeErrorResponse } from "~/lib/onshapeApi/auth";
+import { OnshapeRequestError } from "~/lib/onshapeApi/gateway";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
 import { fetchPartsFromOnshape } from "~/onshape_connector/utils/partsQuery.server";
@@ -52,7 +53,14 @@ export const GET: APIRoute = async ({ request }) => {
 
     const known = onshapeErrorResponse(error);
     if (known) return known;
-    if (error instanceof Error) {
+    if (
+      error instanceof OnshapeRequestError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      errorMessage =
+        "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";
+      statusCode = 409;
+    } else if (error instanceof Error) {
       if (error.message.includes("Not authenticated")) {
         errorMessage =
           "Onshape API credentials were rejected. Ask the deployment operator to check the key permissions.";

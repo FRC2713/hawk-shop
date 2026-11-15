@@ -17,6 +17,16 @@ export class OnshapeAllocationExhaustedError extends Error {
   }
 }
 
+/** The daily ceiling (`ONSHAPE_DAILY_CALL_LIMIT`) is reached and nothing is
+ * cached to answer with. Routes answer 503. */
+export class OnshapeDailyBudgetError extends Error {
+  constructor() {
+    super(
+      "Daily Onshape budget reached. CAD data that is not already cached is unavailable until tomorrow (UTC)."
+    );
+  }
+}
+
 /** Call before turning a non-OK Onshape response into any other error, so a
  * 402 reads the same on every path (see docs/ONSHAPE.md#allocation-and-billing). */
 export function assertOnshapeAllocation(response: Response | undefined): void {
@@ -24,12 +34,15 @@ export function assertOnshapeAllocation(response: Response | undefined): void {
 }
 
 /** The route answer for errors that mean the same everywhere: 409 when no key
- * is configured, 402 when the allocation is used up. Null for anything else. */
+ * is configured, 402 when the allocation is used up, 503 when the daily ceiling
+ * is reached. Null for anything else. */
 export function onshapeErrorResponse(error: unknown): Response | null {
   if (error instanceof OnshapeConfigurationError)
     return Response.json({ error: error.message }, { status: 409 });
   if (error instanceof OnshapeAllocationExhaustedError)
     return Response.json({ error: error.message }, { status: 402 });
+  if (error instanceof OnshapeDailyBudgetError)
+    return Response.json({ error: error.message }, { status: 503 });
   return null;
 }
 
