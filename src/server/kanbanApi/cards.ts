@@ -218,6 +218,10 @@ export interface CreateCardInput {
   onshapeVersionId?: string;
   /** The part's microversion from the parts read the release came from. */
   onshapeMicroversionId?: string;
+  /** Material display name captured at release; "" when none was set. */
+  onshapeMaterial?: string;
+  /** Version name captured at release. */
+  onshapeVersionName?: string;
   /** Defaults to Miscellaneous. */
   projectId?: string;
 }
@@ -272,6 +276,8 @@ export async function createCard(
           onshape_part_id: cardData.onshapePartId ?? null,
           onshape_version_id: cardData.onshapeVersionId ?? null,
           onshape_microversion_id: cardData.onshapeMicroversionId ?? null,
+          onshape_material: cardData.onshapeMaterial ?? null,
+          onshape_version_name: cardData.onshapeVersionName ?? null,
           project_id: project.id,
         })
         .returning()

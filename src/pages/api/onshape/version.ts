@@ -1,27 +1,16 @@
 import { logServerError } from "~/server/errors";
-import {
-  assertOnshapeAllocation,
-  onshapeErrorResponse,
-} from "~/lib/onshapeApi/auth";
+import { onshapeErrorResponse } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
-import {
-  createOnshapeApiClient,
-  getVersion,
-} from "~/lib/onshapeApi/generated-wrapper";
-import {
-  VERSION_TTL_MS,
-  cacheKey,
-  withOnshapeCache,
-} from "~/lib/onshapeApi/cache";
+import { fetchVersionFromOnshape } from "~/onshape_connector/utils/versionQuery.server";
 import { requireAuth } from "~/lib/requireAuth";
 
 /**
  * API endpoint to fetch version information from Onshape
  * Returns version name and other metadata
  *
- * Every kanban card detail sheet asks for its version's name, and a version is
- * frozen once cut — so this was the app's most repetitive spend against a quota
- * that is annual and company-wide. Answers are cached server-side for a week.
+ * The connector reads it for the version it shows. Card details no longer
+ * do: release captures the name onto the card (`onshape_version_name`).
+ * A version is frozen once cut, so answers are cached server-side for a week.
  */
 export const GET: APIRoute = async ({ request }) => {
   // A cache hit never reaches Onshape, so a token is no longer this
@@ -43,31 +32,7 @@ export const GET: APIRoute = async ({ request }) => {
   }
 
   try {
-    const data = await withOnshapeCache({
-      label: "version",
-      key: cacheKey("version", documentId, versionId),
-      ttlMs: VERSION_TTL_MS,
-      fetcher: async () => {
-        // Create Onshape API client with authentication
-        const client = await createOnshapeApiClient();
-
-        // Fetch version information
-        const response = await getVersion({
-          client,
-          path: {
-            did: documentId,
-            vid: versionId,
-          },
-        });
-
-        assertOnshapeAllocation(response.response);
-        // Thrown rather than returned so the miss is not cached: a 404
-        // here is usually a token problem, and caching it for a week
-        // would hide the version until the TTL lapsed.
-        if (!response.data) throw new Error("Version not found");
-        return response.data;
-      },
-    });
+    const data = await fetchVersionFromOnshape(documentId, versionId);
 
     // Return version data as JSON
     return Response.json(data);
