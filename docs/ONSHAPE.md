@@ -169,12 +169,12 @@ Some entries come from [FRCDesignApp's ONSHAPE.md](https://github.com/frcdesign/
 - **Each part in the parts list carries a `microversionId`.**
   - Label: documented
   - Source: Onshape OpenAPI spec, `BTPartMetadataInfo.microversionId` (`src/lib/onshapeApi/generated/types.gen.ts`)
-  - Relied on by: `syncWorkspaceCardMicroversions`, the release action (`onshape_microversion_id`), the thumbnail route's `partRowKey`
+  - Relied on by: the release action (`onshape_microversion_id`), the thumbnail route's `partRowKey`
 
 - **A part's `microversionId` changes when that part changes and only then;** edits to other parts in the same Part Studio leave it alone.
   - Label: unverified
   - Source: #48 and FRCDesignApp's microversion-keyed caching (seen with OAuth)
-  - Relied on by: the thumbnail route's microversion-keyed rows. If it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, cards would keep the old picture.
+  - Relied on by: the thumbnail route's microversion-keyed rows. If it changed on every Part Studio edit, thumbnails would refetch more often than needed but never go stale; if it failed to change on a geometry edit, the connector would keep showing the old picture. Cards keep their release microversion regardless.
 
 - **The parts list is either a bare array or `{ parts: [...] }`.**
   - Label: unverified
@@ -208,12 +208,12 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
 - **A part's `thumbnailInfo` in a parts read (`withThumbnails=true`) gives one href per size, `https://cad.onshape.com/api/thumbnails/<40-hex id>/s/<size>`, for sizes `600x340`, `300x300`, `300x170` and `70x40`.** The href names no document, element or part; `thumbnailInfo.id` is the same 40-hex id, and `thumbnailInfo.href` (`/api/thumbnails/<id>?t=<ms>`) is the size list.
   - Label: observed
   - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
-  - Relied on by: the connector (releases with the `300x300` href); `syncWorkspaceCardMicroversions` (moves a card to the part's current `300x300` href); `findStoredThumbnail` (a microversion row only answers the URL it was fetched from, because the href can't be checked against caller-supplied part ids)
+  - Relied on by: the connector and the release action (release with the `300x300` href, via `partThumbnailHref`); `findStoredThumbnail` (a microversion row only answers the URL it was fetched from, because the href can't be checked against caller-supplied part ids)
 
 - **Part thumbnails can also be fetched from `/api/v10/thumbnails/d/{did}/{wvm}/{wvmid}/e/{eid}/p/{pid}?outputFormat=PNG&pixelSize=300`.** That part-level path is not in the OpenAPI spec the generated client was built from, which lists element and document thumbnails only.
   - Label: unverified
-  - Source: URL built by `uploadOnshapeThumbnail` (which has no caller) and the connector's release action fallback
-  - Relied on by: `uploadOnshapeThumbnail`, the release action's fallback thumbnail URL
+  - Source: URL built by `uploadOnshapeThumbnail` (which has no caller)
+  - Relied on by: `uploadOnshapeThumbnail`
 
 - **The thumbnail hrefs in the parts list point at `cad.onshape.com`, and an API-key-signed GET returns the PNG.** An unsigned request was not tried.
   - Label: observed
@@ -223,7 +223,7 @@ Onshape's developer guide has no thumbnails page; the endpoints are only in the 
 - **Fetching one size (`…/s/300x300`) returns that PNG. The size-list href (`/api/thumbnails/<id>`) returns JSON describing every size, not an image.** So requesting a single size is already what Hawk Shop does; there is no "list of sizes" image request to avoid.
   - Label: observed
   - Source: observed 2026-11-09 ~14:40 UTC with the production API key, HMAC-signed through `onshapeFetch`, against the public "Fasteners" document (`77461d97…`, Part Studio "Ziptie")
-  - Relied on by: the connector and `releaseThumbnailHref` (pick the `300x300` href)
+  - Relied on by: `partThumbnailHref` (picks the `300x300` href)
 
 - **A thumbnail image answers 200 to `Accept: */*` and to `Accept: image/png` (same bytes and ETag), and 406 "Request not acceptable." to `Accept: application/json`.** The signer sends `application/json` unless the caller sets an `Accept`, so image fetches must set one. The image response carries `Cache-Control: must-revalidate,no-cache,no-store` and an `ETag`.
   - Label: observed

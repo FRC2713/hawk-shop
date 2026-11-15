@@ -19,6 +19,8 @@ const thumbnailRoute = await import("../src/pages/api/onshape/thumbnail");
 const filesRoute = await import("../src/pages/api/files/[...path]");
 const actionsRoute = await import("../src/pages/api/mfg/parts/actions");
 const usageRoute = await import("../src/pages/api/onshape/usage");
+const cardRoute = await import("../src/pages/api/kanban/cards/[id]");
+const { thumbnailProxyUrl } = await import("../src/lib/api/onshape");
 
 const cookie = await signIn();
 const { invalidateOnshapeCacheForDocument } =
@@ -137,7 +139,8 @@ async function readParts(documentId: string, instanceType = "w") {
 /** Release a part from a version the way the connector does, from the part it just read. */
 async function release(
   documentId: string,
-  part: Awaited<ReturnType<typeof readParts>>[number]
+  part: Awaited<ReturnType<typeof readParts>>[number],
+  { withThumbnail = true } = {}
 ) {
   const form = new FormData();
   Object.entries({
@@ -154,6 +157,7 @@ async function release(
     projectId: "project-miscellaneous",
     quantityToMake: "1",
   }).forEach(([key, value]) => form.set(key, value));
+  if (!withThumbnail) form.delete("rawThumbnailUrl");
   const response = await endpoint(
     actionsRoute,
     "POST"
@@ -166,12 +170,16 @@ async function release(
   );
   const result = await response.json();
   assert.equal(result.success, true, result.error);
-  return result.data as { id: string; onshape_microversion_id: string | null };
+  return result.data as {
+    id: string;
+    image_url: string | null;
+    onshape_microversion_id: string | null;
+  };
 }
 
 /**
  * A card released from a workspace before releases required a version, stored
- * as the release action stored it. A workspace parts read still moves these.
+ * as the release action stored it. It keeps the picture it was released with.
  */
 async function workspaceCard(
   documentId: string,
@@ -192,6 +200,23 @@ async function workspaceCard(
     },
     { onshape_user_id: "student", email: null }
   );
+}
+
+/** The card as the card route answers it. */
+async function readCard(id: string) {
+  const response = await endpoint(cardRoute, "GET", { id })(
+    new Request(`http://localhost/api/kanban/cards/${id}`, {
+      headers: { Cookie: cookie },
+    })
+  );
+  assert.equal(response.status, 200);
+  const { card } = (await response.json()) as {
+    card: { image_url: string | null; onshape_microversion_id: string | null };
+  };
+  return {
+    image_url: card.image_url,
+    onshape_microversion_id: card.onshape_microversion_id,
+  };
 }
 
 /** Follow the thumbnail route's redirect and return the image body. */
@@ -244,7 +269,7 @@ test("a released card saves the part's microversion without another Onshape call
   assert.equal(onshape.thumbnailFetches.length, 0);
 });
 
-test("a changed microversion fetches exactly one new thumbnail and the card serves it", async (t) => {
+test("a workspace edit after release leaves the card's microversion and picture alone", async (t) => {
   const onshape = fakeOnshape(t, "doc-change");
   onshape.microversions.set("P1", "mv-1");
   const [part] = await readParts("doc-change");
@@ -253,15 +278,32 @@ test("a changed microversion fetches exactly one new thumbnail and the card serv
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
   assert.deepEqual(onshape.thumbnailFetches, ["P1"]);
+  const released = await readCard(card.id);
 
   // The designer edits the part; the connector's next parts read sees it.
   onshape.microversions.set("P1", "mv-2");
   await new Promise((resolve) => setTimeout(resolve, 5));
   await readParts("doc-change");
 
-  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-2");
-  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-2");
-  assert.deepEqual(onshape.thumbnailFetches, ["P1", "P1"]);
+  // The card shows what was released, and the edit costs no thumbnail call.
+  assert.deepEqual(await readCard(card.id), released);
+  assert.equal(released.onshape_microversion_id, "mv-1");
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
+  assert.deepEqual(onshape.thumbnailFetches, ["P1"]);
+});
+
+test("a release sent without a thumbnail takes the part's href from the parts read it already made", async (t) => {
+  const onshape = fakeOnshape(t, "doc-no-thumb");
+  onshape.microversions.set("P1", "mv-1");
+  const [part] = await readParts("doc-no-thumb", "v");
+  const readsBefore = onshape.partsReads;
+  const card = await release("doc-no-thumb", part, { withThumbnail: false });
+  assert.equal(
+    card.image_url,
+    `/api/onshape/thumbnail?url=${encodeURIComponent(part.thumbnailInfo.sizes[0].href)}`
+  );
+  assert.equal(onshape.partsReads, readsBefore);
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
 });
 
 /** The thumbnail query the connector sends for a part it just read. */
@@ -269,13 +311,16 @@ function connectorQuery(
   documentId: string,
   part: Awaited<ReturnType<typeof readParts>>[number]
 ) {
-  return new URLSearchParams({
+  // The connector builds it with the shared builder; the route must read it.
+  return thumbnailProxyUrl({
     url: part.thumbnailInfo.sizes[0].href,
-    documentId,
-    elementId: "studio",
-    partId: part.partId,
-    microversionId: part.microversionId,
-  }).toString();
+    part: {
+      documentId,
+      elementId: "studio",
+      partId: part.partId,
+      microversionId: part.microversionId,
+    },
+  }).split("?")[1];
 }
 
 test("the connector shows a part's new picture once its microversion changes", async (t) => {
@@ -302,20 +347,25 @@ test("the connector shows a part's new picture once its microversion changes", a
   assert.deepEqual(onshape.thumbnailFetches, ["P1", "P1"]);
 });
 
-test("when Onshape gives an edited part a new thumbnail href, its card follows it", async (t) => {
+test("when Onshape gives an edited part a new thumbnail href, its card keeps its release href", async (t) => {
   const onshape = fakeOnshape(t, "doc-new-href", { contentAddressed: true });
   onshape.microversions.set("P1", "mv-1");
   const [part] = await readParts("doc-new-href");
   const card = await workspaceCard("doc-new-href", part);
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
+  const released = await readCard(card.id);
 
   onshape.microversions.set("P1", "mv-2");
   await new Promise((resolve) => setTimeout(resolve, 5));
-  await readParts("doc-new-href");
+  const [edited] = await readParts("doc-new-href");
+  assert.notEqual(
+    edited.thumbnailInfo.sizes[0].href,
+    part.thumbnailInfo.sizes[0].href
+  );
 
-  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-2");
-  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-2");
-  assert.deepEqual(onshape.thumbnailFetches, ["P1", "P1"]);
+  assert.deepEqual(await readCard(card.id), released);
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-1");
+  assert.deepEqual(onshape.thumbnailFetches, ["P1"]);
 });
 
 test("two parts reads with the same microversions cost one thumbnail fetch per part", async (t) => {
@@ -365,11 +415,17 @@ test("a legacy thumbnail row with no microversion is served without a refetch", 
   assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-old");
   assert.equal(onshape.thumbnailFetches.length, 1);
 
-  // The adopted image belongs to that microversion only.
+  // The adopted image belongs to that microversion only: the connector asking
+  // for an edited part gets a new picture, while the card keeps its own.
   onshape.microversions.set("P1", "mv-new");
   await new Promise((resolve) => setTimeout(resolve, 5));
-  await readParts("doc-legacy");
-  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-new");
+  const [edited] = await readParts("doc-legacy");
+  assert.equal(await thumbnail(`cardId=${card.id}`), "image of P1 at mv-old");
+  assert.equal(onshape.thumbnailFetches.length, 1);
+  assert.equal(
+    await thumbnail(connectorQuery("doc-legacy", edited)),
+    "image of P1 at mv-new"
+  );
   assert.equal(onshape.thumbnailFetches.length, 2);
 });
 

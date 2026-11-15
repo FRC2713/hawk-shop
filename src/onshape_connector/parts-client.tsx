@@ -31,6 +31,7 @@ import {
 } from "./utils/partEligibility";
 import { VersionRequiredNotice } from "~/components/mfg/VersionRequiredNotice";
 import { extractVersionId, getPartVersionKey } from "./utils/versionUtils";
+import { partThumbnailHref } from "~/lib/api/onshape";
 
 interface MfgPartsClientProps {
   queryParams: PartsPageSearchParams;
@@ -162,10 +163,7 @@ export function MfgPartsClient({ queryParams }: MfgPartsClientProps) {
       );
 
       // Extract thumbnail URL
-      const thumbnailUrl =
-        part.thumbnailInfo?.sizes?.find((s) => s.size === "300x300")?.href ||
-        part.thumbnailInfo?.sizes?.[0]?.href ||
-        part.thumbnailInfo?.sizes?.find((s) => s.size === "600x340")?.href;
+      const thumbnailUrl = partThumbnailHref(part);
 
       // Extract onshape params
       const onshapeParams = queryParams.documentId

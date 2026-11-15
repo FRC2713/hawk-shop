@@ -21,6 +21,7 @@ import {
 import { ProcessChips } from "~/components/mfg/processes/ProcessChips";
 import { equipmentQuery, needsMaintenance, processesQuery } from "~/lib/api";
 import { cn } from "~/lib/utils";
+import { thumbnailProxyUrl } from "~/lib/api/onshape";
 
 export interface AddCardFormData {
   processIds: string[];
@@ -194,7 +195,7 @@ export function AddCardDialog({
 
   const thumbnail =
     thumbnailUrl && !thumbnailFailed
-      ? `/api/onshape/thumbnail?url=${encodeURIComponent(thumbnailUrl)}`
+      ? thumbnailProxyUrl({ url: thumbnailUrl })
       : null;
   const color = swatch(part);
   const title = partNumber || part?.partNumber || part?.name || "This part";

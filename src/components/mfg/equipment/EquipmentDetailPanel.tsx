@@ -16,6 +16,7 @@ import {
 } from "~/lib/api";
 import { EquipmentImageLightbox } from "./EquipmentImageLightbox";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
+import { thumbnailProxyUrl } from "~/lib/api/onshape";
 
 interface EquipmentDetailPanelProps {
   equipment: EquipmentWithProcesses;
@@ -36,10 +37,10 @@ function shortDate(iso: string | null | undefined) {
 
 function cardThumbnail(card: KanbanCardWithProcesses) {
   if (!card.image_url && !card.onshape_document_id) return null;
-  const version = card.onshape_microversion_id
-    ? `&microversionId=${encodeURIComponent(card.onshape_microversion_id)}`
-    : "";
-  return `/api/onshape/thumbnail?cardId=${card.id}${version}`;
+  return thumbnailProxyUrl({
+    cardId: card.id,
+    microversionId: card.onshape_microversion_id,
+  });
 }
 
 function AssignedPart({

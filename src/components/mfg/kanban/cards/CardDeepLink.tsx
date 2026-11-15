@@ -13,6 +13,7 @@ import {
   usersQuery,
 } from "~/lib/api";
 import { KanbanCardDetails } from "./KanbanCardDetails";
+import { thumbnailProxyUrl } from "~/lib/api/onshape";
 
 // Resolve against all cards, including completed cards hidden from the board.
 export function CardDeepLink({
@@ -45,7 +46,10 @@ export function CardDeepLink({
           card={card}
           imageUrl={
             card.image_url || card.onshape_document_id
-              ? `/api/onshape/thumbnail?cardId=${encodeURIComponent(card.id)}`
+              ? thumbnailProxyUrl({
+                  cardId: card.id,
+                  microversionId: card.onshape_microversion_id,
+                })
               : undefined
           }
           deleteCardMutation={deletion}

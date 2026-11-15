@@ -4,7 +4,10 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import { partThumbnails } from "~/server/db/schema";
 import type { KanbanCardRow } from "~/server/db/types";
-import type { OnshapePartMicroversion } from "~/lib/api/onshape";
+import {
+  THUMBNAIL_PROXY_PATH,
+  type OnshapePartMicroversion,
+} from "~/lib/api/onshape";
 import { storagePathFromUrl } from "~/server/storage/files";
 
 /**
@@ -13,10 +16,7 @@ import { storagePathFromUrl } from "~/server/storage/files";
  */
 export function resolveImageUrl(imageUrl: string): string {
   const trimmed = imageUrl.trim();
-  if (
-    !trimmed.includes("/api/onshape/thumbnail") ||
-    !trimmed.includes("url=")
-  ) {
+  if (!trimmed.includes(THUMBNAIL_PROXY_PATH) || !trimmed.includes("url=")) {
     return trimmed;
   }
   try {

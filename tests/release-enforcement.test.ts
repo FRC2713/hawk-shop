@@ -294,7 +294,8 @@ test("workspace edits and card updates preserve a legacy workspace card's warnin
   const persisted = (await readCards()).find(
     (card: { id: string }) => card.id === created.id
   );
-  assert.equal(persisted.onshape_microversion_id, "after");
+  // The card keeps the microversion it was released with.
+  assert.equal(persisted.onshape_microversion_id, "before");
   assert.equal(persisted.quantity_to_make, 8);
   assert.deepEqual(persisted.release_issues, created.release_issues);
 });

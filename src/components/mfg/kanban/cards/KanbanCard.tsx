@@ -17,6 +17,7 @@ import {
 import { KanbanCardHeader } from "./KanbanCardHeader";
 import { KanbanCardDetails } from "./KanbanCardDetails";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
+import { thumbnailProxyUrl } from "~/lib/api/onshape";
 
 /**
  * Format a date string for display
@@ -106,13 +107,10 @@ export const KanbanCard = memo(function KanbanCard({
   const imageUrl = useMemo(() => {
     if (hideImages) return undefined;
     if (!card.image_url && !card.onshape_document_id) return undefined;
-    // The microversion is in the src so an edited part's new picture replaces
-    // the one the browser already showed. It is only a cache-buster: the
-    // server ignores it and reads the microversion from the card row.
-    const version = card.onshape_microversion_id
-      ? `&microversionId=${encodeURIComponent(card.onshape_microversion_id)}`
-      : "";
-    return `/api/onshape/thumbnail?cardId=${card.id}${version}`;
+    return thumbnailProxyUrl({
+      cardId: card.id,
+      microversionId: card.onshape_microversion_id,
+    });
   }, [
     card.id,
     card.image_url,
