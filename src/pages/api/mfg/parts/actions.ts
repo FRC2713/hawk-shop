@@ -59,8 +59,11 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   // Handle part number update (default/fallback)
-  const result = await handlePartNumberUpdate(formData, request);
-  const status = result.success ? 200 : 400;
+  const { status: failureStatus, ...result } = await handlePartNumberUpdate(
+    formData,
+    request
+  );
+  const status = result.success ? 200 : (failureStatus ?? 400);
   const headers: HeadersInit = {};
   if (result.headers) {
     headers["Set-Cookie"] = result.headers["Set-Cookie"];

@@ -8,10 +8,11 @@ import type { BtPartMetadataInfo } from "~/lib/onshapeApi/generated-wrapper";
  * `/api/mfg/parts/actions` — the one endpoint that does not go through
  * `apiFetch`.
  *
- * It answers a rejected operation with HTTP 400 *and* a `{ success: false,
- * error }` body, and the UI wants that body: the error is a validation message
- * to show inline, not a transport failure. So the status is ignored and the
- * body is the contract.
+ * It answers a rejected operation with HTTP 400 (503 for a part-number edit
+ * refused by the daily Onshape ceiling) *and* a `{ success: false, error }`
+ * body, and the UI wants that body: the error is a message to show inline,
+ * not a transport failure. So the status is ignored and the body is the
+ * contract.
  *
  * What is still worth guarding is the content type. The auth middleware can
  * answer a signed-out request with an HTML redirect, and `response.json()` on

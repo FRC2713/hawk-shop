@@ -61,7 +61,10 @@ type Scope = {
  * An in-memory Onshape with a mocked clock. Every parts read answers with a
  * fresh name, so a test can tell a cached answer from a new one.
  */
-function onshape(t: TestContext) {
+function onshape(
+  t: TestContext,
+  partNumberProperty = { name: "Part number", propertyId: "pn" }
+) {
   const start = (nextStart += 7 * 86_400_000);
   t.mock.timers.enable({ apis: ["Date"], now: start });
   const reads = new Map<string, number>();
@@ -82,7 +85,7 @@ function onshape(t: TestContext) {
           name: `${key} read ${count}`,
           partNumber: value,
           properties: [
-            { name: "Part number", propertyId: "pn", value },
+            { ...partNumberProperty, value },
             { name: "Name", propertyId: "name", value: "Bracket" },
           ],
         },
@@ -97,7 +100,7 @@ function onshape(t: TestContext) {
       return Response.json({});
     }
     return Response.json({
-      properties: [{ name: "Part number", propertyId: "pn", value }],
+      properties: [{ ...partNumberProperty, value }],
     });
   });
   return {
@@ -353,14 +356,25 @@ test("a part-number edit counts as a fresh observation of the cached read", asyn
   const scope = { documentId: "renumbered" };
   await readParts(scope);
   clock.at(600_000);
-  await changed("renumbered");
   await editPartNumber(scope, "RHR-0043");
-  assert.equal((await readParts(scope))[0].partNumber, "RHR-0043");
-  assert.equal(clock.reads(scope), 1, "the edit refreshed the fetch time");
-  clock.at(600_000 + 60_000);
+  clock.at(660_000);
   await changed("renumbered");
+  assert.equal((await readParts(scope))[0].partNumber, "RHR-0043");
+  assert.equal(clock.reads(scope), 1, "the floor counts from the write");
+  clock.at(900_000);
   await readParts(scope);
-  assert.equal(clock.reads(scope), 1, "a later edit floors from the write");
+  assert.equal(clock.reads(scope), 2);
+});
+
+test("a part-number edit does not un-mark a read a change event marked stale", async (t) => {
+  const clock = onshape(t);
+  const scope = { documentId: "marked-then-renumbered" };
+  await readParts(scope);
+  clock.at(600_000);
+  await changed("marked-then-renumbered");
+  await editPartNumber(scope, "RHR-0046");
+  assert.equal((await readParts(scope))[0].partNumber, "RHR-0046");
+  assert.equal(clock.reads(scope), 2, "the change event still forces a read");
 });
 
 test("a part-number edit with nothing cached fetches nothing", async (t) => {
@@ -370,5 +384,18 @@ test("a part-number edit with nothing cached fetches nothing", async (t) => {
   assert.equal(clock.upstream.requests.length, 3);
   assert.equal(clock.reads(scope), 0);
   assert.equal((await readParts(scope))[0].partNumber, "RHR-0044");
+  assert.equal(clock.reads(scope), 1);
+});
+
+test("the part-number property found for the write is the one patched in the cached read", async (t) => {
+  const clock = onshape(t, { name: "Item code", propertyId: "PartNumber" });
+  const scope = { documentId: "custom-property" };
+  await readParts(scope);
+  assert.deepEqual(await editPartNumber(scope, "RHR-0045"), { success: true });
+  const [part] = await readParts(scope);
+  assert.deepEqual(
+    part.properties.map((property: { value: string }) => property.value),
+    ["RHR-0045", "Bracket"]
+  );
   assert.equal(clock.reads(scope), 1);
 });

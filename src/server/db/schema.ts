@@ -325,7 +325,7 @@ export const onshapeWebhooks = sqliteTable("onshape_webhooks", {
  * Single row (`id = 'default'`): when the last webhook repair pass started and
  * why, so the at-most-once-a-day limit survives a restart.
  */
-export const onshapeWebhookRepairs = sqliteTable("onshape_webhook_upkeep", {
+export const onshapeWebhookUpkeepState = sqliteTable("onshape_webhook_upkeep", {
   id: text("id").primaryKey(),
   last_repair_at: text("last_repair_at").notNull(),
   last_repair_reason: text("last_repair_reason").notNull(),

@@ -176,16 +176,26 @@ function changed(documentId: string, elementId?: string): void {
   }
 }
 
-function isPartNumberProperty(property: Record<string, unknown>): boolean {
+/**
+ * Whether a metadata property is the part number. The part-number action uses
+ * it to choose the property it writes and `wrote` uses it to choose the one it
+ * patches, so the two can never disagree.
+ */
+export function isPartNumberProperty(
+  property: Record<string, unknown>
+): boolean {
   const name =
     typeof property.name === "string" ? property.name.toLowerCase() : "";
-  const id = typeof property.propertyId === "string" ? property.propertyId : "";
+  const id =
+    typeof property.propertyId === "string"
+      ? property.propertyId.toLowerCase()
+      : "";
   return (
     name === "part number" ||
     name === "partnumber" ||
     name === "part_number" ||
-    id.toLowerCase().includes("partnumber") ||
-    id.toLowerCase().includes("part_number")
+    id.includes("partnumber") ||
+    id.includes("part_number")
   );
 }
 
@@ -206,8 +216,9 @@ function applyPatch(payload: unknown, partId: string, patch: PartPatch) {
 
 /**
  * Onshape accepted a write to one part. The cached read (if any) gets the new
- * value and counts as freshly observed; with nothing cached, nothing is
- * fetched. A read in flight is detached, because it may carry the old value.
+ * value and its fetch time becomes now; its expiry never moves later, so a
+ * read a change event marked stale stays stale. With nothing cached, nothing
+ * is fetched. A read in flight is detached, because it may carry the old value.
  */
 function wrote(partStudio: PartStudio, partId: string, patch: PartPatch): void {
   const key = keyOf(partStudio);

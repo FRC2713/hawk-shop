@@ -4,11 +4,12 @@ import { db } from "~/server/db/client";
 import { kanbanCards } from "~/server/db/schema";
 import { publishKanbanEvent } from "~/server/events/bus";
 import {
+  MATERIAL_UNKNOWN,
   needsOnshapeSnapshot,
   snapshotVersionId,
   type CardSnapshot,
 } from "~/lib/cardSnapshot";
-import { fetchPartsFromOnshape } from "~/onshape_connector/utils/partsQuery.server";
+import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
 import { fetchVersionFromOnshape } from "~/onshape_connector/utils/versionQuery.server";
 
 /**
@@ -41,8 +42,10 @@ export async function versionNameSnapshot(
 /**
  * Fill the Onshape snapshot of a card released before snapshots existed, and
  * return it. One cached parts read and one cached version read at most; a card
- * that already has its snapshot costs nothing. When Onshape cannot answer, the
- * card is left unsaved (a later open tries again) and unknown values return.
+ * that already has its snapshot costs nothing. A part that has left its Part
+ * Studio is a permanent answer, saved with `MATERIAL_UNKNOWN`. When Onshape
+ * cannot answer, the card is left unsaved (a later open tries again) and
+ * unknown values return.
  *
  * Throws `Error("Card not found")` for an unknown id.
  */
@@ -64,12 +67,13 @@ export async function backfillCardSnapshot(
   const versionId = snapshotVersionId(card);
   let snapshot: CardSnapshot;
   try {
-    const parts = await fetchPartsFromOnshape({
+    // Read through Part Studio freshness directly, not the connector's parts
+    // query: opening an old card must not register a webhook for its document.
+    const parts = await partStudioFreshness.get({
       documentId: card.onshape_document_id!,
-      instanceType: card.onshape_instance_type as "w" | "v" | "m",
+      instanceType: card.onshape_instance_type!,
       instanceId: card.onshape_instance_id!,
       elementId: card.onshape_element_id!,
-      elementType: "PARTSTUDIO",
     });
     const title = card.title.trim().toLowerCase();
     const part =
@@ -79,10 +83,11 @@ export async function backfillCardSnapshot(
           (part.partId || part.id) === card.onshape_part_id
       ) ??
       parts.find((part) => part.partNumber?.trim().toLowerCase() === title);
-    // A part that has left its Part Studio has no material to record.
-    if (!part) return UNKNOWN;
     snapshot = {
-      onshape_material: materialSnapshot(part),
+      onshape_material: part ? materialSnapshot(part) : MATERIAL_UNKNOWN,
+      // Not `versionNameSnapshot`: that swallows a failure so a release never
+      // fails over a name. Here a failed read must throw, so the catch below
+      // saves nothing and answers unknown, and a later open tries again.
       onshape_version_name: versionId
         ? ((await fetchVersionFromOnshape(card.onshape_document_id!, versionId))
             .name ?? "")

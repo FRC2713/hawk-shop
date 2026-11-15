@@ -115,3 +115,43 @@ test("a 402 reads as the allocation used up and is not counted", async (t) => {
   );
   assert.deepEqual(await tally("metadata-write"), { calls: 0, hits: 0 });
 });
+
+test("a read that rides along on a failed request is not counted", async (t) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  memoryOnshape(t, async () => {
+    await gate;
+    return Response.json({ message: "Not found" }, { status: 404 });
+  });
+  const read = () =>
+    gateway.onshapeRead({
+      label: "webhook-list",
+      dedupKey: "webhook-list::failing",
+      request: { path: "/v12/webhooks" },
+    });
+  const reads = [read(), read()];
+  release();
+  for (const outcome of await Promise.allSettled(reads))
+    assert.equal(outcome.status, "rejected");
+  assert.deepEqual(await tally("webhook-list"), { calls: 0, hits: 0 });
+});
+
+test("a read that opts out of single-flight always makes its own call", async (t) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const onshape = memoryOnshape(t, async () => {
+    await gate;
+    return Response.json({ properties: [] });
+  });
+  const read = () =>
+    gateway.onshapeRead({
+      label: "metadata-read",
+      singleFlight: false,
+      request: { path: "/v12/metadata/d/doc/w/ws/e/e/p/part" },
+    });
+  const reads = [read(), read()];
+  release();
+  await Promise.all(reads);
+  assert.equal(onshape.requests.length, 2);
+  assert.deepEqual(await tally("metadata-read"), { calls: 2, hits: 0 });
+});

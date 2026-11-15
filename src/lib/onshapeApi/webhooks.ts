@@ -28,7 +28,7 @@ import "virtual:hawk-shop/server-only";
 import { createHash } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "~/server/db/client";
-import { onshapeWebhookRepairs, onshapeWebhooks } from "~/server/db/schema";
+import { onshapeWebhookUpkeepState, onshapeWebhooks } from "~/server/db/schema";
 import {
   ONSHAPE_DOCUMENT_CHANGE_EVENTS,
   ONSHAPE_WEBHOOK_SECRET_PARAM,
@@ -310,9 +310,9 @@ function requestRepair(
 ): void {
   if (work.has("repair") || onshapeBudgetStatus().reached) return;
   const [last] = db
-    .select({ last_repair_at: onshapeWebhookRepairs.last_repair_at })
-    .from(onshapeWebhookRepairs)
-    .where(eq(onshapeWebhookRepairs.id, UPKEEP_ROW))
+    .select({ last_repair_at: onshapeWebhookUpkeepState.last_repair_at })
+    .from(onshapeWebhookUpkeepState)
+    .where(eq(onshapeWebhookUpkeepState.id, UPKEEP_ROW))
     .limit(1)
     .all();
   const now = new Date();
@@ -326,9 +326,9 @@ function requestRepair(
     last_repair_reason: reason,
     last_repair_document_id: documentId,
   };
-  db.insert(onshapeWebhookRepairs)
+  db.insert(onshapeWebhookUpkeepState)
     .values({ id: UPKEEP_ROW, ...stamp })
-    .onConflictDoUpdate({ target: onshapeWebhookRepairs.id, set: stamp })
+    .onConflictDoUpdate({ target: onshapeWebhookUpkeepState.id, set: stamp })
     .run();
   console.info(`[ONSHAPE WEBHOOK] repair pass: ${reason} (${documentId})`);
   void track("repair", () => repair(settings));
@@ -439,8 +439,8 @@ export function onshapeWebhookStatus(): OnshapeWebhookStatus {
     );
   const [upkeep] = db
     .select()
-    .from(onshapeWebhookRepairs)
-    .where(eq(onshapeWebhookRepairs.id, UPKEEP_ROW))
+    .from(onshapeWebhookUpkeepState)
+    .where(eq(onshapeWebhookUpkeepState.id, UPKEEP_ROW))
     .limit(1)
     .all();
   return {

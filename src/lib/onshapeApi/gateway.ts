@@ -18,12 +18,12 @@ import "virtual:hawk-shop/server-only";
  *
  * The adapter is the seam: the real one is the signed HTTP transport
  * (`onshapeFetch`), tests substitute an in-memory one with `useOnshapeAdapter`.
+ * The transport, not the gateway, records the remaining-calls header, so an
+ * in-memory adapter records nothing. Cache rows are read and written through
+ * `./cache`; the gateway owns only the read policy.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { eq } from "drizzle-orm";
-import { db } from "~/server/db/client";
-import { onshapeApiCache } from "~/server/db/schema";
 import {
   assertOnshapeAllocation,
   isOnshapeConfigured,
@@ -35,10 +35,10 @@ import {
 import {
   onshapeCallsToday,
   onshapeInflight as inflight,
+  readOnshapeCache,
   recordOnshapeUsage,
+  writeOnshapeCache,
 } from "./cache";
-
-export { OnshapeDailyBudgetError } from "./auth";
 
 /** Fixed usage labels, one per feature, as they appear in `/api/onshape/usage`. */
 export type OnshapeUsageLabel =
@@ -207,53 +207,6 @@ async function send(
   return text ? JSON.parse(text) : null;
 }
 
-function readCache(
-  key: string
-): { hit: true; value: unknown; expired: boolean } | { hit: false } {
-  try {
-    const [row] = db
-      .select({
-        payload: onshapeApiCache.payload,
-        expires_at: onshapeApiCache.expires_at,
-      })
-      .from(onshapeApiCache)
-      .where(eq(onshapeApiCache.cache_key, key))
-      .limit(1)
-      .all();
-    if (!row) return { hit: false };
-    return {
-      hit: true,
-      value: JSON.parse(row.payload),
-      expired: Boolean(
-        row.expires_at && new Date(row.expires_at) <= new Date()
-      ),
-    };
-  } catch (error) {
-    // A corrupt row or unreadable volume must degrade to "just call Onshape",
-    // never to a failed page.
-    console.error("[ONSHAPE CACHE] read failed:", error);
-    return { hit: false };
-  }
-}
-
-function writeCache(key: string, value: unknown, ttlMs: number | null): void {
-  try {
-    const now = new Date();
-    const row = {
-      payload: JSON.stringify(value),
-      created_at: now.toISOString(),
-      expires_at:
-        ttlMs === null ? null : new Date(now.getTime() + ttlMs).toISOString(),
-    };
-    db.insert(onshapeApiCache)
-      .values({ cache_key: key, ...row })
-      .onConflictDoUpdate({ target: onshapeApiCache.cache_key, set: row })
-      .run();
-  } catch (error) {
-    console.error("[ONSHAPE CACHE] write failed:", error);
-  }
-}
-
 /**
  * Where a read's answer came from: `upstream` when this read paid for an
  * Onshape call, `cache` for a stored answer (fresh, or expired and served
@@ -274,17 +227,30 @@ type ReadOptions = {
       /** Durable cache entry; `ttlMs: null` never expires. */
       cache: { key: string; ttlMs: number | null };
       dedupKey?: never;
+      singleFlight?: never;
     }
   | {
       cache?: never;
       /** Single-flight key for an uncached read. */
       dedupKey: string;
+      singleFlight?: never;
+    }
+  | {
+      cache?: never;
+      dedupKey?: never;
+      /**
+       * Opt out of sharing: this read always makes its own call, for a step
+       * that must see Onshape's current answer (a write's discovery and
+       * verification reads).
+       */
+      singleFlight: false;
     }
 );
 
 /**
  * Read from Onshape. With `cache`, a stored answer is returned without a call;
- * without it, `dedupKey` still shares one call among concurrent identical reads.
+ * without it, `dedupKey` still shares one call among concurrent identical reads,
+ * and `singleFlight: false` shares nothing.
  * Either way the call is tallied under `label` and checked against the daily
  * ceiling: once reached, a cached read returns its stored answer even if
  * expired, and a read with nothing stored throws `OnshapeDailyBudgetError`.
@@ -299,20 +265,23 @@ export async function onshapeRead(
   options: ReadOptions & { responseType?: "json" | "binary" }
 ): Promise<unknown> {
   const { label, cache, request, responseType = "json", onSource } = options;
-  const key = cache?.key ?? options.dedupKey!;
+  const key = cache?.key ?? options.dedupKey;
 
-  const cached = cache ? readCache(cache.key) : ({ hit: false } as const);
+  const cached = cache
+    ? readOnshapeCache(cache.key)
+    : ({ hit: false } as const);
   if (cached.hit && !cached.expired) {
     recordOnshapeUsage(label, "hit");
     onSource?.("cache");
     return cached.value;
   }
 
-  const pending = inflight.get(key);
+  const pending = key === undefined ? undefined : inflight.get(key);
   if (pending) {
-    // Someone else is already paying for this exact request: ride along.
-    recordOnshapeUsage(label, "hit");
+    // Someone else is already paying for this exact request: ride along. The
+    // hit is recorded only once it succeeds; failed reads are never counted.
     const value = await pending;
+    recordOnshapeUsage(label, "hit");
     onSource?.("shared");
     return value;
   }
@@ -326,11 +295,17 @@ export async function onshapeRead(
     throw new OnshapeDailyBudgetError();
   }
 
+  if (key === undefined) {
+    const value = await send(label, request, responseType);
+    onSource?.("upstream");
+    return value;
+  }
+
   let flight!: Promise<unknown>;
   flight = (async () => {
     const value = await send(label, request, responseType);
     if (cache && inflight.get(key) === flight)
-      writeCache(cache.key, value, cache.ttlMs);
+      writeOnshapeCache(cache.key, value, cache.ttlMs);
     return value;
   })();
   inflight.set(key, flight);

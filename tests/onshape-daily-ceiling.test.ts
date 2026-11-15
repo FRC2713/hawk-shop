@@ -12,6 +12,7 @@ const { getHandler, inRequest, sessionRequest } =
   await import("./request-context");
 const { memoryOnshape } = await import("./onshape-memory-adapter");
 const gateway = await import("../src/lib/onshapeApi/gateway");
+const { OnshapeDailyBudgetError } = await import("../src/lib/onshapeApi/auth");
 const partsRoute = await import("../src/pages/api/onshape/parts");
 const versionRoute = await import("../src/pages/api/onshape/version");
 const usageRoute = await import("../src/pages/api/onshape/usage");
@@ -178,10 +179,48 @@ test("a write is refused at the ceiling, but an operation admitted before it fin
   assert.equal(result, "finished");
   assert.equal(onshape.requests.length, 2);
 
-  await assert.rejects(write, gateway.OnshapeDailyBudgetError);
+  await assert.rejects(write, OnshapeDailyBudgetError);
   await assert.rejects(
     gateway.onshapeOperation(async () => "never"),
-    gateway.OnshapeDailyBudgetError
+    OnshapeDailyBudgetError
   );
   assert.equal(onshape.requests.length, 2);
+});
+
+test("a part-number edit at the ceiling answers 503 with the budget message and logs no error", async (t) => {
+  freshDay(t);
+  process.env.ONSHAPE_DAILY_CALL_LIMIT = "1";
+  const onshape = cad(t);
+  assert.equal((await version("edit", "v1")).status, 200);
+  const errors = t.mock.method(console, "error", () => {});
+
+  const { endpoint } = await import("./http-fixture");
+  const actionsRoute = await import("../src/pages/api/mfg/parts/actions");
+  const form = new FormData();
+  for (const [key, value] of Object.entries({
+    documentId: "edit",
+    instanceType: "w",
+    instanceId: "workspace",
+    elementId: "studio",
+    partId: "part",
+    partNumber: "RHR-0001",
+  }))
+    form.set(key, value);
+  const response = await endpoint(
+    actionsRoute as never,
+    "POST"
+  )(
+    new Request("http://localhost/api/mfg/parts/actions", {
+      method: "POST",
+      headers: sessionRequest("student").headers,
+      body: form,
+    })
+  );
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.equal(body.success, false);
+  assert.match(body.error, /^Daily Onshape budget reached/);
+  assert.equal(body.errorId, undefined);
+  assert.equal(errors.mock.callCount(), 0);
+  assert.equal(onshape.requests.length, 1);
 });

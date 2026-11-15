@@ -1,5 +1,8 @@
 import "virtual:hawk-shop/server-only";
-import { isOnshapeConfigured } from "~/lib/onshapeApi/auth";
+import {
+  isOnshapeConfigured,
+  OnshapeDailyBudgetError,
+} from "~/lib/onshapeApi/auth";
 import {
   onshapeOperation,
   onshapeRead,
@@ -7,7 +10,10 @@ import {
   onshapeWrite,
   type OnshapeRequest,
 } from "~/lib/onshapeApi/gateway";
-import { partStudioFreshness } from "~/lib/onshapeApi/partStudioFreshness";
+import {
+  isPartNumberProperty,
+  partStudioFreshness,
+} from "~/lib/onshapeApi/partStudioFreshness";
 import { createErrorResponse } from "../utils/errorHandling";
 import type { ActionResponse } from "../utils/types";
 
@@ -18,19 +24,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function propertiesFrom(metadata: unknown) {
   if (!isRecord(metadata) || !Array.isArray(metadata.properties)) return null;
   return metadata.properties.filter(isRecord);
-}
-
-function isPartNumberProperty(property: Record<string, unknown>) {
-  const name =
-    typeof property.name === "string" ? property.name.toLowerCase() : "";
-  const id = typeof property.propertyId === "string" ? property.propertyId : "";
-  return (
-    name === "part number" ||
-    name === "partnumber" ||
-    name === "part_number" ||
-    id.includes("partnumber") ||
-    id.includes("part_number")
-  );
 }
 
 /** A non-OK Onshape answer as an action failure that keeps Onshape's reason. */
@@ -82,11 +75,11 @@ export async function handlePartNumberUpdate(
     }
 
     const metadataPath = `/v12/metadata/d/${encodeURIComponent(documentId)}/${encodeURIComponent(instanceType)}/${encodeURIComponent(instanceId)}/e/${encodeURIComponent(elementId)}/p/${encodeURIComponent(partId)}`;
-    const readMetadata = (step: string) =>
+    const readMetadata = () =>
       onshapeRead<unknown>({
         label: "metadata-read",
         // Each step must see Onshape's current answer, never a shared one.
-        dedupKey: `metadata-read::${step}::${crypto.randomUUID()}`,
+        singleFlight: false,
         request: {
           path: metadataPath,
           query: { includeComputedProperties: true },
@@ -98,7 +91,7 @@ export async function handlePartNumberUpdate(
     return await onshapeOperation(async () => {
       let discovered: unknown;
       try {
-        discovered = await readMetadata("discovery");
+        discovered = await readMetadata();
       } catch (error: unknown) {
         const failure = rejection(error, "Failed to retrieve part metadata");
         if (failure) return failure;
@@ -170,7 +163,7 @@ export async function handlePartNumberUpdate(
 
       const failure = await (async () => {
         try {
-          const verified = await readMetadata("verification");
+          const verified = await readMetadata();
           const updatedProperty = propertiesFrom(verified)?.find(
             (candidate) => candidate.propertyId === property.propertyId
           );
@@ -199,6 +192,10 @@ export async function handlePartNumberUpdate(
       return { success: true } satisfies ActionResponse;
     });
   } catch (error: unknown) {
+    // The ceiling is a known state, not a fault: answer like the other
+    // Onshape routes and log nothing.
+    if (error instanceof OnshapeDailyBudgetError)
+      return { success: false, error: error.message, status: 503 };
     return createErrorResponse(error, "Failed to update part number");
   }
 }

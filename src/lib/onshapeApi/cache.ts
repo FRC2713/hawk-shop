@@ -2,8 +2,12 @@ import "virtual:hawk-shop/server-only";
 
 /**
  * Cache keys, TTLs, invalidation and the usage tally behind the Onshape
- * gateway (`./gateway`). The gateway owns reading and writing the durable
- * cache and single-flight; nothing else reaches Onshape or the cache rows.
+ * gateway (`./gateway`). Every read and write of `onshape_api_cache` rows is
+ * here. Two modules use them: the gateway, which owns the read policy and
+ * single-flight and reads and writes rows (`readOnshapeCache`,
+ * `writeOnshapeCache`), and Part Studio freshness (`./partStudioFreshness`),
+ * which marks rows stale and patches them after a write. Nothing else touches
+ * the cache rows.
  *
  * Onshape's allowance is yearly, so staleness is cheap and a cache miss is not
  * (see docs/ONSHAPE.md#allocation-and-billing). Anything with an immutable
@@ -74,6 +78,65 @@ export function onshapeReadsInFlight(): string[] {
   return [...inflight.keys()];
 }
 
+/**
+ * One durable row's payload, and whether it has expired. The gateway decides
+ * what to do with it. A corrupt row or unreadable volume reads as a miss.
+ */
+export function readOnshapeCache(
+  key: string
+): { hit: true; value: unknown; expired: boolean } | { hit: false } {
+  try {
+    const [row] = db
+      .select({
+        payload: onshapeApiCache.payload,
+        expires_at: onshapeApiCache.expires_at,
+      })
+      .from(onshapeApiCache)
+      .where(eq(onshapeApiCache.cache_key, key))
+      .limit(1)
+      .all();
+    if (!row) return { hit: false };
+    return {
+      hit: true,
+      value: JSON.parse(row.payload),
+      expired: Boolean(
+        row.expires_at && new Date(row.expires_at) <= new Date()
+      ),
+    };
+  } catch (error) {
+    // A corrupt row or unreadable volume must degrade to "just call Onshape",
+    // never to a failed page.
+    console.error("[ONSHAPE CACHE] read failed:", error);
+    return { hit: false };
+  }
+}
+
+/**
+ * Store a freshly fetched payload: fetch time now, expiry `ttlMs` from now
+ * (`null` never expires). A failed write is logged, never thrown.
+ */
+export function writeOnshapeCache(
+  key: string,
+  value: unknown,
+  ttlMs: number | null
+): void {
+  try {
+    const now = new Date();
+    const row = {
+      payload: JSON.stringify(value),
+      created_at: now.toISOString(),
+      expires_at:
+        ttlMs === null ? null : new Date(now.getTime() + ttlMs).toISOString(),
+    };
+    db.insert(onshapeApiCache)
+      .values({ cache_key: key, ...row })
+      .onConflictDoUpdate({ target: onshapeApiCache.cache_key, set: row })
+      .run();
+  } catch (error) {
+    console.error("[ONSHAPE CACHE] write failed:", error);
+  }
+}
+
 /** A durable cache row without its payload. */
 export type OnshapeCacheRow = {
   key: string;
@@ -112,8 +175,10 @@ export function setOnshapeCacheExpiry(key: string, expiresAt: Date): void {
 
 /**
  * Rewrite a stored payload in place and treat it as freshly observed: fetch
- * time is now and expiry is `ttlMs` from now (`null` never expires). Returns
- * false, changing nothing, when no row exists; nothing is fetched.
+ * time is now. Expiry never moves later than it already is: it becomes
+ * `min(current expiry, now + ttlMs)` (`null` never expires), so a row a change
+ * event marked stale stays stale. Returns false, changing nothing, when no row
+ * exists; nothing is fetched.
  */
 export function patchOnshapeCache(
   key: string,
@@ -121,19 +186,27 @@ export function patchOnshapeCache(
   ttlMs: number | null
 ): boolean {
   const [row] = db
-    .select({ payload: onshapeApiCache.payload })
+    .select({
+      payload: onshapeApiCache.payload,
+      expires_at: onshapeApiCache.expires_at,
+    })
     .from(onshapeApiCache)
     .where(eq(onshapeApiCache.cache_key, key))
     .limit(1)
     .all();
   if (!row) return false;
-  const now = new Date();
+  const now = Date.now();
+  const expiry = Math.min(
+    row.expires_at ? Date.parse(row.expires_at) : Infinity,
+    ttlMs === null ? Infinity : now + ttlMs
+  );
   db.update(onshapeApiCache)
     .set({
       payload: JSON.stringify(patch(JSON.parse(row.payload))),
-      created_at: now.toISOString(),
-      expires_at:
-        ttlMs === null ? null : new Date(now.getTime() + ttlMs).toISOString(),
+      created_at: new Date(now).toISOString(),
+      expires_at: Number.isFinite(expiry)
+        ? new Date(expiry).toISOString()
+        : null,
     })
     .where(eq(onshapeApiCache.cache_key, key))
     .run();

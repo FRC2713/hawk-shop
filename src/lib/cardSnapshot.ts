@@ -18,6 +18,13 @@ export interface CardSnapshot {
 }
 
 /**
+ * The material recorded for a card whose part has left its Part Studio. That
+ * answer is permanent, so it is saved (later opens cost nothing) and reads as
+ * "Unknown", like Onshape's own placeholder material of the same name.
+ */
+export const MATERIAL_UNKNOWN = "Unknown";
+
+/**
  * The Onshape version a card was released from, or null. Older workspace cards
  * stored their workspace id as `onshape_version_id`; that names no version.
  */

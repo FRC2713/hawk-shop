@@ -38,6 +38,9 @@ async function readCard(id: string) {
   );
 }
 
+/** Webhook calls (registration, listing) seen by any `stubOnshape`. */
+let webhookCalls = 0;
+
 /** Counts upstream Onshape calls by kind; parts and version reads only. */
 function stubOnshape(
   t: TestContext,
@@ -52,6 +55,10 @@ function stubOnshape(
     if (/\/versions\/[^/?]+/.test(url)) {
       calls.version++;
       return answer.version?.() ?? Response.json({}, { status: 404 });
+    }
+    if (url.includes("/webhooks")) {
+      webhookCalls++;
+      return Response.json({ id: "hook" });
     }
     if (url.includes("/parts/")) {
       calls.parts++;
@@ -275,4 +282,56 @@ test("a release whose version read fails still succeeds and backfills the name l
   });
   // The release's parts read is cached and immutable, so it is not re-bought.
   assert.equal(calls.parts, 1);
+});
+
+test("backfilling a workspace card reads its Part Studio without registering a webhook", async (t) => {
+  process.env.ONSHAPE_WEBHOOK_SECRET = "snapshot-secret";
+  process.env.ONSHAPE_WEBHOOK_BASE_URL = "https://shop.example.org";
+  t.after(() => {
+    delete process.env.ONSHAPE_WEBHOOK_SECRET;
+    delete process.env.ONSHAPE_WEBHOOK_BASE_URL;
+  });
+  const scope = { ...scopeFor("snapshot-workspace-doc"), instanceType: "w" };
+  const calls = stubOnshape(t, {
+    parts: () =>
+      Response.json([
+        { partId: "arm", material: { displayName: "Carbon fiber" } },
+      ]),
+  });
+  const card = await legacyCard(
+    scope as ReturnType<typeof scopeFor>,
+    "arm",
+    "ARM"
+  );
+  const before = webhookCalls;
+  assert.deepEqual(await backfill(card.id), {
+    onshape_material: "Carbon fiber",
+    onshape_version_name: null,
+  });
+  const { onshapeWebhookWork } = await import("../src/lib/onshapeApi/webhooks");
+  await onshapeWebhookWork();
+  assert.equal(webhookCalls - before, 0);
+  assert.deepEqual(calls, { parts: 1, version: 0 });
+});
+
+test("a part that has left its Part Studio is saved as unknown, so later opens cost nothing", async (t) => {
+  const scope = scopeFor("snapshot-missing-part-doc");
+  const calls = stubOnshape(t, {
+    parts: () => Response.json([{ partId: "someone-else" }]),
+    version: () => Response.json({ id: scope.instanceId, name: "V4" }),
+  });
+  const card = await legacyCard(scope, "gone", "GONE");
+  const first = await backfill(card.id);
+  assert.deepEqual(first, {
+    onshape_material: "Unknown",
+    onshape_version_name: "V4",
+  });
+  assert.deepEqual(calls, { parts: 1, version: 1 });
+
+  const { partStudioFreshness } =
+    await import("../src/lib/onshapeApi/partStudioFreshness");
+  partStudioFreshness.discard(scope);
+  assert.deepEqual(await backfill(card.id), first);
+  assert.deepEqual(calls, { parts: 1, version: 1 }, "nothing read again");
+  assert.equal((await readCard(card.id)).onshape_version_name, "V4");
 });

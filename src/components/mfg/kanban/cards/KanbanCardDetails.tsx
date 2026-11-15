@@ -54,7 +54,11 @@ import {
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
-import { needsOnshapeSnapshot, snapshotVersionId } from "~/lib/cardSnapshot";
+import {
+  MATERIAL_UNKNOWN,
+  needsOnshapeSnapshot,
+  snapshotVersionId,
+} from "~/lib/cardSnapshot";
 
 /**
  * Format a date string for display
@@ -439,7 +443,7 @@ export function KanbanCardDetails({
                       <td className="px-4 py-3">
                         <span
                           className={
-                            material
+                            material && material !== MATERIAL_UNKNOWN
                               ? "text-sm"
                               : "text-muted-foreground text-sm"
                           }
