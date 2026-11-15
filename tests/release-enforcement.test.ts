@@ -16,6 +16,8 @@ const post = endpoint(
 );
 const { fetchPartsFromOnshape } =
   await import("../src/onshape_connector/utils/partsQuery.server");
+const { fetchVersionFromOnshape } =
+  await import("../src/onshape_connector/utils/versionQuery.server");
 const read = endpoint(
   await import("../src/pages/api/kanban/cards/index"),
   "GET"
@@ -98,6 +100,8 @@ test("server uses cached part facts for every blocker and allows warnings withou
   await inRequest(request, async () =>
     Response.json(await fetchPartsFromOnshape({ ...scope, documentId }))
   );
+  // The connector reads the version it shows; release reuses that answer.
+  await fetchVersionFromOnshape(documentId, scope.instanceId);
   const missingNumber = await release("unnumbered", { documentId });
   assert.equal(missingNumber.status, 400);
   assert.deepEqual(await missingNumber.json(), {
@@ -143,7 +147,7 @@ test("server uses cached part facts for every blocker and allows warnings withou
   const unknown = await release("not-in-studio", { documentId });
   assert.equal(unknown.status, 400);
   assert.match((await unknown.json()).error, /not found/);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
 });
 
 test("partial or invalid CAD scope cannot bypass checks", async (t) => {

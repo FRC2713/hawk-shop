@@ -1,18 +1,17 @@
 import { logServerError } from "~/server/errors";
 import { onshapeErrorResponse } from "~/lib/onshapeApi/auth";
 import type { APIRoute } from "astro";
-import type { BtVersionInfo } from "~/lib/onshapeApi/generated-wrapper";
-import { VERSION_TTL_MS, cacheKey } from "~/lib/onshapeApi/cache";
-import { onshapeRead, OnshapeRequestError } from "~/lib/onshapeApi/gateway";
+import { OnshapeRequestError } from "~/lib/onshapeApi/gateway";
+import { fetchVersionFromOnshape } from "~/onshape_connector/utils/versionQuery.server";
 import { requireAuth } from "~/lib/requireAuth";
 
 /**
  * API endpoint to fetch version information from Onshape
  * Returns version name and other metadata
  *
- * Every kanban card detail sheet asks for its version's name, and a version is
- * frozen once cut — so this was the app's most repetitive spend against a quota
- * that is annual and company-wide. Answers are cached server-side for a week.
+ * The connector reads it for the version it shows. Card details no longer
+ * do: release captures the name onto the card (`onshape_version_name`).
+ * A version is frozen once cut, so answers are cached server-side for a week.
  */
 export const GET: APIRoute = async ({ request }) => {
   // A cache hit never reaches Onshape, so a token is no longer this
@@ -34,18 +33,7 @@ export const GET: APIRoute = async ({ request }) => {
   }
 
   try {
-    // A failed read (a 404 is usually a key problem) throws and is never
-    // cached, so it cannot hide the version for the whole week.
-    const data = await onshapeRead<BtVersionInfo>({
-      label: "version",
-      cache: {
-        key: cacheKey("version", documentId, versionId),
-        ttlMs: VERSION_TTL_MS,
-      },
-      request: {
-        path: `/v12/documents/d/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}`,
-      },
-    });
+    const data = await fetchVersionFromOnshape(documentId, versionId);
 
     // Return version data as JSON
     return Response.json(data);

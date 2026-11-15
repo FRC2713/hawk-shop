@@ -47,14 +47,14 @@ import type { UseMutationResult } from "@tanstack/react-query";
 import {
   kanbanColumnsQuery,
   kanbanCardDetailsQuery,
-  onshapePartsQuery,
-  onshapeVersionQuery,
+  kanbanCardSnapshotQuery,
   queryKeys,
   updateKanbanCard,
 } from "~/lib/api";
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
+import { needsOnshapeSnapshot, snapshotVersionId } from "~/lib/cardSnapshot";
 
 /**
  * Format a date string for display
@@ -197,27 +197,17 @@ export function KanbanCardDetails({
     card.onshape_element_id,
   ]);
 
-  // Get version ID from card (must be defined before versionQuery)
-  const cardVersionId = useMemo(() => {
-    // Prefer the dedicated version_id field
-    if (card.onshape_version_id) {
-      return card.onshape_version_id;
-    }
-    // Fallback: if instance_type is 'v', use instance_id as version
-    if (card.onshape_instance_type === "v" && card.onshape_instance_id) {
-      return card.onshape_instance_id;
-    }
-    return null;
-  }, [
-    card.onshape_version_id,
-    card.onshape_instance_type,
-    card.onshape_instance_id,
-  ]);
-
-  // Fetch version information if we have a version ID
-  const versionQuery = useQuery(
-    onshapeVersionQuery(card.onshape_document_id, cardVersionId)
-  );
+  // Material and version name were captured onto the card at release. A card
+  // released before that is filled in once by the server, then never again.
+  const snapshotQuery = useQuery(kanbanCardSnapshotQuery(card));
+  const snapshotPending = needsOnshapeSnapshot(card) && snapshotQuery.isPending;
+  const material =
+    card.onshape_material ?? snapshotQuery.data?.onshape_material ?? null;
+  const versionName =
+    card.onshape_version_name ??
+    snapshotQuery.data?.onshape_version_name ??
+    null;
+  const showVersion = !!card.onshape_version_name || !!snapshotVersionId(card);
 
   // Memoize hasMeta to avoid recalculating on every render
   const hasMeta = useMemo(
@@ -266,57 +256,6 @@ export function KanbanCardDetails({
 
   // Get creator from map instead of individual query
   const creator = card.created_by ? usersMap.get(card.created_by) : undefined;
-
-  // Fetch parts from Onshape API to get material
-  // Cache for 30 seconds to reduce API calls
-  const partsQuery = useQuery({
-    ...onshapePartsQuery({
-      documentId: card.onshape_document_id ?? undefined,
-      instanceType: card.onshape_instance_type ?? undefined,
-      instanceId: card.onshape_instance_id ?? undefined,
-      elementId: card.onshape_element_id ?? undefined,
-    }),
-    retry: 1,
-  });
-
-  // Pre-normalize card title to avoid repeated string operations
-  const normalizedCardTitle = useMemo(
-    () => card.title?.trim().toLowerCase() ?? null,
-    [card.title]
-  );
-
-  // Find the matching part by part number and version ID
-  // Match by part number first, then verify version if available
-  const matchingPart = useMemo(() => {
-    if (!partsQuery.data || !normalizedCardTitle) return null;
-
-    // Find parts with matching part number
-    const partsWithMatchingNumber = partsQuery.data.filter(
-      (part) => part.partNumber?.trim().toLowerCase() === normalizedCardTitle
-    );
-
-    if (partsWithMatchingNumber.length === 0) return null;
-
-    // If we have a version ID, try to match by version
-    // The parts are from a specific version context (queryParams), so we need to check
-    // if the card's version matches the query context version
-    if (cardVersionId && card.onshape_instance_id) {
-      // Check if the card's instance_id matches the query context
-      // This ensures we're matching the right version
-      // Note: The partsQuery is already filtered by the query context version
-      // So if the card's version matches the query context, the part should match
-      // We'll match the first part with the correct part number since parts are already version-specific
-      return partsWithMatchingNumber[0] || null;
-    }
-
-    // Fallback: return first matching part (for backward compatibility)
-    return partsWithMatchingNumber[0] || null;
-  }, [
-    partsQuery.data,
-    normalizedCardTitle,
-    cardVersionId,
-    card.onshape_instance_id,
-  ]);
 
   // Calculate due date difference once to avoid duplicate Date calculations
   const dueDateDiffDays = useMemo(
@@ -498,29 +437,25 @@ export function KanbanCardDetails({
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {partsQuery.isLoading ? (
-                          <span className="text-muted-foreground text-sm">
-                            Loading...
-                          </span>
-                        ) : partsQuery.isError ? (
-                          <span className="text-muted-foreground text-sm">
-                            Unable to load
-                          </span>
-                        ) : matchingPart ? (
-                          <span className="text-sm">
-                            {matchingPart.material?.displayName || "Not Set"}
-                          </span>
-                        ) : partsQuery.data && card.title ? (
-                          <span className="text-muted-foreground text-sm">
-                            Part not found
-                          </span>
-                        ) : null}
+                        <span
+                          className={
+                            material
+                              ? "text-sm"
+                              : "text-muted-foreground text-sm"
+                          }
+                        >
+                          {snapshotPending
+                            ? "Loading..."
+                            : material === null
+                              ? "Unknown"
+                              : material || "Not set"}
+                        </span>
                       </td>
                     </tr>
                   )}
 
                   {/* Version Name */}
-                  {cardVersionId && card.onshape_document_id && (
+                  {showVersion && (
                     <tr>
                       <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
                         <div className="flex items-center gap-2">
@@ -532,11 +467,9 @@ export function KanbanCardDetails({
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-sm">
-                          {versionQuery.isLoading
+                          {snapshotPending
                             ? "Loading..."
-                            : versionQuery.isError
-                              ? "Unable to load"
-                              : versionQuery.data?.name || "Unknown"}
+                            : versionName || "Unknown"}
                         </span>
                       </td>
                     </tr>

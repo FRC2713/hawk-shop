@@ -124,6 +124,11 @@ export const kanbanCards = sqliteTable(
     // The part's microversion when it was released (or last seen by a
     // workspace parts read). Thumbnails are cached under it.
     onshape_microversion_id: text("onshape_microversion_id"),
+    // Onshape facts captured at release so card details never call Onshape.
+    // Null means never captured (backfilled once when details open); an empty
+    // material means Onshape had none set.
+    onshape_material: text("onshape_material"),
+    onshape_version_name: text("onshape_version_name"),
     // Every card has exactly one project. No foreign key: SQLite cannot add
     // one with a non-null default, and projects are archived, never deleted.
     project_id: text("project_id").notNull().default(MISCELLANEOUS_PROJECT_ID),
