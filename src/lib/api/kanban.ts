@@ -151,6 +151,26 @@ export async function deleteKanbanCard(id: string): Promise<void> {
   });
 }
 
+/**
+ * Assign cards to a machine, or with null return them to their process queue.
+ * All or nothing: a machine under maintenance, or one lacking a card's process,
+ * is refused (409) and no card changes.
+ */
+export async function assignCardsToMachine(
+  cardIds: string[],
+  machineId: string | null
+): Promise<KanbanCardWithProcesses[]> {
+  const { cards } = await apiFetch<{ cards: KanbanCardWithProcesses[] }>(
+    "/api/kanban/cards/assign-machine",
+    {
+      method: "POST",
+      json: { cardIds, machineId },
+      fallbackError: "Failed to set machine",
+    }
+  );
+  return cards;
+}
+
 export async function assignKanbanCard(
   id: string,
   assignee: string | null

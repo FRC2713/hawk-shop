@@ -24,6 +24,14 @@ A message in the team's designated Slack channel reporting a status change and m
 **Status history**:
 The permanent record of a card's status changes; unlike status notifications, it is never deleted.
 
+**Machine queue**:
+The parts a machine could make next: Backlog parts assigned to that machine, then Backlog parts in the process queue of any of its processes. Derived, never stored. Oldest release first, then due date.
+_Avoid_: Machine backlog, job list
+
+**Process queue**:
+Backlog parts with a process but no machine, waiting for any machine that does that process ("any 3D printer").
+_Avoid_: Unassigned, pool
+
 **Slack administrator**:
 An active workspace admin or workspace owner in the Red Hawk Robotics Slack workspace. Managing a channel alone does not qualify.
 
