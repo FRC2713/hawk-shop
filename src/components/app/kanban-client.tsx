@@ -1,17 +1,17 @@
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useBoardFilters } from "~/hooks/useBoardFilters";
 import { useBoardDensity } from "~/hooks/useBoardDensity";
+import { useBoardRows } from "~/hooks/useBoardRows";
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KanbanSquare, Rows3 } from "lucide-react";
+import { KanbanSquare } from "lucide-react";
 import {
   KanbanBoard,
   KanbanBoardSkeleton,
 } from "~/components/mfg/kanban/board/KanbanBoard";
 import { KanbanBoardErrorBoundary } from "~/components/mfg/kanban/board/KanbanBoardErrorBoundary";
-import { Button } from "~/components/ui/button";
 import type {
   KanbanConfig,
   KanbanColumn,
@@ -19,6 +19,7 @@ import type {
 import { KanbanBoardControls } from "~/components/mfg/kanban/board/KanbanBoardControls";
 import { BoardFilterBar } from "~/components/mfg/kanban/board/BoardFilterBar";
 import { BoardDensityToggle } from "~/components/mfg/kanban/board/BoardDensityToggle";
+import { BoardRowsSelect } from "~/components/mfg/kanban/board/BoardRowsSelect";
 import { useQuery } from "@tanstack/react-query";
 import { kanbanConfigQuery, queryKeys, saveKanbanConfig } from "~/lib/api";
 
@@ -32,14 +33,8 @@ export function MfgKanbanClient({
   const queryClient = useQueryClient();
   const [isEditMode, setIsEditMode] = useState(false);
   const { density, setDensity } = useBoardDensity();
-  const {
-    filters,
-    changeFilters,
-    clearFilters,
-    groupByProject,
-    setGroupByProject,
-    searchRef,
-  } = useBoardFilters();
+  const { rowsBy, setRowsBy } = useBoardRows();
+  const { filters, changeFilters, clearFilters, searchRef } = useBoardFilters();
   const [originalConfig, setOriginalConfig] = useState<KanbanConfig | null>(
     null
   );
@@ -215,17 +210,11 @@ export function MfgKanbanClient({
             searchRef={searchRef}
           >
             <BoardDensityToggle density={density} onChange={setDensity} />
-            <Button
-              variant={groupByProject ? "secondary" : "outline"}
-              size="sm"
-              aria-pressed={groupByProject}
+            <BoardRowsSelect
+              rowsBy={rowsBy}
+              onChange={setRowsBy}
               disabled={isEditMode}
-              onClick={() => setGroupByProject(!groupByProject)}
-              className="gap-2"
-            >
-              <Rows3 className="size-4" aria-hidden="true" />
-              Group by project
-            </Button>
+            />
           </BoardFilterBar>
         </div>
       </header>
@@ -243,7 +232,7 @@ export function MfgKanbanClient({
               density={density}
               filters={filters}
               // Column editing needs whole columns to drag.
-              groupByProject={groupByProject && !isEditMode}
+              rowsBy={isEditMode ? "none" : rowsBy}
               onAddColumn={isEditMode ? handleAddColumn : undefined}
               onRenameColumn={isEditMode ? handleRenameColumn : undefined}
               onDeleteColumn={isEditMode ? handleDeleteColumn : undefined}
