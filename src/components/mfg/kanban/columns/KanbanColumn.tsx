@@ -28,6 +28,7 @@ import {
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanColumnCardContainer } from "./KanbanColumnCardContainer";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
+import { splitDoneToday } from "~/lib/doneToday";
 
 interface KanbanColumnProps {
   column: KanbanColumnType;
@@ -66,23 +67,11 @@ export function KanbanColumn({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Filter cards for the last column (Done) - only show cards from last 24 hours
+  // Done shows today's parts; the older ones are behind a link.
   const { filteredCards, olderCardsCount } = useMemo(() => {
-    if (!isLastColumn) {
-      return { filteredCards: cards, olderCardsCount: 0 };
-    }
-
-    const now = Date.now();
-    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-
-    const filtered = cards.filter((card) => {
-      const cardUpdated = new Date(card.date_updated).getTime();
-      return cardUpdated > twentyFourHoursAgo;
-    });
-
-    const olderCount = cards.length - filtered.length;
-
-    return { filteredCards: filtered, olderCardsCount: olderCount };
+    if (!isLastColumn) return { filteredCards: cards, olderCardsCount: 0 };
+    const { today, olderCount } = splitDoneToday(cards);
+    return { filteredCards: today, olderCardsCount: olderCount };
   }, [cards, isLastColumn]);
 
   const {

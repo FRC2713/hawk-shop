@@ -1,6 +1,6 @@
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
-import { ReportProblemButton } from "~/components/app/report-problem";
-import { useState, useMemo } from "react";
+import { openProblemReport } from "~/lib/api/reports";
+import { useEffect, useState, useMemo } from "react";
 import {
   Calendar,
   Clock,
@@ -10,8 +10,10 @@ import {
   Wrench,
   Box,
   ExternalLink,
+  Flag,
   Hash,
   FolderKanban,
+  MoreHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectPicker } from "~/components/mfg/ProjectPicker";
@@ -26,8 +28,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "~/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -60,6 +67,7 @@ import {
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
 import { SubmitterNotes } from "./SubmitterNotes";
+import { WorkflowActions } from "./WorkflowActions";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 import {
   MATERIAL_UNKNOWN,
@@ -158,6 +166,12 @@ export function KanbanCardDetails({
   usersMap,
 }: KanbanCardDetailsProps) {
   const [imageError, setImageError] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [reportsEnabled, setReportsEnabled] = useState(false);
+  useEffect(
+    () => setReportsEnabled(document.body.dataset.reportsEnabled === "true"),
+    []
+  );
   const detailsQuery = useQuery(kanbanCardDetailsQuery(card.id));
 
   // Check if card has Onshape properties from database
@@ -293,11 +307,39 @@ export function KanbanCardDetails({
       className="flex w-full flex-col sm:max-w-lg"
     >
       <SheetHeader className="space-y-1">
-        <SheetTitle className="text-xl">{card.title}</SheetTitle>
-        <ReportProblemButton
-          context={{ card_id: card.id }}
-          children="Report a problem with this card"
-        />
+        <div className="flex items-start gap-2 pr-8">
+          <SheetTitle className="flex-1 text-xl">{card.title}</SheetTitle>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {reportsEnabled && (
+                <DropdownMenuItem
+                  onSelect={() => openProblemReport({ card_id: card.id })}
+                >
+                  <Flag className="mr-2 size-4" />
+                  Report a problem
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={deleteCardMutation.isPending}
+                onSelect={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="mr-2 size-4" />
+                {deleteCardMutation.isPending ? "Deleting..." : "Delete card"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <SheetDescription className="flex items-center gap-2">
           <Clock className="size-3" />
           Created {formatDate(card.date_created)}
@@ -675,6 +717,7 @@ export function KanbanCardDetails({
 
       {/* Actions - Sticky at bottom */}
       <div className="mt-auto space-y-2 border-t pt-4">
+        <WorkflowActions card={card} />
         {/* Open in Onshape Button */}
         {onshapeUrl && (
           <Button
@@ -689,40 +732,27 @@ export function KanbanCardDetails({
             Open in Onshape
           </Button>
         )}
-
-        {/* Delete Action */}
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground w-full"
-              disabled={deleteCardMutation.isPending}
-            >
-              <Trash2 className="mr-2 size-4" />
-              {deleteCardMutation.isPending ? "Deleting..." : "Delete Card"}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete this card?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete "{card.title}". This action cannot
-                be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={onDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this card?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{card.title}". This action cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SheetContent>
   );
 }
