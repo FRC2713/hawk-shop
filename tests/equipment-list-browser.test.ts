@@ -153,7 +153,7 @@ test("phone equipment groups every process and filters maintenance and missing p
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.emulateMedia({ colorScheme: "light" });
     await expect(add).toHaveCSS("position", "static");
-    await expect(page.getByRole("complementary")).toBeVisible();
+    await expect(page.getByRole("complementary")).toHaveCount(0);
   } finally {
     await browser.close();
   }

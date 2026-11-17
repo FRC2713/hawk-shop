@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { groupBy as groupInto } from "~/lib/groupBy";
 import { Plus, Search } from "lucide-react";
 import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
 import { Button } from "~/components/ui/button";
@@ -8,19 +7,15 @@ import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
   equipmentQuery,
-  kanbanCardsQuery,
-  kanbanConfigQuery,
   needsMaintenance,
   type EquipmentWithProcesses,
-  type KanbanCardWithProcesses,
 } from "~/lib/api";
 import { cn } from "~/lib/utils";
 import {
   EquipmentList,
   type EquipmentGroupBy,
 } from "~/components/mfg/equipment/EquipmentList";
-import { EquipmentDetailPanel } from "~/components/mfg/equipment/EquipmentDetailPanel";
-import { DeleteEquipmentDialog } from "~/components/mfg/equipment/DeleteEquipmentDialog";
+import { EquipmentTable } from "~/components/mfg/equipment/EquipmentTable";
 import { ProcessesSection } from "~/components/mfg/processes/ProcessesSection";
 
 type Filter = "all" | "maintenance" | "no-photo";
@@ -43,43 +38,7 @@ export function EquipmentClient() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [groupBy, setGroupBy] = useState<EquipmentGroupBy>("process");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"delete" | null>(null);
-
   const { data: equipment = [], isLoading, error } = useQuery(equipmentQuery());
-  const { data: cards = [] } = useQuery(kanbanCardsQuery());
-  const { data: config } = useQuery(kanbanConfigQuery());
-
-  const columns = config?.columns ?? [];
-  const doneId = columns.at(-1)?.id;
-  const columnTitles = useMemo(
-    () => new Map(columns.map((column) => [column.id, column.title])),
-    [columns]
-  );
-
-  // Cards link to their equipment by id; finished cards no longer need it.
-  const cardsByEquipment = useMemo(() => {
-    const linked = groupInto(
-      cards.filter((card) => card.machine_id && card.column_id !== doneId),
-      (card) => card.machine_id
-    );
-    const byId = new Map<string, KanbanCardWithProcesses[]>();
-    for (const item of equipment) {
-      const assigned = (linked.get(item.id) ?? []).sort((a, b) =>
-        (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")
-      );
-      byId.set(item.id, assigned);
-    }
-    return byId;
-  }, [cards, equipment, doneId]);
-
-  const assignedCounts = useMemo(
-    () =>
-      new Map(
-        [...cardsByEquipment.entries()].map(([id, list]) => [id, list.length])
-      ),
-    [cardsByEquipment]
-  );
 
   const maintenanceCount = equipment.filter(needsMaintenance).length;
   const query = search.trim().toLowerCase();
@@ -91,23 +50,6 @@ export function EquipmentClient() {
           : !item.image_urls?.length)) &&
       (!query || matches(item, query))
   );
-
-  const selected = equipment.find((item) => item.id === selectedId) ?? null;
-
-  // Keep a selection while there is equipment to show.
-  useEffect(() => {
-    if (isLoading) return;
-    if (!selected && equipment.length > 0) {
-      const first = [...equipment].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { numeric: true })
-      )[0];
-      setSelectedId(first.id);
-    }
-  }, [equipment, isLoading, selected]);
-
-  const select = (item: EquipmentWithProcesses) => {
-    setSelectedId(item.id);
-  };
 
   if (error) return <ErrorDisplay error={error} />;
 
@@ -126,7 +68,7 @@ export function EquipmentClient() {
   ];
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto">
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 pt-6 pb-28 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-3xl leading-9">Equipment</h1>
@@ -231,46 +173,22 @@ export function EquipmentClient() {
                 )}
               </div>
             ) : (
-              <EquipmentList
-                equipment={visible}
-                groupBy={groupBy}
-                selectedId={selectedId}
-                onSelect={select}
-              />
+              <>
+                <div className="lg:hidden">
+                  <EquipmentList equipment={visible} groupBy="process" />
+                </div>
+                <div className="hidden min-w-0 lg:block">
+                  <EquipmentTable equipment={visible} groupBy={groupBy} />
+                </div>
+              </>
             )}
           </div>
-
-          {selected && (
-            <aside
-              aria-label={`${selected.name} details`}
-              className="bg-card hidden min-w-0 flex-[1_1_360px] scroll-mt-4 overflow-hidden rounded-xl border shadow-xs lg:sticky lg:top-6 lg:block"
-            >
-              <EquipmentDetailPanel
-                key={selected.id}
-                equipment={selected}
-                assignedCards={cardsByEquipment.get(selected.id) ?? []}
-                columnTitles={columnTitles}
-                onEdit={() =>
-                  window.location.assign(`/equipment/${selected.id}/edit`)
-                }
-                onDelete={() => setDialog("delete")}
-              />
-            </aside>
-          )}
         </div>
 
         <div className="mt-8">
           <ProcessesSection />
         </div>
       </div>
-
-      <DeleteEquipmentDialog
-        open={dialog === "delete"}
-        onOpenChange={(open) => !open && setDialog(null)}
-        equipment={selected}
-        assignedCount={selected ? (assignedCounts.get(selected.id) ?? 0) : 0}
-        onDeleted={() => setSelectedId(null)}
-      />
     </div>
   );
 }

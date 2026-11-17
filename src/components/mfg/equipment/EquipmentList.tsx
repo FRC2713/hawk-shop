@@ -1,15 +1,12 @@
 import { Image as ImageIcon, Wrench } from "lucide-react";
 import type { EquipmentWithProcesses } from "~/lib/api";
 import { machineStatusLabels, type EquipmentListItem } from "~/lib/equipment";
-import { cn } from "~/lib/utils";
 
 export type EquipmentGroupBy = "process" | "location" | "none";
 
 interface EquipmentListProps {
   equipment: EquipmentListItem[];
   groupBy: EquipmentGroupBy;
-  selectedId: string | null;
-  onSelect: (item: EquipmentWithProcesses) => void;
 }
 
 interface Group {
@@ -23,7 +20,7 @@ function groupKey(item: EquipmentWithProcesses, groupBy: EquipmentGroupBy) {
   return "All equipment";
 }
 
-function groupEquipment(
+export function groupEquipment(
   equipment: EquipmentListItem[],
   groupBy: EquipmentGroupBy
 ): Group[] {
@@ -63,12 +60,7 @@ function rowDetail(item: EquipmentWithProcesses, groupBy: EquipmentGroupBy) {
   return [location, processes.join(", ")].filter(Boolean).join(" · ");
 }
 
-export function EquipmentList({
-  equipment,
-  groupBy,
-  selectedId,
-  onSelect,
-}: EquipmentListProps) {
+export function EquipmentList({ equipment, groupBy }: EquipmentListProps) {
   const groups = groupEquipment(equipment, groupBy);
 
   return (
@@ -90,7 +82,6 @@ export function EquipmentList({
             )}
             <ul>
               {group.items.map((item) => {
-                const selected = item.id === selectedId;
                 const count = item.queue_size;
                 const cover = item.image_urls?.[0];
                 const detail = rowDetail(item, groupBy);
@@ -98,25 +89,7 @@ export function EquipmentList({
                   <li key={item.id} className="border-t first:border-t-0">
                     <a
                       href={`/equipment/${item.id}`}
-                      aria-current={selected ? "true" : undefined}
-                      onClick={(event) => {
-                        if (
-                          window.matchMedia("(min-width: 1024px)").matches &&
-                          !event.metaKey &&
-                          !event.ctrlKey &&
-                          !event.shiftKey &&
-                          !event.altKey
-                        ) {
-                          event.preventDefault();
-                          onSelect(item);
-                        }
-                      }}
-                      className={cn(
-                        "focus-visible:ring-ring/50 flex min-h-20 w-full flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-inset",
-                        selected
-                          ? "bg-muted shadow-[inset_4px_0_0_var(--primary)]"
-                          : "hover:bg-muted"
-                      )}
+                      className="focus-visible:ring-ring/50 hover:bg-muted flex min-h-20 w-full flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
                     >
                       <span className="bg-muted flex h-[42px] w-14 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
                         {cover ? (
