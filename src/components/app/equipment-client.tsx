@@ -20,7 +20,6 @@ import {
   type EquipmentGroupBy,
 } from "~/components/mfg/equipment/EquipmentList";
 import { EquipmentDetailPanel } from "~/components/mfg/equipment/EquipmentDetailPanel";
-import { EquipmentDialog } from "~/components/mfg/equipment/EquipmentDialog";
 import { DeleteEquipmentDialog } from "~/components/mfg/equipment/DeleteEquipmentDialog";
 import { ProcessesSection } from "~/components/mfg/processes/ProcessesSection";
 
@@ -45,7 +44,7 @@ export function EquipmentClient() {
   const [filter, setFilter] = useState<Filter>("all");
   const [groupBy, setGroupBy] = useState<EquipmentGroupBy>("process");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"add" | "edit" | "delete" | null>(null);
+  const [dialog, setDialog] = useState<"delete" | null>(null);
   const detailRef = useRef<HTMLElement>(null);
 
   const { data: equipment = [], isLoading, error } = useQuery(equipmentQuery());
@@ -145,9 +144,11 @@ export function EquipmentClient() {
                 className="bg-card pl-9"
               />
             </div>
-            <Button type="button" onClick={() => setDialog("add")}>
-              <Plus aria-hidden="true" />
-              Add equipment
+            <Button asChild>
+              <a href="/equipment/new">
+                <Plus aria-hidden="true" />
+                Add equipment
+              </a>
             </Button>
           </div>
         </div>
@@ -213,9 +214,11 @@ export function EquipmentClient() {
                       : "Try a different search."}
                 </p>
                 {equipment.length === 0 && (
-                  <Button type="button" onClick={() => setDialog("add")}>
-                    <Plus aria-hidden="true" />
-                    Add equipment
+                  <Button asChild>
+                    <a href="/equipment/new">
+                      <Plus aria-hidden="true" />
+                      Add equipment
+                    </a>
                   </Button>
                 )}
               </div>
@@ -241,7 +244,9 @@ export function EquipmentClient() {
                 equipment={selected}
                 assignedCards={cardsByEquipment.get(selected.id) ?? []}
                 columnTitles={columnTitles}
-                onEdit={() => setDialog("edit")}
+                onEdit={() =>
+                  window.location.assign(`/equipment/${selected.id}/edit`)
+                }
                 onDelete={() => setDialog("delete")}
               />
             </aside>
@@ -252,14 +257,6 @@ export function EquipmentClient() {
           <ProcessesSection />
         </div>
       </div>
-
-      <EquipmentDialog
-        open={dialog === "add" || dialog === "edit"}
-        onOpenChange={(open) => !open && setDialog(null)}
-        equipment={dialog === "edit" ? selected : null}
-        allEquipment={equipment}
-        onSaved={(id) => setSelectedId(id)}
-      />
 
       <DeleteEquipmentDialog
         open={dialog === "delete"}

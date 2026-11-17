@@ -4,6 +4,8 @@ Shop follows Hawk Eye's Astro architecture. The server renders page layout, navi
 
 `src/pages/api/` retains the existing endpoint URLs and payloads. `src/server/` owns SQLite repositories, migrations, storage, and the event bus. `src/lib/api/` contains browser fetchers and shared query keys. The build rejects browser imports of modules marked `virtual:hawk-shop/server-only`.
 
+Equipment add and edit share a camera-first React editor at `/equipment/new` and `/equipment/:id/edit`. `/equipment/:id` redirects to edit until the machine page is added. The current list keeps its existing layout. Photos are resized and re-encoded in the browser to a maximum 2000 px edge, uploaded sequentially, and ordered through `PUT /api/equipment/:id/image` with `{ imageUrls }`. That endpoint accepts a permutation of existing photos only; existing upload, delete and equipment payloads remain supported. The stored `image_urls` order defines the thumbnail. Maintenance actions use the existing maintenance endpoint independently of unsaved form fields.
+
 SQLite, its ordered Drizzle migrations, and uploaded images retain their existing format and location under `DATA_DIR`. This migration does not replace the database or renumber existing users. The historical `users.onshape_user_id` column accepts Suite subjects for new Suite users; existing Onshape users remain available for historical assignment and submitter display. Cards created after migration record the verified Suite subject as submitter. Changing assignee leaves submitter intact.
 
 ## Authentication

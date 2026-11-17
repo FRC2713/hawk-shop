@@ -1,5 +1,6 @@
 import "virtual:hawk-shop/server-only";
 
+import { randomUUID } from "node:crypto";
 import { logger } from "~/lib/logger";
 import {
   deleteFileByUrl,
@@ -23,10 +24,10 @@ export async function uploadEquipmentImage(
 
     if (file instanceof File) {
       buffer = Buffer.from(await file.arrayBuffer());
-      fileName = `${equipmentId}-${Date.now()}-${sanitizeFileName(file.name)}`;
+      fileName = `${equipmentId}-${randomUUID()}-${sanitizeFileName(file.name)}`;
     } else {
       buffer = file;
-      fileName = `${equipmentId}-${Date.now()}.jpg`;
+      fileName = `${equipmentId}-${randomUUID()}.jpg`;
     }
 
     return await saveFile(`equipment-images/${fileName}`, buffer);

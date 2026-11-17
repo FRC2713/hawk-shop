@@ -1454,3 +1454,66 @@ test("a stored thumbnail redirects through the middleware to its file", async ()
   assert.equal(file.status, 200);
   assert.equal(await file.text(), "png");
 });
+
+test("equipment add and edit routes hydrate at phone and desktop widths and missing machines return 404", async () => {
+  const machine = (
+    await json("/api/equipment", "POST", {
+      name: "Route printer",
+      location: "Print farm",
+    })
+  ).equipment;
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({ extraHTTPHeaders: identity });
+    const page = await context.newPage();
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({
+        colorScheme: width === 390 ? "dark" : "light",
+      });
+      await page.goto(origin + "/equipment");
+      await page
+        .getByRole("link", { name: "Add equipment", exact: true })
+        .first()
+        .click();
+      await expect(page).toHaveURL(origin + "/equipment/new");
+      await expect(
+        page.getByRole("button", { name: "Take photo", exact: true })
+      ).toBeVisible();
+      await page.goto(origin + `/equipment/${machine.id}/edit`);
+      await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
+        "Route printer"
+      );
+      await expect(
+        page.getByRole("button", { name: "Photo library", exact: true })
+      ).toBeVisible();
+      await page.screenshot({
+        path: `/tmp/hawk-136-${width}.png`,
+        fullPage: true,
+      });
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(origin + "/equipment");
+      await page
+        .getByRole("searchbox", { name: "Search equipment" })
+        .fill("Route printer");
+      await page.getByRole("button", { name: /Route printer/ }).click();
+      await page.getByRole("button", { name: "Edit", exact: true }).click();
+      await expect(page).toHaveURL(origin + `/equipment/${machine.id}/edit`);
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth
+        )
+      );
+    }
+    const canonical = await call(`/equipment/${machine.id}`);
+    assert.equal(canonical.status, 302);
+    assert.equal(
+      canonical.headers.get("location"),
+      `/equipment/${machine.id}/edit`
+    );
+    assert.equal((await call("/equipment/missing-machine/edit")).status, 404);
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+});

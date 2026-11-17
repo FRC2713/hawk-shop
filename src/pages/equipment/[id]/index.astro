@@ -1,0 +1,7 @@
+---
+// #139 will own the machine page. Keep canonical machine links usable meanwhile.
+return Astro.redirect(
+  `/equipment/${encodeURIComponent(Astro.params.id!)}/edit`,
+  302
+);
+---

@@ -82,22 +82,40 @@ export async function deleteEquipment(id: string): Promise<void> {
   });
 }
 
-/** Uploads run concurrently; one rejection fails the whole batch. */
+/** Sequential uploads preserve selection order and avoid lost appends. */
 export async function uploadEquipmentImages(
   id: string,
   files: File[]
 ): Promise<void> {
-  await Promise.all(
-    files.map((file) => {
-      const body = new FormData();
-      body.append("file", file);
-      return apiFetch(`/api/equipment/${id}/image`, {
-        method: "POST",
-        body,
-        fallbackError: "Failed to upload image",
-      });
-    })
+  for (const file of files) await uploadEquipmentPhoto(id, file);
+}
+
+export async function uploadEquipmentPhoto(
+  id: string,
+  file: File
+): Promise<string> {
+  const body = new FormData();
+  body.append("file", file);
+  const { imageUrl } = await apiFetch<{ imageUrl: string }>(
+    `/api/equipment/${id}/image`,
+    {
+      method: "POST",
+      body,
+      fallbackError: "Failed to upload image",
+    }
   );
+  return imageUrl;
+}
+
+export async function reorderEquipmentImages(
+  id: string,
+  imageUrls: string[]
+): Promise<void> {
+  await apiFetch(`/api/equipment/${id}/image`, {
+    method: "PUT",
+    json: { imageUrls },
+    fallbackError: "Failed to reorder photos",
+  });
 }
 
 export async function deleteEquipmentImage(
