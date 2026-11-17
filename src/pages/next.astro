@@ -1,11 +1,10 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
-import TabPlaceholder from "../components/phone/TabPlaceholder.astro";
+import NextUp from "../components/islands/NextUp";
+
+// The middleware only renders pages for a verified member.
+const viewerId = Astro.locals.identity?.subject ?? "";
 ---
 
-<AppLayout title="Next up"
-  ><TabPlaceholder
-    title="Next up"
-    description="Claim the next part for your machine."
-  /></AppLayout
+<AppLayout title="Next up"><NextUp viewerId={viewerId} client:load /></AppLayout
 >
