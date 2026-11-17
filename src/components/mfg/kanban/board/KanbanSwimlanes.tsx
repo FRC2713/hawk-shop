@@ -7,6 +7,7 @@ import type { UserRow } from "~/server/db/types";
 import type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
 import { cn } from "~/lib/utils";
 import { KanbanCard } from "../cards/KanbanCard";
+import { DONE_TODAY_TITLE } from "~/lib/doneToday";
 
 /** Droppable ids for lane cells; a drop moves the card's column only. */
 const CELL_PREFIX = "lane|";
@@ -136,7 +137,7 @@ export function KanbanSwimlanes({
               )}
             >
               <span className="font-heading font-semibold">
-                {index === columns.length - 1 ? "Done" : column.title}
+                {index === columns.length - 1 ? DONE_TODAY_TITLE : column.title}
               </span>
               <Badge
                 variant="secondary"

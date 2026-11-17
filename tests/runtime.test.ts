@@ -921,11 +921,9 @@ test("error displays and workflow boundaries open reports with their error refer
       title: "Report selected card",
     });
     await page.goto(origin + "/kanban?cardId=report-selected-card");
+    await page.getByRole("button", { name: "More actions" }).click();
     await page
-      .getByRole("button", {
-        name: "Report a problem with this card",
-        exact: true,
-      })
+      .getByRole("menuitem", { name: "Report a problem", exact: true })
       .click();
     await expect(page.getByRole("dialog").last()).toBeVisible();
     await page.getByLabel("What went wrong?").fill("This card is stuck");
