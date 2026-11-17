@@ -16,6 +16,9 @@
   --hawk-light-grey: #f2f2f2;
   --hawk-white: #ffffff;
   --hawk-teal: #5fc7ba;
+  --hawk-dark-background: #141414;
+  --hawk-dark-card: #1e1e1e;
+  --hawk-dark-muted: #2a2a2a;
   /* FRC alliance identity, separate from product branding. */
   --alliance-red: var(--hawk-red);
   --alliance-blue: #1d4ed8;

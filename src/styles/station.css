@@ -1,11 +1,11 @@
 /* Shared displays deliberately use the Red Hawk dark palette in either OS theme. */
 .station-screen {
-  --background: #141414;
-  --foreground: #f2f2f2;
-  --card: #1e1e1e;
-  --muted-foreground: #a3a19e;
-  --border: #333333;
-  --link: #5fc7ba;
+  --background: var(--hawk-dark-background);
+  --foreground: var(--hawk-light-grey);
+  --card: var(--hawk-dark-card);
+  --muted-foreground: var(--hawk-grey);
+  --border: var(--hawk-charcoal);
+  --link: var(--hawk-teal);
   color-scheme: dark;
   box-sizing: border-box;
   display: flex;
@@ -55,21 +55,21 @@
   justify-content: center;
   min-height: 56px;
   padding: 12px 20px;
-  border: 2px solid #5fc7ba;
+  border: 2px solid var(--hawk-teal);
   border-radius: 8px;
-  color: #f2f2f2;
-  background: #2a2a2a;
+  color: var(--hawk-light-grey);
+  background: var(--hawk-dark-muted);
   font: inherit;
   text-decoration: none;
 }
 .station-control:focus-visible,
 .station-screen a:focus-visible {
-  outline: 3px solid #5fc7ba;
+  outline: 3px solid var(--hawk-teal);
   outline-offset: 3px;
 }
 .station-control[aria-current="page"] {
-  border-color: #ba0c2f;
-  background: #ba0c2f;
+  border-color: var(--hawk-red);
+  background: var(--hawk-red);
 }
 .station-picker {
   display: flex;
@@ -92,14 +92,14 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 2px solid #333;
+  border: 2px solid var(--hawk-charcoal);
   border-radius: 8px;
-  background: #1e1e1e;
+  background: var(--hawk-dark-card);
   overflow: hidden;
 }
 .station-machine > header {
   padding: 12px 20px;
-  border-bottom: 2px solid #333;
+  border-bottom: 2px solid var(--hawk-charcoal);
 }
 .station-machine h2 {
   font-size: 28px;
@@ -153,36 +153,36 @@
 }
 .station-queue li {
   padding: 8px 0;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--hawk-charcoal);
   overflow-wrap: anywhere;
 }
 .station-queue li span:last-child {
   display: block;
-  color: #a3a19e;
+  color: var(--hawk-grey);
 }
 .station-sop {
   margin: 16px 20px;
   flex-shrink: 0;
 }
 .station-waiting {
-  border-color: #5fc7ba;
+  border-color: var(--hawk-teal);
 }
 .station-waiting .station-status {
-  color: #5fc7ba;
+  color: var(--hawk-teal);
 }
 .station-maintenance {
-  border-color: #ba0c2f;
+  border-color: var(--hawk-red);
 }
 .station-maintenance > header {
-  background: #ba0c2f;
-  color: #fff;
+  background: var(--hawk-red);
+  color: var(--hawk-white);
 }
 
 .station-claim-overlay {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: #000b;
+  background: color-mix(in srgb, var(--hawk-black) 73%, transparent);
 }
 .station-claim {
   position: fixed;
@@ -193,10 +193,10 @@
   gap: 16px;
   overflow-y: auto;
   padding: 32px;
-  border: 2px solid #5fc7ba;
+  border: 2px solid var(--hawk-teal);
   border-radius: 8px;
-  background: #141414;
-  color: #f2f2f2;
+  background: var(--hawk-dark-background);
+  color: var(--hawk-light-grey);
   color-scheme: dark;
   font-size: 22px;
 }
@@ -205,14 +205,14 @@
 }
 .station-claim input {
   min-height: 56px;
-  border: 2px solid #a3a19e;
+  border: 2px solid var(--hawk-grey);
   border-radius: 8px;
   padding: 12px;
-  background: #2a2a2a;
-  color: #f2f2f2;
+  background: var(--hawk-dark-muted);
+  color: var(--hawk-light-grey);
 }
 .station-claim :focus-visible {
-  outline: 3px solid #5fc7ba;
+  outline: 3px solid var(--hawk-teal);
   outline-offset: 3px;
 }
 .station-members {
@@ -245,5 +245,5 @@
 .station-claim-phone img {
   width: 256px;
   height: 256px;
-  background: white;
+  background: var(--hawk-white);
 }
