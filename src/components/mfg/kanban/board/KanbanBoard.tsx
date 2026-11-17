@@ -44,6 +44,7 @@ import {
 import { KanbanCard as KanbanCardComponent } from "../cards/KanbanCard";
 import { KanbanColumn } from "../columns/KanbanColumn";
 import { KanbanBulkEditBar } from "./KanbanBulkEditBar";
+import { DONE_TODAY_TITLE, splitDoneToday } from "~/lib/doneToday";
 import {
   dropTargetColumnId,
   KanbanSwimlanes,
@@ -51,7 +52,6 @@ import {
 } from "./KanbanSwimlanes";
 
 type KanbanCardRow = KanbanCardWithProcesses;
-const DONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface KanbanBoardProps {
   config: KanbanConfig;
@@ -244,16 +244,13 @@ export function KanbanBoard({
     searchScores,
   ]);
 
-  // Swimlanes show Done like its column does: the last 24 hours only.
+  // Swimlanes show Done like its column does: today's parts only.
   const laneCardsByColumn = useMemo(() => {
     if (!groupByProject || columns.length === 0) return cardsByColumn;
     const lastId = columns[columns.length - 1].id;
-    const since = Date.now() - DONE_WINDOW_MS;
     return {
       ...cardsByColumn,
-      [lastId]: (cardsByColumn[lastId] ?? []).filter(
-        (card) => new Date(card.date_updated).getTime() > since
-      ),
+      [lastId]: splitDoneToday(cardsByColumn[lastId] ?? []).today,
     };
   }, [groupByProject, cardsByColumn, columns]);
 
@@ -558,9 +555,9 @@ export function KanbanBoard({
           <div className="flex h-full gap-3 overflow-x-auto p-3 sm:gap-4 sm:p-6">
             {columns.map((column, index) => {
               const isLastColumn = index === columns.length - 1;
-              // Force last column to always be labeled "Done"
+              // The last column is always Done, showing today's parts
               const displayColumn = isLastColumn
-                ? { ...column, title: "Done" }
+                ? { ...column, title: DONE_TODAY_TITLE }
                 : column;
               return (
                 <KanbanColumn
