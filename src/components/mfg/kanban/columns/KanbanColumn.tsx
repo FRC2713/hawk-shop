@@ -21,7 +21,10 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { KanbanColumnHeader } from "./KanbanColumnHeader";
 import { Badge } from "~/components/ui/badge";
-import type { KanbanColumn as KanbanColumnType } from "~/server/kanbanApi/columnTypes";
+import {
+  isWorkflowColumn,
+  type KanbanColumn as KanbanColumnType,
+} from "~/server/kanbanApi/columnTypes";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanColumnCardContainer } from "./KanbanColumnCardContainer";
 
@@ -183,10 +186,11 @@ export function KanbanColumn({
                       <Pencil className="mr-2 size-4" />
                       Rename column
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
+                    {!isWorkflowColumn(column.id) && <DropdownMenuSeparator />}
                   </>
                 )}
-                {!isLastColumn && (
+                {/* Workflow actions move parts to these, so they stay. */}
+                {!isLastColumn && !isWorkflowColumn(column.id) && (
                   <DropdownMenuItem
                     onClick={() => setIsDeleteDialogOpen(true)}
                     className="text-destructive focus:bg-destructive/10 focus:text-destructive"

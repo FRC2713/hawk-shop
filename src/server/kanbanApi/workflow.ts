@@ -8,6 +8,7 @@ import {
   equipmentProcesses,
   kanbanCardProcesses,
   kanbanCards,
+  users,
 } from "~/server/db/schema";
 import type { KanbanCardWithProcesses } from "~/server/db/types";
 import {
@@ -15,6 +16,8 @@ import {
   UnknownMachineError,
   updateCard,
 } from "~/server/kanbanApi/cards";
+import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
+import { getKanbanColumns } from "~/server/kanbanApi/config";
 import { publishKanbanEvent } from "~/server/events/bus";
 import {
   getMachineQueue,
@@ -216,4 +219,144 @@ export async function reorderMachineQueue(
       id: card.id,
     });
   return getMachineQueue(machineId);
+}
+
+/** An assignee must be a member who has signed in at least once. */
+function requireMember(userId: unknown): asserts userId is string {
+  if (
+    typeof userId !== "string" ||
+    !userId ||
+    !db
+      .select({ id: users.onshape_user_id })
+      .from(users)
+      .where(eq(users.onshape_user_id, userId))
+      .get()
+  )
+    throw new InvalidWorkflowInputError("Choose a member who has signed in");
+}
+
+export class WrongStatusError extends WorkflowConflictError {
+  readonly code = "wrong_status";
+  constructor(cardId: string, status: string, action: string) {
+    super(`This part is in ${status}, so it can't be ${action}`, [cardId]);
+  }
+}
+
+export class AlreadyClaimedError extends WorkflowConflictError {
+  readonly code = "already_claimed";
+  constructor(cardId: string) {
+    super("Someone else already claimed this part", [cardId]);
+  }
+}
+
+export class OtherMachineError extends WorkflowConflictError {
+  readonly code = "other_machine";
+  constructor(cardId: string) {
+    super("This part is assigned to a different machine", [cardId]);
+  }
+}
+
+export class NotClaimedError extends WorkflowConflictError {
+  readonly code = "not_claimed";
+  constructor(cardId: string) {
+    super("Nobody has claimed this part", [cardId]);
+  }
+}
+
+/**
+ * Reads one card and checks it is in one of `statuses`, so a single-card
+ * action can validate before it calls `updateCard`. Call it after any `await`
+ * the action needs and call `updateCard` straight after the checks: with no
+ * `await` in between, two concurrent actions can't both pass them.
+ */
+async function requireCardIn(
+  cardId: unknown,
+  statuses: string[],
+  action: string
+) {
+  if (typeof cardId !== "string" || !cardId)
+    throw new InvalidWorkflowInputError("Choose a card");
+  const columns = await getKanbanColumns();
+  const card = db
+    .select()
+    .from(kanbanCards)
+    .where(eq(kanbanCards.id, cardId))
+    .get();
+  if (!card) throw new CardNotFoundError([cardId]);
+  if (!statuses.includes(card.column_id)) {
+    const status =
+      columns.find((column) => column.id === card.column_id)?.title ??
+      card.column_id;
+    throw new WrongStatusError(cardId, status, action);
+  }
+  return card;
+}
+
+async function readCard(id: string): Promise<KanbanCardWithProcesses> {
+  const [card] = await readCards([id]);
+  return card;
+}
+
+/**
+ * Claim a part: `userId` (default: the actor) becomes its assignee, and a
+ * Backlog part moves to In Progress. `machineId` links a process-queue part to
+ * the machine it is claimed at. Claiming a part you already hold is a no-op;
+ * claiming someone else's is an `AlreadyClaimedError`.
+ */
+export async function claim(
+  cardId: string,
+  actor: SessionActor,
+  {
+    machineId,
+    userId = actor.onshape_user_id,
+  }: { machineId?: string; userId?: string } = {}
+): Promise<KanbanCardWithProcesses> {
+  if (machineId !== undefined && (typeof machineId !== "string" || !machineId))
+    throw new InvalidWorkflowInputError("Choose a machine");
+  const card = await requireCardIn(
+    cardId,
+    [WORKFLOW_COLUMN_IDS.backlog, WORKFLOW_COLUMN_IDS.inProgress],
+    "claimed"
+  );
+  requireMember(userId);
+  if (card.assignee && card.assignee !== userId)
+    throw new AlreadyClaimedError(card.id);
+  // A process-queue part takes the machine it is claimed at; a part already
+  // on a machine can only be claimed there.
+  const linkMachine = machineId !== undefined && card.machine_id === null;
+  if (linkMachine) requireMachineCanTake(machineId, [card.id]);
+  else if (machineId !== undefined && machineId !== card.machine_id)
+    throw new OtherMachineError(card.id);
+  await updateCard(
+    card.id,
+    {
+      assignee: userId,
+      column_id: WORKFLOW_COLUMN_IDS.inProgress,
+      ...(linkMachine ? { machine_id: machineId } : {}),
+    },
+    actor
+  );
+  return readCard(card.id);
+}
+
+/**
+ * Unclaim a part: clear its assignee and return it to Backlog, where it waits
+ * in the same machine's (or process's) queue as before.
+ */
+export async function unclaim(
+  cardId: string,
+  actor: SessionActor
+): Promise<KanbanCardWithProcesses> {
+  const card = await requireCardIn(
+    cardId,
+    [WORKFLOW_COLUMN_IDS.backlog, WORKFLOW_COLUMN_IDS.inProgress],
+    "unclaimed"
+  );
+  if (!card.assignee) throw new NotClaimedError(card.id);
+  await updateCard(
+    card.id,
+    { assignee: null, column_id: WORKFLOW_COLUMN_IDS.backlog },
+    actor
+  );
+  return readCard(card.id);
 }

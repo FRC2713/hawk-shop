@@ -32,6 +32,14 @@ _Avoid_: Machine backlog, job list
 Backlog parts with a process but no machine, waiting for any machine that does that process ("any 3D printer").
 _Avoid_: Unassigned, pool
 
+**Claim**:
+To become a part's assignee and move it from Backlog to In Progress in one action, optionally for another member at a shared station. A part claimed from a process queue takes the claiming machine. Unclaiming clears the assignee and returns the part to Backlog, keeping its machine. A part has one claimant: claiming someone else's part fails.
+_Avoid_: Take, grab, assign (when the person assigns themselves)
+
+**Send back**:
+To return a part from Review with a required reason, to In Progress when it still has an assignee and to Backlog otherwise. The reason is shown on the card and to the submitter.
+_Avoid_: Reject, fail
+
 **Slack administrator**:
 An active workspace admin or workspace owner in the Red Hawk Robotics Slack workspace. Managing a channel alone does not qualify.
 

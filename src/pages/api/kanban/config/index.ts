@@ -5,6 +5,7 @@ import {
   DEFAULT_CONFIG,
   getKanbanConfig,
   saveKanbanConfig,
+  WorkflowColumnRemovedError,
 } from "~/server/kanbanApi/config";
 import type { KanbanConfig } from "~/server/kanbanApi/columnTypes";
 
@@ -39,6 +40,8 @@ export const PUT: APIRoute = async ({ request }) => {
 
     return Response.json({ success: true, config });
   } catch (error) {
+    if (error instanceof WorkflowColumnRemovedError)
+      return Response.json({ error: error.message }, { status: 400 });
     const errorId = logServerError("KANBAN CONFIG", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to save config";
