@@ -1,0 +1,11 @@
+---
+import StationLayout from "~/layouts/StationLayout.astro";
+import Station from "~/components/islands/Station";
+import { getProcessById } from "~/server/processesApi/processes";
+const process = await getProcessById(Astro.params.id!);
+if (!process) Astro.response.status = 404;
+---
+
+<StationLayout title={process?.name || "Station not found"}
+  ><Station processId={Astro.params.id!} client:load /></StationLayout
+>

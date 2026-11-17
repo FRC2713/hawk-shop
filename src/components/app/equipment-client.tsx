@@ -73,6 +73,9 @@ export function EquipmentClient() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-3xl leading-9">Equipment</h1>
           <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline">
+              <a href="/station">Open station screen</a>
+            </Button>
             <div className="relative w-full sm:w-72">
               <Search
                 className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"

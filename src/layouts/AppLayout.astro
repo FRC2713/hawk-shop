@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import "../styles/station.css";
 import { reportsEnabled } from "../server/reports";
 import { ReportProblem } from "../components/app/report-problem";
 import { suiteUrl } from "../server/suite-identity";
@@ -7,6 +8,8 @@ import PhoneTabBar from "../components/phone/PhoneTabBar.astro";
 interface Props {
   title: string;
   workspace?: boolean;
+  /** Full-screen shared station display with its own navigation. */
+  station?: boolean;
   /**
    * Below the desktop breakpoint: "tabs" (default) swaps the top navigation
    * for the bottom tabs; "page" is a full-screen page with its own header and
@@ -15,7 +18,12 @@ interface Props {
    */
   phone?: "tabs" | "page" | "plain";
 }
-const { title, workspace = false, phone = "tabs" } = Astro.props;
+const {
+  title,
+  workspace = false,
+  phone = "tabs",
+  station = false,
+} = Astro.props;
 const identity = Astro.locals.identity;
 const reporting = Boolean(identity && reportsEnabled());
 const name = identity?.name ?? identity?.email ?? "Suite member";
@@ -51,107 +59,105 @@ const links = [
     data-reports-enabled={String(reporting)}
     class:list={[
       workspace && "shop-workspace",
-      identity && phone === "tabs" && "phone-tabs-layout",
+      !station && identity && phone === "tabs" && "phone-tabs-layout",
       phone === "page" && "phone-page-layout",
     ]}
   >
     <a class="skip-link" href="#main-content">Skip to content</a>
-    <header class="app-header bg-card border-b">
-      <div
-        class="shop-header mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-3"
-      >
-        <a
-          href="/"
-          aria-label="Hawk Shop overview"
-          class="flex items-center gap-3 no-underline"
-        >
-          <span class="brand-mark" aria-hidden="true"
-            ><img
-              src="/brand/2713-red.svg"
-              alt=""
-              width="83"
-              height="24"
-            /></span
-          >
-          <span
-            ><strong class="block text-sm leading-tight">Hawk Shop</strong><span
-              class="text-muted-foreground block text-xs">Manufacturing</span
-            ></span
-          >
-        </a>
-        {
-          identity && (
-            <div class="flex items-center gap-4">
-              <nav
-                aria-label="Main navigation"
-                class="app-navigation flex items-center gap-4"
-              >
-                {links.map((link) => (
-                  <a
-                    href={link.href}
-                    aria-current={
-                      (
-                        link.href === "/"
-                          ? Astro.url.pathname === "/"
-                          : Astro.url.pathname.startsWith(link.href)
-                      )
-                        ? "page"
-                        : undefined
-                    }
-                    class="text-sm font-semibold"
-                  >
-                    {link.label}
-                  </a>
-                ))}
-              </nav>
-              <details class="account-menu" data-account-menu>
-                <summary
-                  class="account-trigger text-sm font-semibold"
-                  aria-label={`Account: ${name}`}
+    {
+      !station && (
+        <header class="app-header bg-card border-b">
+          <div class="shop-header mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-3">
+            <a
+              href="/"
+              aria-label="Hawk Shop overview"
+              class="flex items-center gap-3 no-underline"
+            >
+              <span class="brand-mark" aria-hidden="true">
+                <img src="/brand/2713-red.svg" alt="" width="83" height="24" />
+              </span>
+              <span>
+                <>
+                  <strong class="block text-sm leading-tight">Hawk Shop</strong>
+                  <span class="text-muted-foreground block text-xs">
+                    Manufacturing
+                  </span>
+                </>
+              </span>
+            </a>
+            {identity && (
+              <div class="flex items-center gap-4">
+                <nav
+                  aria-label="Main navigation"
+                  class="app-navigation flex items-center gap-4"
                 >
-                  <>
-                    <span class="account-avatar" aria-hidden="true">
-                      {initials}
-                    </span>
-                    <span class="account-trigger-name">{name}</span>
-                  </>
-                </summary>
-                <div class="account-panel bg-popover text-popover-foreground border">
-                  <p class="account-name">{name}</p>
-                  {identity.email && (
-                    <p class="account-email">{identity.email}</p>
-                  )}
-                  {phone === "tabs" && (
-                    <nav aria-label="More pages" class="phone-more-pages">
-                      {links
-                        .filter((link) => link.href !== "/kanban")
-                        .map((link) => (
-                          <a class="account-sign-out" href={link.href}>
-                            {link.label}
-                          </a>
-                        ))}
-                    </nav>
-                  )}
-                  {reporting && <ReportProblem client:load />}
-                  <a class="account-sign-out" href="/slack">
-                    Slack settings
-                  </a>
-                  <a class="account-sign-out" href="/onshape">
-                    Onshape API status
-                  </a>
-                  <a class="account-sign-out" href={suiteUrl("auth/portal")}>
-                    Hawk Suite
-                  </a>
-                  <a class="account-sign-out" href="/auth/logout">
-                    Sign out of Hawk Suite
-                  </a>
-                </div>
-              </details>
-            </div>
-          )
-        }
-      </div>
-    </header>
+                  {links.map((link) => (
+                    <a
+                      href={link.href}
+                      aria-current={
+                        (
+                          link.href === "/"
+                            ? Astro.url.pathname === "/"
+                            : Astro.url.pathname.startsWith(link.href)
+                        )
+                          ? "page"
+                          : undefined
+                      }
+                      class="text-sm font-semibold"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                </nav>
+                <details class="account-menu" data-account-menu>
+                  <summary
+                    class="account-trigger text-sm font-semibold"
+                    aria-label={`Account: ${name}`}
+                  >
+                    <>
+                      <span class="account-avatar" aria-hidden="true">
+                        {initials}
+                      </span>
+                      <span class="account-trigger-name">{name}</span>
+                    </>
+                  </summary>
+                  <div class="account-panel bg-popover text-popover-foreground border">
+                    <p class="account-name">{name}</p>
+                    {identity.email && (
+                      <p class="account-email">{identity.email}</p>
+                    )}
+                    {phone === "tabs" && (
+                      <nav aria-label="More pages" class="phone-more-pages">
+                        {links
+                          .filter((link) => link.href !== "/kanban")
+                          .map((link) => (
+                            <a class="account-sign-out" href={link.href}>
+                              {link.label}
+                            </a>
+                          ))}
+                      </nav>
+                    )}
+                    {reporting && <ReportProblem client:load />}
+                    <a class="account-sign-out" href="/slack">
+                      Slack settings
+                    </a>
+                    <a class="account-sign-out" href="/onshape">
+                      Onshape API status
+                    </a>
+                    <a class="account-sign-out" href={suiteUrl("auth/portal")}>
+                      Hawk Suite
+                    </a>
+                    <a class="account-sign-out" href="/auth/logout">
+                      Sign out of Hawk Suite
+                    </a>
+                  </div>
+                </details>
+              </div>
+            )}
+          </div>
+        </header>
+      )
+    }
     <div
       id="main-content"
       tabindex="-1"
@@ -165,13 +171,13 @@ const links = [
       <slot />
     </div>
     {
-      !workspace && (
+      !workspace && !station && (
         <footer class="app-footer text-muted-foreground mx-auto w-full max-w-6xl px-5 py-8 text-xs">
           Red Hawk Robotics · FRC 2713
         </footer>
       )
     }
-    {identity && phone === "tabs" && <PhoneTabBar />}
+    {!station && identity && phone === "tabs" && <PhoneTabBar />}
   </body>
 </html>
 <script>

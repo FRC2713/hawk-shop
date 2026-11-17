@@ -7,6 +7,20 @@ const updated = "2026-02-03T04:05:06.000Z";
 // oauth_sessions table. Later-added email/microversion columns start as null.
 // Distinct rows and populated optional/JSON fields expose swaps and lost values.
 export const migrationFixtures: SeedFixture = {
+  station_roster: [
+    {
+      user_id: "user-a",
+      process_id: "mill",
+      shop_day: "2026-01-02",
+      added_at: created,
+    },
+    {
+      user_id: "user-b",
+      process_id: "inspect",
+      shop_day: "2026-02-03",
+      added_at: updated,
+    },
+  ],
   users: [
     {
       onshape_user_id: "user-a",

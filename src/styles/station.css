@@ -1,0 +1,249 @@
+/* Shared displays deliberately use the Red Hawk dark palette in either OS theme. */
+.station-screen {
+  --background: var(--hawk-dark-background);
+  --foreground: var(--hawk-light-grey);
+  --card: var(--hawk-dark-card);
+  --muted-foreground: var(--hawk-grey);
+  --border: var(--hawk-charcoal);
+  --link: var(--hawk-teal);
+  color-scheme: dark;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100dvh;
+  min-width: 1280px;
+  min-height: 800px;
+  padding: 24px;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 18px;
+}
+.station-screen * {
+  box-sizing: border-box;
+}
+.station-header,
+.station-heading,
+.station-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.station-header {
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.station-heading {
+  min-width: 0;
+}
+.station-heading img {
+  flex-shrink: 0;
+  margin: 12px;
+}
+.station-heading h1 {
+  font-size: 36px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.station-controls {
+  flex-shrink: 0;
+}
+.station-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 12px 20px;
+  border: 2px solid var(--hawk-teal);
+  border-radius: 8px;
+  color: var(--hawk-light-grey);
+  background: var(--hawk-dark-muted);
+  font: inherit;
+  text-decoration: none;
+}
+.station-control:focus-visible,
+.station-screen a:focus-visible {
+  outline: 3px solid var(--hawk-teal);
+  outline-offset: 3px;
+}
+.station-control[aria-current="page"] {
+  border-color: var(--hawk-red);
+  background: var(--hawk-red);
+}
+.station-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  overflow: auto;
+  max-height: 40vh;
+  flex-shrink: 0;
+}
+.station-columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(300px, 1fr);
+  gap: 20px;
+  min-height: 0;
+  flex: 1;
+  overflow-x: auto;
+}
+.station-machine {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 2px solid var(--hawk-charcoal);
+  border-radius: 8px;
+  background: var(--hawk-dark-card);
+  overflow: hidden;
+}
+.station-machine > header {
+  padding: 12px 20px;
+  border-bottom: 2px solid var(--hawk-charcoal);
+}
+.station-machine h2 {
+  font-size: 28px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.station-machine h2 a {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  color: inherit;
+  text-decoration: none;
+}
+.station-status {
+  font-weight: 600;
+}
+.station-machine-work {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.station-machine-work h3 {
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+.station-machine-work h3:not(:first-child) {
+  margin-top: 20px;
+}
+.station-machine-work p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.station-current {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.station-part + .station-part {
+  margin-top: 16px;
+}
+.station-part h4 {
+  font-size: 24px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.station-queue {
+  padding-left: 28px;
+  margin: 0;
+}
+.station-queue li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hawk-charcoal);
+  overflow-wrap: anywhere;
+}
+.station-queue li span:last-child {
+  display: block;
+  color: var(--hawk-grey);
+}
+.station-sop {
+  margin: 16px 20px;
+  flex-shrink: 0;
+}
+.station-waiting {
+  border-color: var(--hawk-teal);
+}
+.station-waiting .station-status {
+  color: var(--hawk-teal);
+}
+.station-maintenance {
+  border-color: var(--hawk-red);
+}
+.station-maintenance > header {
+  background: var(--hawk-red);
+  color: var(--hawk-white);
+}
+
+.station-claim-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--hawk-black) 73%, transparent);
+}
+.station-claim {
+  position: fixed;
+  inset: 32px;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 32px;
+  border: 2px solid var(--hawk-teal);
+  border-radius: 8px;
+  background: var(--hawk-dark-background);
+  color: var(--hawk-light-grey);
+  color-scheme: dark;
+  font-size: 22px;
+}
+.station-claim h2 {
+  font-size: 36px;
+}
+.station-claim input {
+  min-height: 56px;
+  border: 2px solid var(--hawk-grey);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--hawk-dark-muted);
+  color: var(--hawk-light-grey);
+}
+.station-claim :focus-visible {
+  outline: 3px solid var(--hawk-teal);
+  outline-offset: 3px;
+}
+.station-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.station-members button {
+  min-width: 180px;
+  min-height: 80px;
+  touch-action: manipulation;
+  user-select: none;
+}
+.station-control:disabled {
+  opacity: 0.6;
+}
+
+.station-claim-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 32px;
+}
+.station-claim-members,
+.station-claim-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.station-claim-phone img {
+  width: 256px;
+  height: 256px;
+  background: var(--hawk-white);
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { build } from "esbuild";
-import { chromium, type Browser, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type Page } from "@playwright/test";
 
 const PORT = 32210;
 const viewer = "slack:TTEAM:USAM";
@@ -102,7 +102,9 @@ before(async () => {
         ],
       });
     if (path === "/api/equipment")
-      return route.fulfill({ json: { equipment: [] } });
+      return route.fulfill({
+        json: { equipment: [{ id: "printer-2", name: "Printer 2" }] },
+      });
     const match = path.match(/^\/api\/kanban\/cards\/([^/]+)(?:\/([a-z-]+))?$/);
     const card = match && cards[match[1]];
     if (!card) return route.fulfill({ json: {} });
@@ -153,10 +155,10 @@ after(async () => {
   await browser?.close();
 });
 
-async function show(card: ReturnType<typeof fixture>) {
+async function show(card: ReturnType<typeof fixture>, search = "") {
   cards = { [card.id]: card };
   requests = [];
-  await page.goto(`http://localhost:${PORT}/parts/${card.id}`);
+  await page.goto(`http://localhost:${PORT}/parts/${card.id}${search}`);
   await page.addScriptTag({ content: bundleText });
   await page.evaluate(
     ([cardId, viewer]) => (window as any).show(cardId, viewer),
@@ -263,5 +265,84 @@ test("losing a claim says who got it and refreshes the part", async () => {
     );
   } finally {
     claimedByJordan = null;
+  }
+});
+
+test("station intent highlights Claim and sends the machine only after an explicit tap", async () => {
+  const card = fixture("qr-bracket", "backlog", null);
+  await show(card, "?intent=claim&machineId=printer-2");
+  await expect(bar().getByRole("status")).toContainText("Claim at Printer 2");
+  await expect(
+    bar().getByRole("button", { name: "Claim", exact: true })
+  ).toHaveAttribute("aria-describedby", "station-claim-intent");
+  assert.equal(posted(card.id, "claim").length, 0);
+  await bar().getByRole("button", { name: "Claim", exact: true }).click();
+  await expect(bar()).toContainText("already moved out of Backlog");
+  assert.deepEqual(
+    posted(card.id, "claim").map((r) => r.body),
+    [{ machineId: "printer-2" }]
+  );
+});
+
+test("invalid station context requires recovery instead of silently claiming without a machine", async () => {
+  for (const search of [
+    "?intent=claim",
+    "?intent=claim&machineId=deleted",
+    "?intent=claim&machineId=printer-2&machineId=deleted",
+  ]) {
+    const card = fixture("invalid-qr", "backlog", null);
+    await show(card, search);
+    await expect(bar().getByRole("status")).toContainText(
+      "no available machine"
+    );
+    await expect(
+      bar().getByRole("button", { name: "Claim", exact: true })
+    ).toBeDisabled();
+    await expect(
+      bar().getByRole("link", { name: "Open part without station claim" })
+    ).toHaveAttribute("href", "/parts/invalid-qr");
+    assert.equal(posted(card.id, "claim").length, 0);
+  }
+});
+
+test("a stale QR on a finished part explains its current status and never claims", async () => {
+  const card = fixture("done-qr", "done", jordan);
+  await show(card, "?intent=claim&machineId=printer-2");
+  await expect(bar().getByRole("status")).toContainText(
+    "already moved out of Backlog"
+  );
+  await expect(
+    bar().getByRole("button", { name: "Claim", exact: true })
+  ).toHaveCount(0);
+  assert.equal(posted(card.id, "claim").length, 0);
+});
+
+test("station claim conflicts keep the server reason and let the member recover", async () => {
+  await show(
+    fixture("conflict-qr", "backlog", null),
+    "?intent=claim&machineId=printer-2"
+  );
+  await page.route("**/conflict-qr/claim", (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: "This machine needs maintenance" },
+    })
+  );
+  try {
+    const postedClaim = page.waitForRequest((r) =>
+      r.url().endsWith("/conflict-qr/claim")
+    );
+    await bar().getByRole("button", { name: "Claim", exact: true }).click();
+    await expect(bar().getByRole("alert")).toContainText(
+      "This machine needs maintenance"
+    );
+    assert.deepEqual((await postedClaim).postDataJSON(), {
+      machineId: "printer-2",
+    });
+    await expect(
+      bar().getByRole("link", { name: "Open part without station claim" })
+    ).toBeVisible();
+  } finally {
+    await page.unroute("**/conflict-qr/claim");
   }
 });

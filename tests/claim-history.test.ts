@@ -125,7 +125,7 @@ test("claim and unclaim record status history, notify Slack and update open scre
       claimRoute,
       "/api/kanban/cards/station-part/claim",
       "station-part",
-      { userId: BOB }
+      { userId: BOB, device_id: "forged", device_name: "Forged device" }
     );
     await post(
       unclaimRoute,
@@ -145,7 +145,7 @@ test("claim and unclaim record status history, notify Slack and update open scre
         `${entry.from_status} → ${entry.to_status} by ${entry.actor_id}`
     );
   assert.deepEqual(moves, [
-    `Backlog → In Progress by ${ALICE}`,
+    `Backlog → In Progress by ${BOB}`,
     `In Progress → Backlog by ${ALICE}`,
   ]);
   assert.deepEqual(await statusNotifications("station-part"), [
@@ -156,6 +156,9 @@ test("claim and unclaim record status history, notify Slack and update open scre
     { table: "kanban_cards", action: "update", id: "station-part" },
     { table: "kanban_cards", action: "update", id: "station-part" },
   ]);
+  assert.equal(card.status_history[1].device_id, ALICE);
+  assert.equal(card.status_history[1].device_name, "Alice");
+  assert.equal(card.status_history[1].actor_name, "bob");
   assert.equal(card.assignee, null);
 });
 

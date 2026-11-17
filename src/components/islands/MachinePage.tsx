@@ -1,3 +1,4 @@
+import { latestStatusEntry } from "~/lib/statusHistory";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
@@ -25,9 +26,10 @@ function CurrentPart({ id, title }: { id: string; title: string }) {
     const timer = setInterval(() => tick((value) => value + 1), 60000);
     return () => clearInterval(timer);
   }, []);
-  const entered = details.data?.status_history
-    .filter((entry) => entry.to_column_id === "in-progress")
-    .sort((a, b) => b.moved_at.localeCompare(a.moved_at))[0]?.moved_at;
+  const entered = latestStatusEntry(
+    details.data?.status_history,
+    "in-progress"
+  );
   return (
     <li className="space-y-1 rounded-md border p-4 break-words">
       <h3 className="font-semibold">{title}</h3>

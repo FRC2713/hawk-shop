@@ -13,7 +13,7 @@ import { EventEmitter } from "node:events";
  */
 
 export type KanbanEvent = {
-  table: "kanban_cards" | "kanban_config" | "projects";
+  table: "kanban_cards" | "kanban_config" | "projects" | "station_roster";
   action: "insert" | "update" | "delete";
   id?: string;
 };

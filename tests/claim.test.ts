@@ -282,3 +282,24 @@ test("claiming for someone who has never signed in is rejected and changes nothi
   assert.equal(card.assignee, null);
   assert.equal(card.column_id, "backlog");
 });
+
+test("a phone's stale machine intent cannot claim assigned work after maintenance starts", async () => {
+  const printer = await addMachine("QR printer", [PRINTING]);
+  await release("qr-stale-maintenance", {
+    processIds: [PRINTING],
+    machineId: printer,
+  });
+  const flagged = await endpoint(maintenance, "POST", { id: printer })(
+    jsonRequest(`/api/equipment/${printer}/maintenance`, "POST", alice, {
+      note: "Stopped after QR was opened",
+    })
+  );
+  assert.equal(flagged.status, 200);
+  const refused = await claim("qr-stale-maintenance", { machineId: printer });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, "machine_needs_maintenance");
+  const card = await read("qr-stale-maintenance");
+  assert.equal(card.assignee, null);
+  assert.equal(card.column_id, "backlog");
+  assert.equal(card.status_history.length, 1);
+});
