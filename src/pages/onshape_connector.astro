@@ -23,7 +23,7 @@ const authenticated = Boolean(Astro.locals.identity);
 const connected = authenticated && isOnshapeConfigured();
 ---
 
-<AppLayout title="Onshape parts" workspace>
+<AppLayout title="Onshape parts" workspace phone="plain">
   {
     !authenticated ? (
       <EmbeddedConnect />

@@ -1,0 +1,44 @@
+---
+import { ChartColumn, Inbox, List, UserRound } from "lucide-react";
+import { PHONE_TABS } from "../../lib/phone";
+
+/**
+ * The bottom tabs below the desktop breakpoint. Server-rendered links, no
+ * JavaScript; the layout puts it last in
+ * `<body>`, sticky at the bottom, on every page except the part page.
+ */
+const icons = {
+  next: List,
+  backlog: Inbox,
+  shop: ChartColumn,
+  mine: UserRound,
+};
+const path = Astro.url.pathname;
+---
+
+<nav
+  aria-label="Sections"
+  class="phone-tabs bg-card sticky bottom-0 z-40 grid grid-cols-4 border-t lg:hidden"
+>
+  {
+    PHONE_TABS.map((tab) => {
+      const Icon = icons[tab.icon];
+      const current = path === tab.href || path.startsWith(`${tab.href}/`);
+      return (
+        <a
+          href={tab.href}
+          aria-current={current ? "page" : undefined}
+          class:list={[
+            "flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs no-underline",
+            current
+              ? "text-foreground font-semibold shadow-[inset_0_3px_0_var(--primary)]"
+              : "text-muted-foreground",
+          ]}
+        >
+          <Icon className="size-5" aria-hidden="true" />
+          {tab.label}
+        </a>
+      );
+    })
+  }
+</nav>

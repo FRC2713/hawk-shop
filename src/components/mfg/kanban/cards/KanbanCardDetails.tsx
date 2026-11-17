@@ -60,6 +60,7 @@ import {
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
 import { SubmitterNotes } from "./SubmitterNotes";
+import { cardOnshapeUrl } from "~/lib/onshapeLinks";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 import {
   MATERIAL_UNKNOWN,
@@ -124,20 +125,6 @@ function getDueDateUrgency(diffDays: number | null): {
   return { variant: "secondary" };
 }
 
-/**
- * Construct Onshape document URL from card's database fields
- */
-function buildOnshapeDocumentUrl(
-  documentId: string,
-  instanceType: string,
-  instanceId: string,
-  elementId: string
-): string {
-  // Onshape document URLs use 'w' for workspace, 'v' for version, 'm' for microversion
-  const wvm = instanceType === "w" ? "w" : instanceType === "v" ? "v" : "m";
-  return `https://cad.onshape.com/documents/${documentId}/${wvm}/${instanceId}/e/${elementId}`;
-}
-
 interface KanbanCardDetailsProps {
   card: KanbanCardRow & {
     processes?: ProcessRow[];
@@ -175,42 +162,7 @@ export function KanbanCardDetails({
     card.onshape_element_id,
   ]);
 
-  // Build Onshape document URL if properties are available
-  // Use version_id when available to ensure we link to the correct version
-  const onshapeUrl = useMemo(() => {
-    if (!hasOnshapeProperties) return null;
-
-    // Prefer version_id if available - always use it with type 'v' to link to the correct version
-    // When instance_type is 'v', instance_id is also the version ID
-    const versionIdToUse =
-      card.onshape_version_id ||
-      (card.onshape_instance_type === "v" ? card.onshape_instance_id : null);
-
-    // If we have a version ID, always use it with type 'v' to link to the correct version
-    if (versionIdToUse) {
-      return buildOnshapeDocumentUrl(
-        card.onshape_document_id!,
-        "v", // Always use version type when we have a version ID
-        versionIdToUse,
-        card.onshape_element_id!
-      );
-    }
-
-    // Fallback to original instance_id and instance_type
-    return buildOnshapeDocumentUrl(
-      card.onshape_document_id!,
-      card.onshape_instance_type!,
-      card.onshape_instance_id!,
-      card.onshape_element_id!
-    );
-  }, [
-    hasOnshapeProperties,
-    card.onshape_document_id,
-    card.onshape_instance_type,
-    card.onshape_instance_id,
-    card.onshape_version_id,
-    card.onshape_element_id,
-  ]);
+  const onshapeUrl = cardOnshapeUrl(card);
 
   // Material and version name were captured onto the card at release. A card
   // released before that is filled in once by the server, then never again.

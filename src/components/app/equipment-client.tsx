@@ -89,7 +89,7 @@ export function EquipmentClient() {
             </div>
             <Button
               asChild
-              className="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-20 min-h-12 shadow-lg lg:static lg:shadow-none"
+              className="fixed right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 min-h-12 shadow-lg lg:static lg:shadow-none"
             >
               <a href="/equipment/new">
                 <Plus aria-hidden="true" />
