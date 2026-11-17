@@ -53,6 +53,7 @@ import {
 } from "~/lib/api";
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
+import { SubmitterNotes } from "./SubmitterNotes";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 import {
   MATERIAL_UNKNOWN,
@@ -326,19 +327,12 @@ export function KanbanCardDetails({
           </div>
         )}
 
-        {/* Description */}
-        {card.content && (
-          <div className="space-y-2">
-            <h4 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
-              Description
-            </h4>
-            <div className="bg-muted/50 rounded-lg p-4">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {card.content}
-              </p>
-            </div>
-          </div>
-        )}
+        <SubmitterNotes
+          key={card.id}
+          cardId={card.id}
+          notes={card.content}
+          submitterName={creator?.name || "the submitter"}
+        />
 
         {/* Details Table */}
         {hasMeta && (

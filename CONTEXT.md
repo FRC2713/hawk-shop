@@ -11,6 +11,10 @@ _Avoid_: Assignee when referring to the submitter
 **Assignee**:
 The person assigned to manufacture a released part. The assignee may differ from the submitter.
 
+**Submitter notes**:
+The submitter's manufacturing notes on a card, such as wall thickness, tolerances or finish, shown to whoever makes the part. Any member can edit them, and editing them does not change the card's status.
+_Avoid_: Description, content
+
 **Status**:
 The board column containing a manufacturing card. Moving a card to a different column changes its status, including when the move goes backward through the workflow.
 
