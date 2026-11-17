@@ -53,14 +53,15 @@ export function NextUpTab({ viewerId }: { viewerId: string }) {
   const machine = equipment.data?.find((item) => item.id === machineId);
 
   // `undefined` until the browser's choice is read, so the server render and
-  // hydration don't flash the picker at an operator who already chose.
+  // hydration don't flash the picker at an operator who already chose. The
+  // picker also waits for cards: without them every machine reads "Idle".
   const pending =
     machineId === undefined ? (
       <p role="status" className="text-muted-foreground">
         Loading...
       </p>
     ) : (
-      loadState([equipment], "Loading...")
+      loadState(machine ? [equipment] : [equipment, cards], "Loading...")
     );
   if (pending || !equipment.data) return <TabShell>{pending}</TabShell>;
 
