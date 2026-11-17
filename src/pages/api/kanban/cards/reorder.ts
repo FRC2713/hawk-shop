@@ -16,7 +16,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json().catch(() => ({}));
     return Response.json(
-      await reorderMachineQueue(body?.machineId, actor, {
+      await reorderMachineQueue(body?.machineId, {
         cardIds: body?.cardIds,
       })
     );

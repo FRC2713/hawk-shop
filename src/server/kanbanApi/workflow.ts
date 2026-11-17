@@ -1,64 +1,29 @@
 import "virtual:hawk-shop/server-only";
 
 import { eq, inArray } from "drizzle-orm";
-import type { SessionActor } from "~/lib/sessionActor";
+import { actorName, type SessionActor } from "~/lib/sessionActor";
 import { db } from "~/server/db/client";
-import {
-  equipment,
-  equipmentProcesses,
-  kanbanCardProcesses,
-  kanbanCards,
-  reviewNotes,
-  users,
-} from "~/server/db/schema";
+import { kanbanCards, reviewNotes, users } from "~/server/db/schema";
 import type { KanbanCardWithProcesses } from "~/server/db/types";
-import {
-  getCards,
-  UnknownMachineError,
-  updateCard,
-} from "~/server/kanbanApi/cards";
+import { getCards, updateCard } from "~/server/kanbanApi/cards";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 import { getKanbanColumns } from "~/server/kanbanApi/config";
 import { publishKanbanEvent } from "~/server/events/bus";
+import { requireMachineCanTake } from "~/server/kanbanApi/machines";
+import { getMachineQueue } from "~/server/kanbanApi/queues";
 import {
-  getMachineQueue,
-  MachineNotFoundError,
-} from "~/server/kanbanApi/queues";
+  CardNotFoundError,
+  InvalidWorkflowInputError,
+  WorkflowConflictError,
+} from "~/server/kanbanApi/workflowErrors";
 
 /**
  * Shop workflow actions: one function per action, each taking the card id(s),
  * the actor and the action's own input. Every change goes through `updateCard`,
  * so status history, Slack status notifications and live updates behave
- * exactly as a column move does.
- *
- * Errors: `InvalidWorkflowInputError` (400), `CardNotFoundError` (404),
- * `UnknownMachineError` from the cards module (400) and a
- * `WorkflowConflictError` subclass (409) when the action doesn't apply to the
- * card as it is now. Routes answer them with `workflowErrorResponse`.
+ * exactly as a column move does. Errors are the `workflowErrors` classes;
+ * routes answer them with `workflowErrorResponse`.
  */
-
-/** The request itself is malformed. */
-export class InvalidWorkflowInputError extends Error {}
-
-export class CardNotFoundError extends Error {
-  constructor(readonly cardIds: string[]) {
-    super(cardIds.length === 1 ? "Card not found" : "Cards not found");
-  }
-}
-
-/**
- * The action doesn't apply to the card's current state. `code` is stable for
- * clients; `message` is shown to people.
- */
-export abstract class WorkflowConflictError extends Error {
-  abstract readonly code: string;
-  constructor(
-    message: string,
-    readonly cardIds: string[] = []
-  ) {
-    super(message);
-  }
-}
 
 function requireCards(cardIds: unknown): string[] {
   if (
@@ -88,67 +53,27 @@ async function readCards(ids: string[]): Promise<KanbanCardWithProcesses[]> {
   return ids.flatMap((id) => byId.get(id) ?? []);
 }
 
-export class MachineNeedsMaintenanceError extends WorkflowConflictError {
-  readonly code = "machine_needs_maintenance";
-  constructor(machine: string) {
-    super(`${machine} needs maintenance and can't take parts`);
-  }
+async function readCard(id: string): Promise<KanbanCardWithProcesses> {
+  const [card] = await readCards([id]);
+  return card;
 }
 
-export class MachineLacksProcessError extends WorkflowConflictError {
-  readonly code = "machine_lacks_process";
-  constructor(machine: string, cardIds: string[]) {
-    super(
-      `${machine} can't do the process ${cardIds.length === 1 ? "this part needs" : `${cardIds.length} of these parts need`}`,
-      cardIds
-    );
+async function statusTitle(columnId: string) {
+  const columns = await getKanbanColumns();
+  return columns.find((column) => column.id === columnId)?.title ?? columnId;
+}
+
+export class WrongStatusError extends WorkflowConflictError {
+  readonly code = "wrong_status";
+  constructor(cardIds: string[], message: string) {
+    super(message, cardIds);
   }
 }
 
 /**
- * A machine takes a part when it isn't flagged for maintenance and shares at
- * least one of the part's processes (a part with no processes fits anywhere),
- * the same rule that puts a waiting part in a machine's queue.
- */
-function requireMachineCanTake(machineId: string, cardIds: string[]) {
-  const machine = db
-    .select({ name: equipment.name, status: equipment.status })
-    .from(equipment)
-    .where(eq(equipment.id, machineId))
-    .get();
-  if (!machine) throw new UnknownMachineError();
-  if (machine.status === "maintenance")
-    throw new MachineNeedsMaintenanceError(machine.name);
-  const machineProcesses = new Set(
-    db
-      .select({ id: equipmentProcesses.process_id })
-      .from(equipmentProcesses)
-      .where(eq(equipmentProcesses.equipment_id, machineId))
-      .all()
-      .map((row) => row.id)
-  );
-  const cardProcesses = new Map<string, string[]>();
-  for (const row of db
-    .select()
-    .from(kanbanCardProcesses)
-    .where(inArray(kanbanCardProcesses.card_id, cardIds))
-    .all())
-    cardProcesses.set(row.card_id, [
-      ...(cardProcesses.get(row.card_id) ?? []),
-      row.process_id,
-    ]);
-  const refused = cardIds.filter((id) => {
-    const processes = cardProcesses.get(id) ?? [];
-    return (
-      processes.length > 0 && !processes.some((p) => machineProcesses.has(p))
-    );
-  });
-  if (refused.length) throw new MachineLacksProcessError(machine.name, refused);
-}
-
-/**
- * Assign cards to a machine, or with `machineId: null` return them to their
- * process queue.
+ * Assign Backlog cards to a machine, or with `machineId: null` return them to
+ * their process queue. All or nothing: every card is checked before any
+ * changes.
  */
 export async function assignMachine(
   cardIds: string[],
@@ -158,9 +83,26 @@ export async function assignMachine(
   const ids = requireCards(cardIds);
   if (machineId !== null && (typeof machineId !== "string" || !machineId))
     throw new InvalidWorkflowInputError("Choose a machine or none");
-  // Check every card before changing any, so a refused bulk assign changes
-  // nothing.
-  if (machineId !== null) requireMachineCanTake(machineId, ids);
+  const backlogTitle = await statusTitle(WORKFLOW_COLUMN_IDS.backlog);
+  const rows = db
+    .select({ id: kanbanCards.id, column_id: kanbanCards.column_id })
+    .from(kanbanCards)
+    .where(inArray(kanbanCards.id, ids))
+    .all();
+  const started = rows.filter(
+    (row) => row.column_id !== WORKFLOW_COLUMN_IDS.backlog
+  );
+  if (started.length === 1)
+    throw new WrongStatusError(
+      [started[0].id],
+      `This part is in ${await statusTitle(started[0].column_id)}, so it can't be assigned a machine`
+    );
+  if (started.length > 1)
+    throw new WrongStatusError(
+      started.map((row) => row.id),
+      `${started.length} of these parts aren't in ${backlogTitle}, so they can't be assigned a machine`
+    );
+  if (machineId !== null) requireMachineCanTake(db, machineId, ids);
   for (const id of ids) await updateCard(id, { machine_id: machineId }, actor);
   return readCards(ids);
 }
@@ -177,15 +119,15 @@ export class CardNotInQueueError extends WorkflowConflictError {
 
 /**
  * Put a machine's queue in a mentor's order: `cardIds` become its front, in
- * that order, and every other card in the queue returns to the default order.
- * An empty list resets the whole queue. Positions belong to the card, so a
- * waiting part keeps its place in other machines' queues too, and a machine's
- * own parts always stay ahead of waiting ones. Not a status change: no history
- * or Slack notification, only live updates for the cards that moved.
+ * that order. The machine's own parts left out return to the default order;
+ * an empty list resets them all. Positions belong to the card, so a waiting
+ * part keeps its place in other machines' queues too, and a waiting part left
+ * out keeps the place another machine's mentor gave it. Not a status change:
+ * no history or Slack notification, only live updates for the cards that
+ * moved.
  */
 export async function reorderMachineQueue(
   machineId: string,
-  _actor: SessionActor,
   { cardIds }: { cardIds: string[] }
 ): Promise<Awaited<ReturnType<typeof getMachineQueue>>> {
   if (typeof machineId !== "string" || !machineId)
@@ -193,19 +135,15 @@ export async function reorderMachineQueue(
   if (!Array.isArray(cardIds))
     throw new InvalidWorkflowInputError("List the parts in order");
   const ids = cardIds.length ? requireCards(cardIds) : [];
-  const queue = await getMachineQueue(machineId).catch((error) => {
-    throw error instanceof MachineNotFoundError
-      ? new UnknownMachineError()
-      : error;
-  });
+  const queue = await getMachineQueue(machineId);
   const queued = new Set(queue.cards.map((card) => card.id));
   const outside = ids.filter((id) => !queued.has(id));
   if (outside.length)
     throw new CardNotInQueueError(queue.machine.name, outside);
   const positions = new Map(ids.map((id, index) => [id, index]));
-  const moved = queue.cards.filter(
-    (card) => (positions.get(card.id) ?? null) !== card.queue_position
-  );
+  const moved = queue.cards
+    .filter((card) => positions.has(card.id) || card.machine_id === machineId)
+    .filter((card) => (positions.get(card.id) ?? null) !== card.queue_position);
   db.transaction((tx) => {
     for (const card of moved)
       tx.update(kanbanCards)
@@ -234,13 +172,6 @@ function requireMember(userId: unknown): asserts userId is string {
       .get()
   )
     throw new InvalidWorkflowInputError("Choose a member who has signed in");
-}
-
-export class WrongStatusError extends WorkflowConflictError {
-  readonly code = "wrong_status";
-  constructor(cardId: string, status: string, action: string) {
-    super(`This part is in ${status}, so it can't be ${action}`, [cardId]);
-  }
 }
 
 export class AlreadyClaimedError extends WorkflowConflictError {
@@ -288,21 +219,20 @@ async function requireCardIn(
     const status =
       columns.find((column) => column.id === card.column_id)?.title ??
       card.column_id;
-    throw new WrongStatusError(cardId, status, action);
+    throw new WrongStatusError(
+      [cardId],
+      `This part is in ${status}, so it can't be ${action}`
+    );
   }
-  return card;
-}
-
-async function readCard(id: string): Promise<KanbanCardWithProcesses> {
-  const [card] = await readCards([id]);
   return card;
 }
 
 /**
  * Claim a part: `userId` (default: the actor) becomes its assignee, and a
  * Backlog part moves to In Progress. `machineId` links a process-queue part to
- * the machine it is claimed at. Claiming a part you already hold is a no-op;
- * claiming someone else's is an `AlreadyClaimedError`.
+ * the machine it is claimed at, which must be able to take it. Claiming a part
+ * you already hold is a no-op; claiming someone else's is an
+ * `AlreadyClaimedError`.
  */
 export async function claim(
   cardId: string,
@@ -325,7 +255,7 @@ export async function claim(
   // A process-queue part takes the machine it is claimed at; a part already
   // on a machine can only be claimed there.
   const linkMachine = machineId !== undefined && card.machine_id === null;
-  if (linkMachine) requireMachineCanTake(machineId, [card.id]);
+  if (linkMachine) requireMachineCanTake(db, machineId, [card.id]);
   else if (machineId !== undefined && machineId !== card.machine_id)
     throw new OtherMachineError(card.id);
   await updateCard(
@@ -362,8 +292,8 @@ export async function unclaim(
   return readCard(card.id);
 }
 
-/** Done: an In Progress part goes to Review. */
-export async function done(
+/** Mark done: an In Progress part goes to Review. */
+export async function markDone(
   cardId: string,
   actor: SessionActor
 ): Promise<KanbanCardWithProcesses> {
@@ -393,7 +323,8 @@ export async function approve(
 /**
  * Send back: a Review part returns to In Progress when it still has an
  * assignee, otherwise to Backlog. The required `reason` is kept as a review
- * note on the card for the assignee and submitter.
+ * note on the card for the assignee and submitter, written in the same
+ * transaction as the move.
  */
 export async function sendBack(
   cardId: string,
@@ -408,39 +339,24 @@ export async function sendBack(
     [WORKFLOW_COLUMN_IDS.review],
     "sent back"
   );
-  const authorName =
-    actor.name ||
-    db
-      .select({ name: users.name })
-      .from(users)
-      .where(eq(users.onshape_user_id, actor.onshape_user_id))
-      .get()?.name ||
-    "Unknown member";
-  // Written before the move so the live update already carries the note, and
-  // removed again if the move fails.
-  const note = db
-    .insert(reviewNotes)
-    .values({
-      card_id: card.id,
-      author_id: actor.onshape_user_id,
-      author_name: authorName,
-      text,
-    })
-    .returning({ id: reviewNotes.id })
-    .get();
-  try {
-    await updateCard(
-      card.id,
-      {
-        column_id: card.assignee
-          ? WORKFLOW_COLUMN_IDS.inProgress
-          : WORKFLOW_COLUMN_IDS.backlog,
-      },
-      actor
-    );
-  } catch (error) {
-    db.delete(reviewNotes).where(eq(reviewNotes.id, note.id)).run();
-    throw error;
-  }
+  await updateCard(
+    card.id,
+    {
+      column_id: card.assignee
+        ? WORKFLOW_COLUMN_IDS.inProgress
+        : WORKFLOW_COLUMN_IDS.backlog,
+    },
+    actor,
+    (tx) =>
+      tx
+        .insert(reviewNotes)
+        .values({
+          card_id: card.id,
+          author_id: actor.onshape_user_id,
+          author_name: actorName(actor, tx),
+          text,
+        })
+        .run()
+  );
   return readCard(card.id);
 }

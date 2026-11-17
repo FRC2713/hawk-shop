@@ -83,6 +83,9 @@ const globalForDb = globalThis as unknown as {
 
 export const db = globalForDb.__hawkShopDb ?? openDatabase();
 
+/** The handle `db.transaction` passes its callback. */
+export type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 if (process.env.NODE_ENV !== "production") {
   globalForDb.__hawkShopDb = db;
 }

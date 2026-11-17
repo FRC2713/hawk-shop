@@ -6,12 +6,10 @@ import {
   deleteCard,
   getCards,
   getCardStatusHistory,
-  InvalidNotesError,
-  UnknownMachineError,
-  UnknownProjectError,
   updateCard,
   setCardProcesses,
 } from "~/server/kanbanApi/cards";
+import { knownErrorResponse } from "~/server/kanbanApi/workflowResponses";
 import { deleteCardImage } from "~/server/kanbanApi/images";
 
 export const GET: APIRoute = async ({ params }) => {
@@ -68,12 +66,8 @@ export const PATCH: APIRoute = async ({ request, params }) => {
 
     return Response.json({ card: cardWithProcesses || updatedCard });
   } catch (error) {
-    if (
-      error instanceof UnknownProjectError ||
-      error instanceof UnknownMachineError ||
-      error instanceof InvalidNotesError
-    )
-      return Response.json({ error: error.message }, { status: 400 });
+    const known = knownErrorResponse(error);
+    if (known) return known;
     const errorId = logServerError("KANBAN CARD", error);
     const errorMessage =
       error instanceof Error ? error.message : "Operation failed";

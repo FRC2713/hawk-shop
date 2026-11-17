@@ -1,9 +1,10 @@
 import "virtual:hawk-shop/server-only";
 import { and, asc, eq, lte, ne, notExists, or } from "drizzle-orm";
-import { db } from "~/server/db/client";
+import { db, type Transaction } from "~/server/db/client";
+import { legacyMachineText } from "~/lib/cardMachine";
+import { findMachine } from "~/server/kanbanApi/machines";
 import {
   DEFAULT_KANBAN_COLUMNS,
-  equipment,
   kanbanCards,
   kanbanConfig,
   slackPending,
@@ -16,7 +17,6 @@ import type { KanbanCardRow } from "~/server/db/types";
 import type { SessionActor } from "~/lib/sessionActor";
 import { getSlackSettings } from "./settings";
 
-type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type PendingSlackNotification = typeof slackPending.$inferSelect;
 export const DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -29,14 +29,8 @@ export function slackMachineLabel(
   tx: Transaction | typeof db,
   card: Pick<KanbanCardRow, "machine" | "machine_id">
 ) {
-  if (!card.machine_id) return card.machine;
-  return (
-    tx
-      .select({ name: equipment.name })
-      .from(equipment)
-      .where(eq(equipment.id, card.machine_id))
-      .get()?.name ?? null
-  );
+  if (!card.machine_id) return legacyMachineText(card.machine);
+  return findMachine(tx, card.machine_id)?.name ?? null;
 }
 function columnTitle(tx: Transaction, id: string) {
   const columns =

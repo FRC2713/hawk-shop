@@ -10,12 +10,18 @@ export function cardMachineName(card: CardWithMachine) {
 }
 
 /**
+ * Legacy free-text machine worth showing, or null. "TBD" was every release's
+ * placeholder, so it says nothing.
+ */
+export function legacyMachineText(machine: string | null | undefined) {
+  const text = machine?.trim();
+  return text && text.toUpperCase() !== "TBD" ? text : null;
+}
+
+/**
  * Machine text from before cards linked to equipment that matched no
- * equipment name, shown as unlinked until a mentor picks a machine. "TBD" was
- * every release's placeholder, so it says nothing.
+ * equipment name, shown as unlinked until a mentor picks a machine.
  */
 export function unlinkedMachineText(card: CardWithMachine) {
-  if (card.linked_machine) return null;
-  const text = card.machine?.trim();
-  return text && text.toUpperCase() !== "TBD" ? text : null;
+  return card.linked_machine ? null : legacyMachineText(card.machine);
 }

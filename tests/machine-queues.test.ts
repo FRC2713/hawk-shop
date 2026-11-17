@@ -354,7 +354,7 @@ test("a mentor moves urgent parts to the front of a machine's queue; the rest fo
   assert.equal((await read("ro-d")).queue_position, null);
 });
 
-test("positioned and unpositioned parts mix: a machine's own parts stay ahead of waiting ones, each group positioned first", async () => {
+test("positioned parts lead the whole machine queue; then its own parts, then waiting ones, each in default order", async () => {
   const mill = await addMachine("Bridgeport", [MILLING]);
   await release("mx-mine-old", "2026-08-01T00:00:00.000Z", {
     processIds: [MILLING],
@@ -375,7 +375,7 @@ test("positioned and unpositioned parts mix: a machine's own parts stay ahead of
   assert.equal(reordered.status, 200);
   assert.deepEqual(
     (await readMachineQueue(mill.id)).filter((id) => id.startsWith("mx-")),
-    ["mx-mine-new", "mx-mine-old", "mx-wait-new", "mx-wait-old"]
+    ["mx-wait-new", "mx-mine-new", "mx-mine-old", "mx-wait-old"]
   );
   // The waiting part's place is its own, so it leads its process queue too.
   assert.deepEqual(
@@ -450,4 +450,76 @@ test("assigning or clearing a part's machine drops its queue position; reassigni
     (await readMachineQueue(printer.id)).filter((id) => id.startsWith("rs-")),
     ["rs-a", "rs-b"]
   );
+});
+
+async function patchCard(id: string, body: unknown) {
+  const response = await endpoint(cardDetail, "PATCH", { id })(
+    jsonRequest(`/api/kanban/cards/${id}`, "PATCH", cookie, body)
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+test("picking a machine on the card refuses one that needs maintenance or lacks the part's process", async () => {
+  const printer = await addMachine("Creality K1", [PRINTING]);
+  const mill = await addMachine("Sherline", [MILLING]);
+  await release("pk-a", "2026-11-01T00:00:00.000Z", { processIds: [PRINTING] });
+
+  const lacking = await patchCard("pk-a", { machine_id: mill.id });
+  assert.equal(lacking.status, 409);
+  assert.equal(lacking.body.code, "machine_lacks_process");
+  assert.deepEqual(lacking.body.cardIds, ["pk-a"]);
+
+  await endpoint(maintenance, "POST", { id: printer.id })(
+    jsonRequest(`/api/equipment/${printer.id}/maintenance`, "POST", cookie, {
+      note: "Bed warped",
+    })
+  );
+  const flagged = await patchCard("pk-a", { machine_id: printer.id });
+  assert.equal(flagged.status, 409);
+  assert.equal(flagged.body.code, "machine_needs_maintenance");
+  assert.equal((await read("pk-a")).machine_id, null);
+
+  assert.equal(
+    (await patchCard("pk-a", { machine_id: "eq-missing" })).status,
+    400
+  );
+});
+
+test("only Backlog parts can be assigned a machine", async () => {
+  const printer = await addMachine("Anycubic", [PRINTING]);
+  await release("ws-waiting", "2026-11-02T00:00:00.000Z", {
+    processIds: [PRINTING],
+  });
+  await release("ws-started", "2026-11-02T00:00:00.000Z", {
+    processIds: [PRINTING],
+  });
+  await move("ws-started", "in-progress");
+
+  const refused = await assign(["ws-waiting", "ws-started"], printer.id);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, "wrong_status");
+  assert.deepEqual(refused.body.cardIds, ["ws-started"]);
+  assert.match(refused.body.error, /In Progress/);
+  assert.equal((await read("ws-waiting")).machine_id, null);
+  assert.equal((await assign(["ws-started"], null)).status, 409);
+});
+
+test("reordering one machine's queue keeps the place another machine gave a shared waiting part", async () => {
+  const first = await addMachine("Formlabs", [PRINTING]);
+  const second = await addMachine("Elegoo", [PRINTING]);
+  await release("sh-wait", "2026-11-03T00:00:00.000Z", {
+    processIds: [PRINTING],
+  });
+  await release("sh-own", "2026-11-04T00:00:00.000Z", {
+    processIds: [PRINTING],
+    machineId: second.id,
+  });
+  assert.equal((await reorder(first.id, ["sh-wait"])).status, 200);
+  assert.equal((await reorder(second.id, ["sh-own"])).status, 200);
+  assert.equal((await read("sh-wait")).queue_position, 0);
+  assert.equal((await read("sh-own")).queue_position, 0);
+
+  assert.equal((await reorder(second.id, [])).status, 200);
+  assert.equal((await read("sh-wait")).queue_position, 0);
+  assert.equal((await read("sh-own")).queue_position, null);
 });

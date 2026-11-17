@@ -2,7 +2,7 @@ import "virtual:hawk-shop/server-only";
 import { logServerError } from "~/server/errors";
 
 import { count, desc, eq, inArray } from "drizzle-orm";
-import { db } from "~/server/db/client";
+import { db, type Transaction } from "~/server/db/client";
 import {
   equipment as equipmentTable,
   equipmentProcesses,
@@ -16,8 +16,6 @@ import type {
   ProcessRow,
 } from "~/server/db/types";
 import { deleteEquipmentImage } from "./images";
-
-type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Result type for getEquipment to distinguish errors from empty results

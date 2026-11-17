@@ -97,6 +97,12 @@ test("upgrading links cards whose machine text names equipment, ignoring case", 
     { id: "eq-laser", name: "Glowforge Laser" }
   );
   assert.equal(cards.get("legacy-router")!.machine_id, "eq-router");
+  for (const id of ["legacy-laser", "legacy-router"])
+    assert.equal(
+      cards.get(id)!.machine,
+      null,
+      `${id}'s linked text is settled`
+    );
   for (const id of ["legacy-lathe", "legacy-tbd", "legacy-none"]) {
     assert.equal(cards.get(id)!.machine_id, null, id);
     assert.equal(cards.get(id)!.linked_machine, null, id);
@@ -192,4 +198,5 @@ test("renaming equipment shows on its cards; deleting it unlinks them", async ()
   const card = await read("legacy-router");
   assert.equal(card.machine_id, null);
   assert.equal(card.linked_machine, null);
+  assert.equal(card.machine, null, "no stale text comes back as unlinked");
 });

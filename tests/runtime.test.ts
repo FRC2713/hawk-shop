@@ -983,7 +983,10 @@ test(
       })
     ).card;
     const router = (
-      await json("/api/equipment", "POST", { name: "Search router" })
+      await json("/api/equipment", "POST", {
+        name: "Search router",
+        processIds: ["process-cnc-milling"],
+      })
     ).equipment;
     await json(`/api/kanban/cards/${first.id}`, "PATCH", {
       machine_id: router.id,
@@ -1209,7 +1212,10 @@ test(
       })
     ).card;
     const router = (
-      await json("/api/equipment", "POST", { name: "Finished router" })
+      await json("/api/equipment", "POST", {
+        name: "Finished router",
+        processIds: ["process-cnc-milling"],
+      })
     ).equipment;
     for (const card of [first, second]) {
       await json(`/api/kanban/cards/${card.id}`, "PATCH", {

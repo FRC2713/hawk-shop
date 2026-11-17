@@ -7,9 +7,10 @@ import {
   captureSlackRemoval,
   captureSlackTransition,
 } from "~/lib/slack/queue";
-import type { SessionActor } from "~/lib/sessionActor";
+import { actorName, type SessionActor } from "~/lib/sessionActor";
 import { asc, eq, inArray } from "drizzle-orm";
-import { db } from "~/server/db/client";
+import { groupBy } from "~/lib/groupBy";
+import { db, type Transaction } from "~/server/db/client";
 import {
   DEFAULT_KANBAN_COLUMNS,
   equipment as equipmentTable,
@@ -20,42 +21,26 @@ import {
   projects as projectsTable,
   reviewNotes,
   statusHistory,
-  users,
   processes as processesTable,
 } from "~/server/db/schema";
 import { getKanbanColumns } from "~/server/kanbanApi/config";
+import {
+  requireMachine,
+  requireMachineCanTake,
+} from "~/server/kanbanApi/machines";
+import { MachineNotFoundError } from "~/server/kanbanApi/workflowErrors";
 import { publishKanbanEvent } from "~/server/events/bus";
 import type {
   KanbanCardRow,
   KanbanCardWithProcesses,
   ProcessRow,
-  ReviewNoteRow,
 } from "~/server/db/types";
-
-type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Thrown when a card names a project that doesn't exist. */
 export class UnknownProjectError extends Error {
   constructor() {
     super("Unknown project");
   }
-}
-
-/** Thrown when a card names a machine that isn't an equipment record. */
-export class UnknownMachineError extends Error {
-  constructor() {
-    super("Unknown machine");
-  }
-}
-
-function requireMachine(tx: Transaction, id: string | null) {
-  if (id === null) return;
-  const machine = tx
-    .select({ id: equipmentTable.id })
-    .from(equipmentTable)
-    .where(eq(equipmentTable.id, id))
-    .get();
-  if (!machine) throw new UnknownMachineError();
 }
 
 export class InvalidNotesError extends Error {
@@ -88,11 +73,6 @@ function captureStatusHistory(
     .sort((a, b) => a.position - b.position);
   const status = (id: string) =>
     columns.find((column) => column.id === id)?.title ?? id;
-  const actorName = tx
-    .select()
-    .from(users)
-    .where(eq(users.onshape_user_id, actor.onshape_user_id))
-    .get()?.name;
   tx.insert(statusHistory)
     .values({
       card_id: card.id,
@@ -108,7 +88,7 @@ function captureStatusHistory(
         (column) => column.id === card.column_id
       ),
       actor_id: actor.onshape_user_id,
-      actor_name: actor.name || actorName || "Unknown member",
+      actor_name: actorName(actor, tx),
       moved_at: previous ? card.date_updated : card.date_created,
     })
     .run();
@@ -140,8 +120,7 @@ export interface GetCardsResult {
 async function processesByCardId(
   cardIds: string[]
 ): Promise<Map<string, ProcessRow[]>> {
-  const byCard = new Map<string, ProcessRow[]>();
-  if (cardIds.length === 0) return byCard;
+  if (cardIds.length === 0) return new Map();
 
   const rows = await db
     .select({
@@ -155,16 +134,12 @@ async function processesByCardId(
     )
     .where(inArray(kanbanCardProcesses.card_id, cardIds));
 
-  for (const row of rows) {
-    const existing = byCard.get(row.card_id);
-    if (existing) {
-      existing.push(row.process);
-    } else {
-      byCard.set(row.card_id, [row.process]);
-    }
-  }
-
-  return byCard;
+  return new Map(
+    [...groupBy(rows, (row) => row.card_id)].map(([cardId, group]) => [
+      cardId,
+      group.map((row) => row.process),
+    ])
+  );
 }
 
 /**
@@ -203,16 +178,14 @@ export async function getCards(): Promise<GetCardsResult> {
         .map((machine) => [machine.id, machine])
     );
 
-    const notesByCard = new Map<string, ReviewNoteRow[]>();
-    for (const note of db
-      .select()
-      .from(reviewNotes)
-      .orderBy(asc(reviewNotes.created_at), asc(reviewNotes.id))
-      .all())
-      notesByCard.set(note.card_id, [
-        ...(notesByCard.get(note.card_id) ?? []),
-        note,
-      ]);
+    const notesByCard = groupBy(
+      db
+        .select()
+        .from(reviewNotes)
+        .orderBy(asc(reviewNotes.created_at), asc(reviewNotes.id))
+        .all(),
+      (note) => note.card_id
+    );
 
     return {
       cards: cards.map((card) => ({
@@ -305,7 +278,7 @@ export async function createCard(
         tx,
         cardData.projectId || MISCELLANEOUS_PROJECT_ID
       );
-      requireMachine(tx, cardData.machineId ?? null);
+      if (cardData.machineId != null) requireMachine(tx, cardData.machineId);
       const inserted = tx
         .insert(kanbanCards)
         .values({
@@ -352,7 +325,7 @@ export async function createCard(
   } catch (error) {
     if (
       error instanceof UnknownProjectError ||
-      error instanceof UnknownMachineError
+      error instanceof MachineNotFoundError
     )
       throw error;
     console.error("[KANBAN CARDS] Error creating card:", error);
@@ -371,12 +344,15 @@ export async function createCard(
 }
 
 /**
- * Update an existing Kanban card
+ * Update an existing Kanban card. Picking a different machine must pass
+ * `requireMachineCanTake`. `alsoWrite` runs inside the same transaction after
+ * the update, for a record that must commit or fail with it.
  */
 export async function updateCard(
   cardId: string,
   updates: Partial<Omit<KanbanCardRow, "id" | "date_created" | "created_by">>,
-  actor: SessionActor
+  actor: SessionActor,
+  alsoWrite?: (tx: Transaction, card: KanbanCardRow) => void
 ): Promise<KanbanCardRow> {
   // If column_id is being updated, also update date_updated to track when the
   // card entered the column — but only when the column actually changes.
@@ -409,11 +385,19 @@ export async function updateCard(
       .where(eq(kanbanCards.id, cardId))
       .get();
     if (!previous) throw new Error("Card not found");
-    if (Object.keys(finalUpdates).length === 0) return previous;
+    if (Object.keys(finalUpdates).length === 0) {
+      alsoWrite?.(tx, previous);
+      return previous;
+    }
     if (finalUpdates.project_id !== undefined)
       requireProject(tx, finalUpdates.project_id);
     if (finalUpdates.machine_id !== undefined) {
-      requireMachine(tx, finalUpdates.machine_id);
+      // Keeping the same machine is no change, even one now in maintenance.
+      if (
+        finalUpdates.machine_id !== null &&
+        finalUpdates.machine_id !== previous.machine_id
+      )
+        requireMachineCanTake(tx, finalUpdates.machine_id, [cardId]);
       // Picking or clearing a machine settles any legacy text.
       finalUpdates.machine = null;
       // A queue position was set in the old machine's queue; it doesn't
@@ -439,6 +423,7 @@ export async function updateCard(
     // edited to show the new project instead.
     if (updated.project_id !== previous.project_id)
       captureSlackProjectChange(tx, updated, actor);
+    alsoWrite?.(tx, updated);
     return updated;
   });
 

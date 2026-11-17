@@ -1,10 +1,8 @@
 import { logServerError } from "~/server/errors";
 import type { APIRoute } from "astro";
 import { requireAuth } from "~/lib/requireAuth";
-import {
-  getMachineQueue,
-  MachineNotFoundError,
-} from "~/server/kanbanApi/queues";
+import { getMachineQueue } from "~/server/kanbanApi/queues";
+import { MachineNotFoundError } from "~/server/kanbanApi/workflowErrors";
 
 /**
  * A machine's queue: Backlog parts assigned to it, then Backlog parts with no
