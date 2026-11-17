@@ -36,10 +36,7 @@ export function phoneBoardRedirect(boardUrl: URL): string {
   return cardId ? partHref(cardId) : PHONE_HOME;
 }
 
-/**
- * Where a machine row opens: the equipment list with that machine selected,
- * until machines get their own page (#120).
- */
+/** Where a machine row opens: its machine page. */
 export function machineHref(machineId: string): string {
-  return `/equipment?machine=${encodeURIComponent(machineId)}`;
+  return `/equipment/${encodeURIComponent(machineId)}`;
 }

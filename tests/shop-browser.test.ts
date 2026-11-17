@@ -178,7 +178,7 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
       ])
     );
     assert.deepEqual(entries, [
-      ["Printer 1 is idle with 1 part waiting", "/equipment?machine=printer-1"],
+      ["Printer 1 is idle with 1 part waiting", "/equipment/printer-1"],
       ["Gearbox plate waiting for review 2 d", "/parts/stale-review"],
       ["2 backlog parts have no machine", "/backlog"],
     ]);
@@ -195,22 +195,22 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
     assert.deepEqual(await machine("Printer 1"), {
       status: "Idle",
       queued: "1",
-      href: "/equipment?machine=printer-1",
+      href: "/equipment/printer-1",
     });
     assert.deepEqual(await machine("Printer 2"), {
       status: "Sam Park · Button Head · 40 min",
       queued: "2",
-      href: "/equipment?machine=printer-2",
+      href: "/equipment/printer-2",
     });
     assert.deepEqual(await machine("Printer 3"), {
       status: "Needs maintenance: nozzle clog",
       queued: "1",
-      href: "/equipment?machine=printer-3",
+      href: "/equipment/printer-3",
     });
     assert.deepEqual(await machine("Chop Saw"), {
       status: "Idle",
       queued: "0",
-      href: "/equipment?machine=saw",
+      href: "/equipment/saw",
     });
 
     assert.equal(

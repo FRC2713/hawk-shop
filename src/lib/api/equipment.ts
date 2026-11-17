@@ -1,3 +1,4 @@
+import type { EquipmentListItem } from "~/lib/equipment";
 import { queryOptions } from "@tanstack/react-query";
 import type { EquipmentRow, ProcessRow } from "~/server/db/types";
 import { apiFetch } from "./client";
@@ -39,7 +40,7 @@ export function equipmentQuery() {
     queryKey: queryKeys.equipment.all(),
     queryFn: async () => {
       const { equipment } = await apiFetch<{
-        equipment: EquipmentWithProcesses[];
+        equipment: EquipmentListItem[];
       }>("/api/equipment", { fallbackError: "Failed to fetch equipment" });
       return equipment;
     },
@@ -82,22 +83,40 @@ export async function deleteEquipment(id: string): Promise<void> {
   });
 }
 
-/** Uploads run concurrently; one rejection fails the whole batch. */
+/** Sequential uploads preserve selection order and avoid lost appends. */
 export async function uploadEquipmentImages(
   id: string,
   files: File[]
 ): Promise<void> {
-  await Promise.all(
-    files.map((file) => {
-      const body = new FormData();
-      body.append("file", file);
-      return apiFetch(`/api/equipment/${id}/image`, {
-        method: "POST",
-        body,
-        fallbackError: "Failed to upload image",
-      });
-    })
+  for (const file of files) await uploadEquipmentPhoto(id, file);
+}
+
+export async function uploadEquipmentPhoto(
+  id: string,
+  file: File
+): Promise<string> {
+  const body = new FormData();
+  body.append("file", file);
+  const { imageUrl } = await apiFetch<{ imageUrl: string }>(
+    `/api/equipment/${id}/image`,
+    {
+      method: "POST",
+      body,
+      fallbackError: "Failed to upload image",
+    }
   );
+  return imageUrl;
+}
+
+export async function reorderEquipmentImages(
+  id: string,
+  imageUrls: string[]
+): Promise<void> {
+  await apiFetch(`/api/equipment/${id}/image`, {
+    method: "PUT",
+    json: { imageUrls },
+    fallbackError: "Failed to reorder photos",
+  });
 }
 
 export async function deleteEquipmentImage(
@@ -131,4 +150,33 @@ export async function clearEquipmentMaintenance(id: string): Promise<void> {
     method: "DELETE",
     fallbackError: "Failed to clear the maintenance flag",
   });
+}
+
+/** #118's derived Backlog queue, including compatible unassigned parts. */
+export function machineQueueQuery(id: string) {
+  return queryOptions({
+    queryKey: queryKeys.kanban.machineQueue(id),
+    queryFn: async () => {
+      const { cards } = await apiFetch<{
+        cards: import("./kanban").KanbanCardWithProcesses[];
+      }>(`/api/equipment/${encodeURIComponent(id)}/queue`, {
+        fallbackError: "Failed to load machine queue",
+      });
+      return cards;
+    },
+  });
+}
+
+export async function reorderMachineQueue(
+  machineId: string,
+  cardIds: string[]
+) {
+  const { cards } = await apiFetch<{
+    cards: import("./kanban").KanbanCardWithProcesses[];
+  }>("/api/kanban/cards/reorder", {
+    method: "POST",
+    json: { machineId, cardIds },
+    fallbackError: "Failed to reorder queue",
+  });
+  return cards;
 }

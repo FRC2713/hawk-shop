@@ -1,0 +1,19 @@
+---
+import AppLayout from "~/layouts/AppLayout.astro";
+import EquipmentEditor from "~/components/islands/EquipmentEditor";
+import { getEquipment } from "~/server/equipmentApi/equipment";
+const result = await getEquipment();
+if (result.error) Astro.response.status = 500;
+---
+
+<AppLayout title="Add equipment" workspace>
+  {
+    result.error ? (
+      <p role="alert" class="p-6">
+        Unable to load equipment. Reload to try again.
+      </p>
+    ) : (
+      <EquipmentEditor allEquipment={result.equipment} client:load />
+    )
+  }
+</AppLayout>

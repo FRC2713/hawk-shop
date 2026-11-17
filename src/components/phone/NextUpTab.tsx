@@ -241,7 +241,7 @@ function MachineWork({
         Number(b.machine_id === machine.id) -
         Number(a.machine_id === machine.id)
     );
-  const waiting = queue.data?.cards ?? [];
+  const waiting = queue.data ?? [];
   const summary = [
     machine.processes?.map((process) => process.name).join(", "),
     queue.data && `${waiting.length} waiting`,

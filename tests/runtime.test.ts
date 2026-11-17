@@ -1563,3 +1563,138 @@ test("a stored thumbnail redirects through the middleware to its file", async ()
   assert.equal(file.status, 200);
   assert.equal(await file.text(), "png");
 });
+
+test("equipment add and edit routes hydrate at phone and desktop widths and missing machines return 404", async () => {
+  const machine = (
+    await json("/api/equipment", "POST", {
+      name: "Route printer",
+      location: "Print farm",
+    })
+  ).equipment;
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({ extraHTTPHeaders: identity });
+    const page = await context.newPage();
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({
+        colorScheme: width === 390 ? "dark" : "light",
+      });
+      await page.goto(origin + "/equipment");
+      await page
+        .getByRole("link", { name: "Add equipment", exact: true })
+        .first()
+        .click();
+      await expect(page).toHaveURL(origin + "/equipment/new");
+      await expect(
+        page.getByRole("button", { name: "Take photo", exact: true })
+      ).toBeVisible();
+      await page.goto(origin + `/equipment/${machine.id}/edit`);
+      await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
+        "Route printer"
+      );
+      await expect(
+        page.getByRole("button", { name: "Photo library", exact: true })
+      ).toBeVisible();
+      await page.screenshot({
+        path: `/tmp/hawk-136-${width}.png`,
+        fullPage: true,
+      });
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(origin + "/equipment");
+      await page
+        .getByRole("searchbox", { name: "Search equipment" })
+        .fill("Route printer");
+      await page.getByRole("link", { name: /Route printer/ }).click();
+      await expect(page).toHaveURL(origin + `/equipment/${machine.id}`);
+      await expect(
+        page.getByRole("link", { name: "Edit equipment" })
+      ).toHaveAttribute("href", `/equipment/${machine.id}/edit`);
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth
+        )
+      );
+    }
+    const canonical = await call(`/equipment/${machine.id}`);
+    assert.equal(canonical.status, 200);
+    assert.equal(canonical.headers.get("location"), null);
+    assert.equal((await call("/equipment/missing-machine/edit")).status, 404);
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+test("canonical machine route hydrates and saves queue order against the production API", async () => {
+  const { equipment: machine } = await json("/api/equipment", "POST", {
+    name: "Machine page fixture",
+    location: "Machine room",
+  });
+  const ids: string[] = [];
+  for (const title of ["Machine queue first", "Machine queue urgent"]) {
+    const { card } = await json("/api/kanban/cards", "POST", {
+      title,
+      machineId: machine.id,
+    });
+    ids.push(card.id);
+  }
+  const machinePath = `/equipment/${encodeURIComponent(machine.id)}`;
+  assert.equal((await call(machinePath)).status, 200);
+  assert.equal(
+    (await call("/equipment/unknown-machine-page-fixture")).status,
+    404
+  );
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ extraHTTPHeaders: identity });
+    for (const [width, colorScheme] of [
+      [390, "dark"],
+      [1280, "light"],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      await page.goto(origin + machinePath);
+      await expect(
+        page.getByRole("heading", { name: machine.name, exact: true })
+      ).toBeVisible();
+      await expect(
+        page.getByRole("region", { name: "Now", exact: true })
+      ).toContainText("No part in progress");
+      await expect(
+        page.getByRole("link", { name: "Add SOP link" })
+      ).toHaveAttribute("href", machinePath + "/edit");
+      assert.equal(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth
+        ),
+        true
+      );
+    }
+    await page
+      .getByRole("button", { name: "Move Machine queue urgent up" })
+      .click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Queue order saved" })
+    ).toHaveText("Queue order saved");
+    const saved = await (
+      await call(`/api/equipment/${machine.id}/queue`)
+    ).json();
+    assert.deepEqual(
+      saved.cards.map((card: { id: string }) => card.id),
+      [ids[1], ids[0]]
+    );
+    await page.reload();
+    await expect(
+      page
+        .getByRole("list", { name: "Machine queue" })
+        .getByRole("listitem")
+        .first()
+    ).toContainText("Machine queue urgent");
+  } finally {
+    await browser.close();
+    for (const id of ids)
+      await call(`/api/kanban/cards/${id}`, { method: "DELETE" });
+    await call(`/api/equipment/${machine.id}`, { method: "DELETE" });
+  }
+});

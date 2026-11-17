@@ -1,14 +1,12 @@
-import { queryOptions } from "@tanstack/react-query";
-import type { EquipmentRow, ProcessRow } from "~/server/db/types";
 import { apiFetch } from "./client";
 import type { KanbanCardWithProcesses } from "./kanban";
-import { queryKeys } from "./keys";
 
 /**
- * The #118 workflow actions (machine assignment is `assignCardsToMachine` in
- * `kanban.ts`). Each answers the changed card; a conflict (the
- * part moved, someone else claimed it, the machine can't take it) is an
- * `ApiError` with status 409 and the server's message.
+ * The #118 workflow actions. Machine assignment is `assignCardsToMachine` in
+ * `kanban.ts`; machine queues are `machineQueueQuery` in `equipment.ts`.
+ * Each action answers the changed card; a conflict (the part moved, someone
+ * else claimed it, the machine can't take it) is an `ApiError` with status
+ * 409 and the server's message.
  */
 
 function cardAction(id: string, action: string, fallbackError: string) {
@@ -43,28 +41,4 @@ export function approveCard(id: string) {
 /** Review → In Progress or Backlog, keeping `reason` as a review note. */
 export function sendCardBack(id: string, reason: string) {
   return cardAction(id, "send-back", "Failed to send part back")({ reason });
-}
-
-/** Backlog parts assigned to a machine, then process-queue parts it can make. */
-export function machineQueueQuery(machineId: string) {
-  return queryOptions({
-    queryKey: queryKeys.kanban.machineQueue(machineId),
-    queryFn: () =>
-      apiFetch<{ machine: EquipmentRow; cards: KanbanCardWithProcesses[] }>(
-        `/api/equipment/${encodeURIComponent(machineId)}/queue`,
-        { fallbackError: "Failed to load queue" }
-      ),
-  });
-}
-
-/** Backlog parts with this process and no machine. */
-export function processQueueQuery(processId: string) {
-  return queryOptions({
-    queryKey: queryKeys.kanban.processQueue(processId),
-    queryFn: () =>
-      apiFetch<{ process: ProcessRow; cards: KanbanCardWithProcesses[] }>(
-        `/api/processes/${encodeURIComponent(processId)}/queue`,
-        { fallbackError: "Failed to load queue" }
-      ),
-  });
 }

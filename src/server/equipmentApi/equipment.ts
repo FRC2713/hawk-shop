@@ -1,4 +1,8 @@
 import "virtual:hawk-shop/server-only";
+import { machineQueue } from "~/lib/machineQueue";
+import type { EquipmentListItem } from "~/lib/equipment";
+import { getCards } from "~/server/kanbanApi/cards";
+import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 import { logServerError } from "~/server/errors";
 
 import { count, desc, eq, inArray } from "drizzle-orm";
@@ -15,13 +19,14 @@ import type {
   EquipmentWithProcesses,
   ProcessRow,
 } from "~/server/db/types";
+import { getMachineWeeklyStats } from "./stats";
 import { deleteEquipmentImage } from "./images";
 
 /**
  * Result type for getEquipment to distinguish errors from empty results
  */
 export interface GetEquipmentResult {
-  equipment: EquipmentWithProcesses[];
+  equipment: EquipmentListItem[];
   error?: string;
   errorId?: string;
 }
@@ -72,11 +77,40 @@ export async function getEquipment(): Promise<GetEquipmentResult> {
 
     const byEquipment = await processesByEquipmentId(rows.map((row) => row.id));
 
+    const result = await getCards();
+    if (result.error) throw new Error(result.error);
+    const stats = await getMachineWeeklyStats();
+    const running = new Set(
+      result.cards
+        .filter((card) => card.column_id === WORKFLOW_COLUMN_IDS.inProgress)
+        .map((card) => card.machine_id)
+    );
     return {
-      equipment: rows.map((row) => ({
-        ...row,
-        processes: byEquipment.get(row.id) ?? [],
-      })),
+      equipment: rows.map((row) => {
+        const item = { ...row, processes: byEquipment.get(row.id) ?? [] };
+        return {
+          ...item,
+          machine_status:
+            row.status === "maintenance"
+              ? "needs-maintenance"
+              : running.has(row.id)
+                ? "running"
+                : "idle",
+          weekly_stats: {
+            week_start: stats.week_start,
+            week_end: stats.week_end,
+            ...(stats.by_machine.get(row.id) ?? { done: 0, sent_back: 0 }),
+          },
+          current_parts: result.cards
+            .filter(
+              (card) =>
+                card.machine_id === row.id &&
+                card.column_id === WORKFLOW_COLUMN_IDS.inProgress
+            )
+            .map(({ id, title }) => ({ id, title })),
+          queue_size: machineQueue(item, result.cards).length,
+        };
+      }),
     };
   } catch (error) {
     const message =
@@ -234,22 +268,39 @@ export async function setEquipmentMaintenance(
   equipmentId: string,
   maintenance: { note: string; reportedBy: string } | null
 ): Promise<EquipmentRow> {
-  return updateEquipment(
-    equipmentId,
-    maintenance
-      ? {
-          status: "maintenance",
-          maintenance_note: maintenance.note,
-          maintenance_reported_by: maintenance.reportedBy,
-          maintenance_reported_at: new Date().toISOString(),
-        }
-      : {
-          status: null,
-          maintenance_note: null,
-          maintenance_reported_by: null,
-          maintenance_reported_at: null,
-        }
-  );
+  return db.transaction((tx) => {
+    const previous = tx
+      .select()
+      .from(equipmentTable)
+      .where(eq(equipmentTable.id, equipmentId))
+      .get();
+    if (!previous) throw new Error("Equipment not found");
+    const now = new Date().toISOString();
+    return tx
+      .update(equipmentTable)
+      .set({
+        updated_at: now,
+        ...(maintenance
+          ? {
+              status: "maintenance",
+              maintenance_note: maintenance.note,
+              maintenance_reported_by: maintenance.reportedBy,
+              maintenance_reported_at: now,
+            }
+          : {
+              status: null,
+              maintenance_note: null,
+              maintenance_reported_by: null,
+              maintenance_reported_at: null,
+              ...(previous.status === "maintenance"
+                ? { last_maintenance_at: now }
+                : {}),
+            }),
+      })
+      .where(eq(equipmentTable.id, equipmentId))
+      .returning()
+      .get()!;
+  });
 }
 
 /**
