@@ -1,3 +1,5 @@
+import { useMinuteClock } from "~/hooks/useMinuteClock";
+import { isDoneToday } from "~/lib/doneToday";
 import { useQuery } from "@tanstack/react-query";
 import {
   equipmentQuery,
@@ -20,15 +22,13 @@ import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const { backlog, inProgress, review, done } = WORKFLOW_COLUMN_IDS;
 
-const sameLocalDay = (a: Date, b: Date) =>
-  a.toDateString() === b.toDateString();
-
 /**
  * The shop at a glance for a shop mentor: counts per status, what needs
  * attention, and each machine's status and queue. `date_updated` is when a
  * card entered its current status, so it dates claims, reviews and finishes.
  */
 export function ShopTab({ viewerId }: { viewerId: string }) {
+  const now = useMinuteClock();
   const cardsQuery = useQuery(kanbanCardsQuery());
   const equipmentResult = useQuery(equipmentQuery());
   const { data: users = [] } = useQuery(usersQuery());
@@ -42,16 +42,13 @@ export function ShopTab({ viewerId }: { viewerId: string }) {
     );
   const cards = cardsQuery.data ?? [];
   const equipment = equipmentResult.data ?? [];
-  const now = Date.now();
   const today = new Date(now);
 
   const inColumn = (id: string) => cards.filter((c) => c.column_id === id);
   const backlogCards = inColumn(backlog);
   const running = inColumn(inProgress);
   const reviewing = inColumn(review);
-  const doneToday = inColumn(done).filter((c) =>
-    sameLocalDay(new Date(c.date_updated), today)
-  );
+  const doneToday = inColumn(done).filter((c) => isDoneToday(c, today));
 
   const machines = [...equipment].sort(byMachineName).map((machine) => ({
     machine,

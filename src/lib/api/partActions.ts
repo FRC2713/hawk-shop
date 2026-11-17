@@ -88,12 +88,14 @@ export function addCard(input: AddCardInput): Promise<ActionResponse> {
  */
 export async function moveCard(
   cardId: string,
-  columnId: string
+  columnId: string,
+  reason?: string
 ): Promise<ActionResponse> {
   const body = new FormData();
   body.append("action", "moveCard");
   body.append("cardId", cardId);
   body.append("columnId", columnId);
+  if (reason) body.append("reason", reason);
 
   const result = await postAction(body);
   if (!result.success) {

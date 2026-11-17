@@ -346,14 +346,19 @@ export async function createCard(
   return card;
 }
 
+type CardUpdates = Partial<
+  Omit<KanbanCardRow, "id" | "date_created" | "created_by">
+>;
+
 /**
- * Update an existing Kanban card. Picking a different machine must pass
- * `requireMachineCanTake`. `alsoWrite` runs inside the same transaction after
- * the update, for a record that must commit or fail with it.
+ * Update a card. A callback validates and derives updates from the current row
+ * inside the transaction. Machine changes pass requireMachineCanTake; alsoWrite
+ * commits additional records with the card, history and Slack notification.
  */
 export async function updateCard(
   cardId: string,
-  updates: Partial<Omit<KanbanCardRow, "id" | "date_created" | "created_by">>,
+  updates:
+    CardUpdates | ((card: KanbanCardRow, tx: Transaction) => CardUpdates),
   actor: SessionActor,
   alsoWrite?: (tx: Transaction, card: KanbanCardRow) => void,
   device?: SessionActor
@@ -372,16 +377,6 @@ export async function updateCard(
     "quantity_to_make",
     "project_id",
   ]);
-  const finalUpdates = Object.fromEntries(
-    Object.entries(updates).filter(([key]) => mutableFields.has(key))
-  ) as typeof updates;
-  // `content` holds the submitter's notes; blank text means no notes.
-  if (finalUpdates.content !== undefined) {
-    const notes: unknown = finalUpdates.content;
-    if (notes !== null && typeof notes !== "string")
-      throw new InvalidNotesError();
-    finalUpdates.content = notes?.trim() || null;
-  }
   const card = db.transaction((tx) => {
     const previous = tx
       .select()
@@ -389,6 +384,18 @@ export async function updateCard(
       .where(eq(kanbanCards.id, cardId))
       .get();
     if (!previous) throw new Error("Card not found");
+    const finalUpdates = Object.fromEntries(
+      Object.entries(
+        typeof updates === "function" ? updates(previous, tx) : updates
+      ).filter(([key]) => mutableFields.has(key))
+    ) as CardUpdates;
+    // `content` holds the submitter's notes; blank text means no notes.
+    if (finalUpdates.content !== undefined) {
+      const notes: unknown = finalUpdates.content;
+      if (notes !== null && typeof notes !== "string")
+        throw new InvalidNotesError();
+      finalUpdates.content = notes?.trim() || null;
+    }
     if (Object.keys(finalUpdates).length === 0) {
       alsoWrite?.(tx, previous);
       return previous;

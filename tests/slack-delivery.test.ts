@@ -353,7 +353,7 @@ test("every move and the deletion reply in order in the part's thread", async ()
     const form = new FormData();
     form.set("action", "moveCard");
     form.set("cardId", "order");
-    form.set("columnId", "review");
+    form.set("columnId", "in-progress");
     const moved = await endpoint(actions, "POST")(
       new Request("http://localhost/api/mfg/parts/actions", {
         method: "POST",
@@ -372,8 +372,8 @@ test("every move and the deletion reply in order in the part's thread", async ()
     assert.deepEqual(
       replies(start, parent).map((post) => post.text),
       [
-        "<@UALICE>: Queued → Review · moved by bob",
-        "<@UALICE>: Review → Queued · moved by bob",
+        "<@UALICE>: Queued → In Progress · moved by bob",
+        "<@UALICE>: In Progress → Queued · moved by bob",
         "<@UALICE>: Queued → Done · moved by bob",
         "<@UALICE>: Original plate was removed from the board by bob.",
       ]

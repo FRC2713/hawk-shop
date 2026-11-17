@@ -346,3 +346,24 @@ test("station claim conflicts keep the server reason and let the member recover"
     await page.unroute("**/conflict-qr/claim");
   }
 });
+
+test("phone actions handle assigned Backlog and unassigned In Progress like desktop", async () => {
+  await show(fixture("preassigned", "backlog", viewer));
+  await expect(
+    bar().getByRole("button", { name: "Unclaim", exact: true })
+  ).toBeVisible();
+  await expect(
+    bar().getByRole("button", { name: "Claim", exact: true })
+  ).toHaveCount(0);
+  await show(fixture("unassigned-progress", "in-progress", null));
+  await expect(
+    bar().getByRole("button", { name: "Claim", exact: true })
+  ).toBeVisible();
+  await expect(
+    bar().getByRole("button", { name: "Unclaim", exact: true })
+  ).toHaveCount(0);
+  await bar().getByRole("button", { name: "Claim", exact: true }).click();
+  await expect(
+    bar().getByRole("button", { name: "Unclaim", exact: true })
+  ).toBeVisible();
+});

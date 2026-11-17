@@ -167,6 +167,12 @@ async function open(page: Page, script: string, cardList: unknown[]) {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/kanban/cards")
       return route.fulfill({ json: { cards: cardList } });
+    if (url.pathname === "/api/kanban/config/columns")
+      return route.fulfill({
+        json: [
+          { id: "waiting-for-stock", title: "Waiting for stock", position: 4 },
+        ],
+      });
     if (url.pathname === "/api/equipment")
       return route.fulfill({
         json: { equipment: [{ ...printer2, processes: [printing] }] },
@@ -266,6 +272,26 @@ test("My parts says so when the submitter has released nothing", async () => {
     await open(page, script, [card("Not mine", { created_by: "someone" })]);
     await page.getByText("You haven't released any parts yet.").waitFor();
     assert.equal(await page.getByRole("list").count(), 0);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("My parts includes releases in custom statuses", async () => {
+  const script = await bundle();
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    await open(page, script, [
+      card("Stock bracket", { column_id: "waiting-for-stock" }),
+    ]);
+    await page
+      .getByRole("heading", { name: "Waiting for stock · 1" })
+      .waitFor();
+    await page.getByRole("link", { name: /Stock bracket/ }).waitFor();
+    assert.match(await page.locator("main").innerText(), /1 active/);
   } finally {
     await browser.close();
   }

@@ -1,4 +1,5 @@
 import "virtual:hawk-shop/server-only";
+import { move } from "~/server/kanbanApi/workflow";
 import { createErrorResponse } from "../utils/errorHandling";
 import { z } from "zod";
 import {
@@ -63,6 +64,7 @@ const addCardSchema = z.object({
 const moveCardSchema = z.object({
   cardId: z.string().min(1, "Card ID is required"),
   columnId: z.string().min(1, "Column ID is required"),
+  reason: z.string().optional(),
 });
 
 /**
@@ -287,7 +289,7 @@ export async function handleMoveKanbanCard(
   actor: SessionActor
 ): Promise<ActionResponse> {
   // Parse and validate form data
-  const rawData = formDataToObject(formData, ["cardId", "columnId"]);
+  const rawData = formDataToObject(formData, ["cardId", "columnId", "reason"]);
 
   const parseResult = moveCardSchema.safeParse(rawData);
   if (!parseResult.success) {
@@ -297,10 +299,10 @@ export async function handleMoveKanbanCard(
     return { success: false, error: errorMessage };
   }
 
-  const { cardId, columnId } = parseResult.data;
+  const { cardId, columnId, reason } = parseResult.data;
 
   try {
-    const card = await updateCard(cardId, { column_id: columnId }, actor);
+    const card = await move(cardId, actor, columnId, reason);
     return { success: true, data: card };
   } catch (error) {
     return createErrorResponse(error, "Failed to move card");

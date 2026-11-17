@@ -40,6 +40,7 @@ import {
 } from "~/lib/bulkCardRunner";
 import { plural } from "~/lib/plural";
 import { useMachineQueueCounts } from "~/components/mfg/kanban/useMachineQueueCounts";
+import { useMoveReason } from "./useMoveReason";
 
 type Card = KanbanCardWithProcesses;
 
@@ -71,6 +72,7 @@ export function KanbanBulkEditBar({
   onKeepSelected,
 }: KanbanBulkEditBarProps) {
   const queryClient = useQueryClient();
+  const { requestReason, reasonDialog } = useMoveReason();
   const { data: equipment = [] } = useQuery(equipmentQuery());
   const { data: projects = [] } = useQuery(projectsQuery());
   const { data: users = [] } = useQuery(usersQuery());
@@ -137,14 +139,17 @@ export function KanbanBulkEditBar({
     },
   });
 
-  const moveTo = (target: KanbanColumnType) =>
+  const moveTo = async (target: KanbanColumnType) => {
+    const reason = await requestReason(cards, target.id);
+    if (reason === null) return;
     action.mutate(async () => ({
       success: (n) => `Moved ${plural(n, "card")} to ${target.title}`,
       total: cards.length,
       outcome: await forEachCard(cards, (card) =>
-        partActions.moveCard(card.id, target.id)
+        partActions.moveCard(card.id, target.id, reason)
       ),
     }));
+  };
 
   const assignPerson = (userId: string | null) => {
     const name =
@@ -334,6 +339,7 @@ export function KanbanBulkEditBar({
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {reasonDialog}
         <div className="w-44">
           <ProjectPicker
             value={null}
