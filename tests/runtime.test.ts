@@ -929,6 +929,17 @@ test(
       await expect(
         page.getByRole("navigation", { name: "Sections" })
       ).toHaveCount(0);
+      const partActions = page.getByRole("contentinfo", {
+        name: "Part actions",
+      });
+      await expect(
+        partActions.getByRole("button", { name: "Claim" })
+      ).toBeVisible();
+      const actionsBox = await partActions.boundingBox();
+      assert.ok(
+        actionsBox && Math.round(actionsBox.y + actionsBox.height) === 844,
+        "Part actions not pinned to the bottom"
+      );
       await noSidewaysScroll("the part page");
 
       await page.goto(origin + "/kanban");
