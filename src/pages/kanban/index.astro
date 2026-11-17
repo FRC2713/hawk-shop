@@ -1,10 +1,20 @@
 ---
 import AppLayout from "../../layouts/AppLayout.astro";
 import Board from "../../components/islands/Board";
+import { DESKTOP_MEDIA_QUERY, phoneBoardRedirect } from "../../lib/phone";
+const phoneTarget = phoneBoardRedirect(Astro.url);
 ---
 
 <AppLayout title="Manufacturing board" workspace
-  ><Board
+  ><script
+    slot="head"
+    is:inline
+    define:vars={{ desktop: DESKTOP_MEDIA_QUERY, phoneTarget }}
+  >
+    // Phones get the part page (Slack links carry ?cardId) or the first tab,
+    // never the squeezed board. Runs before the board renders.
+    if (!matchMedia(desktop).matches) location.replace(phoneTarget);
+  </script><Board
     cardId={Astro.url.searchParams.get("cardId") || undefined}
     client:load
   /></AppLayout

@@ -374,3 +374,48 @@ h2 {
     display: none;
   }
 }
+
+/*
+ * Phone layout: below the desktop breakpoint (Tailwind `lg`, 64rem; see
+ * src/lib/phone.ts) the bottom tabs replace the top navigation, and the part
+ * page drops the app header for its own.
+ */
+.phone-more-pages {
+  display: none;
+}
+@media (max-width: 63.999rem) {
+  .phone-tabs-layout .app-navigation,
+  .phone-tabs-layout .app-footer,
+  .phone-page-layout .app-header,
+  .phone-page-layout .app-footer {
+    display: none;
+  }
+  .phone-tabs-layout .phone-more-pages {
+    display: block;
+  }
+  .phone-tabs-layout .phone-tabs {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* The tabs sit at the bottom of the screen even on a short page. */
+  .phone-tabs-layout {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+  }
+  .phone-tabs-layout .shop-content {
+    flex: 1 0 auto;
+  }
+  .phone-tabs-layout.shop-workspace .shop-content {
+    flex: 1 1 0;
+  }
+  /* With the navigation in the tabs, the header is one row. */
+  .phone-tabs-layout .app-header .shop-header {
+    flex-wrap: nowrap;
+  }
+  .phone-tabs-layout .shop-header > div {
+    width: auto;
+  }
+  .phone-page-layout .shop-content {
+    padding: 0;
+  }
+}

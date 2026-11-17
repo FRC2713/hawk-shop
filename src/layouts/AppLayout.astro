@@ -3,11 +3,19 @@ import "../styles/global.css";
 import { reportsEnabled } from "../server/reports";
 import { ReportProblem } from "../components/app/report-problem";
 import { suiteUrl } from "../server/suite-identity";
+import PhoneTabBar from "../components/phone/PhoneTabBar.astro";
 interface Props {
   title: string;
   workspace?: boolean;
+  /**
+   * Below the desktop breakpoint: "tabs" (default) swaps the top navigation
+   * for the bottom tabs; "page" is a full-screen page with its own header and
+   * no tabs (the part page); "plain" keeps the desktop header (the Onshape
+   * connector, which lives in a narrow Onshape panel).
+   */
+  phone?: "tabs" | "page" | "plain";
 }
-const { title, workspace = false } = Astro.props;
+const { title, workspace = false, phone = "tabs" } = Astro.props;
 const identity = Astro.locals.identity;
 const reporting = Boolean(identity && reportsEnabled());
 const name = identity?.name ?? identity?.email ?? "Suite member";
@@ -37,10 +45,15 @@ const links = [
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title} · Hawk Shop</title>
+    <slot name="head" />
   </head>
   <body
     data-reports-enabled={String(reporting)}
-    class:list={[workspace && "shop-workspace"]}
+    class:list={[
+      workspace && "shop-workspace",
+      identity && phone === "tabs" && "phone-tabs-layout",
+      phone === "page" && "phone-page-layout",
+    ]}
   >
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="app-header bg-card border-b">
@@ -108,6 +121,17 @@ const links = [
                   {identity.email && (
                     <p class="account-email">{identity.email}</p>
                   )}
+                  {phone === "tabs" && (
+                    <nav aria-label="More pages" class="phone-more-pages">
+                      {links
+                        .filter((link) => link.href !== "/kanban")
+                        .map((link) => (
+                          <a class="account-sign-out" href={link.href}>
+                            {link.label}
+                          </a>
+                        ))}
+                    </nav>
+                  )}
                   {reporting && <ReportProblem client:load />}
                   <a class="account-sign-out" href="/slack">
                     Slack settings
@@ -142,11 +166,12 @@ const links = [
     </div>
     {
       !workspace && (
-        <footer class="text-muted-foreground mx-auto w-full max-w-6xl px-5 py-8 text-xs">
+        <footer class="app-footer text-muted-foreground mx-auto w-full max-w-6xl px-5 py-8 text-xs">
           Red Hawk Robotics · FRC 2713
         </footer>
       )
     }
+    {identity && phone === "tabs" && <PhoneTabBar />}
   </body>
 </html>
 <script>

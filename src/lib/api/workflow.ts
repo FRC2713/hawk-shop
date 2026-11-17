@@ -2,48 +2,43 @@ import { apiFetch } from "./client";
 import type { KanbanCardWithProcesses } from "./kanban";
 
 /**
- * The shop workflow actions on one part. Each answers with the updated card,
- * or throws an `ApiError` carrying the server's reason (409 when the part's
- * status doesn't allow the action).
+ * The #118 workflow actions. Machine assignment is `assignCardsToMachine` in
+ * `kanban.ts`; machine queues are `machineQueueQuery` in `equipment.ts`.
+ * Each action answers the changed card; a conflict (the part moved, someone
+ * else claimed it, the machine can't take it) is an `ApiError` with status
+ * 409 and the server's message.
  */
-async function workflowAction(
-  id: string,
-  action: string,
-  fallbackError: string,
-  json: unknown = {}
-): Promise<KanbanCardWithProcesses> {
-  const { card } = await apiFetch<{ card: KanbanCardWithProcesses }>(
-    `/api/kanban/cards/${encodeURIComponent(id)}/${action}`,
-    { method: "POST", json, fallbackError }
-  );
-  return card;
+
+function cardAction(id: string, action: string, fallbackError: string) {
+  return async (json?: unknown): Promise<KanbanCardWithProcesses> => {
+    const { card } = await apiFetch<{ card: KanbanCardWithProcesses }>(
+      `/api/kanban/cards/${encodeURIComponent(id)}/${action}`,
+      { method: "POST", json: json ?? {}, fallbackError }
+    );
+    return card;
+  };
 }
 
-/** Claim a part for the signed-in member, or `userId` on a shared screen. */
-export function claimCard(
-  id: string,
-  options: { machineId?: string; userId?: string } = {}
-) {
-  return workflowAction(id, "claim", "Failed to claim part", options);
+/** Claim a part as the signed-in member, optionally at a machine. */
+export function claimCard(id: string, options: { machineId?: string } = {}) {
+  return cardAction(id, "claim", "Failed to claim part")(options);
 }
 
 export function unclaimCard(id: string) {
-  return workflowAction(id, "unclaim", "Failed to unclaim part");
+  return cardAction(id, "unclaim", "Failed to unclaim part")();
 }
 
 /** In Progress → Review. */
 export function markCardDone(id: string) {
-  return workflowAction(id, "done", "Failed to mark part done");
+  return cardAction(id, "done", "Failed to send part to review")();
 }
 
 /** Review → Done. */
 export function approveCard(id: string) {
-  return workflowAction(id, "approve", "Failed to approve part");
+  return cardAction(id, "approve", "Failed to approve part")();
 }
 
-/** Review → back to work; `reason` is required and kept as a review note. */
+/** Review → In Progress or Backlog, keeping `reason` as a review note. */
 export function sendCardBack(id: string, reason: string) {
-  return workflowAction(id, "send-back", "Failed to send part back", {
-    reason,
-  });
+  return cardAction(id, "send-back", "Failed to send part back")({ reason });
 }
