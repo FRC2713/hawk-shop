@@ -229,3 +229,21 @@
 .station-control:disabled {
   opacity: 0.6;
 }
+
+.station-claim-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 32px;
+}
+.station-claim-members,
+.station-claim-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.station-claim-phone img {
+  width: 256px;
+  height: 256px;
+  background: white;
+}

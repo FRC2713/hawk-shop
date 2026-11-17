@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import jsQR from "jsqr";
 import { globSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { build } from "esbuild";
@@ -397,6 +398,39 @@ test("station Done sends current work to review and claim conflicts stay visible
     await expect(
       page.getByRole("dialog").getByRole("button", { name: "Cancel claim" })
     ).toBeEnabled();
+  } finally {
+    await browser.close();
+  }
+});
+
+test("station QR decodes to the absolute phone claim URL for this machine", async () => {
+  const { browser, page } = await stationFixture();
+  try {
+    await page
+      .getByRole("region", { name: "Beta printer", exact: true })
+      .getByRole("button", { name: "Claim Spare bracket" })
+      .click();
+    const qr = page.getByRole("img", { name: "Scan to claim on your phone" });
+    await expect(qr).toBeVisible();
+    const pixels = await qr.evaluate(async (element) => {
+      const img = element as HTMLImageElement;
+      await img.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 512;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, 512, 512);
+      return Array.from(ctx.getImageData(0, 0, 512, 512).data);
+    });
+    assert.equal(
+      jsQR(new Uint8ClampedArray(pixels), 512, 512)?.data,
+      "http://localhost:32198/parts/next-1?intent=claim&machineId=b"
+    );
+    await expect(
+      page.getByRole("link", { name: "Open on your phone" })
+    ).toHaveAttribute(
+      "href",
+      "http://localhost:32198/parts/next-1?intent=claim&machineId=b"
+    );
   } finally {
     await browser.close();
   }

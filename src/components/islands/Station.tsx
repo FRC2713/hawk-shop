@@ -86,6 +86,15 @@ function MachineColumn({
     ...refresh,
     enabled: !maintenance,
   });
+  useEffect(() => {
+    if (
+      claiming &&
+      (maintenance ||
+        (queue.isSuccess &&
+          !queue.data.some((card) => card.id === claiming.id)))
+    )
+      setClaiming(null);
+  }, [claiming, maintenance, queue.isSuccess, queue.data]);
   const waiting = machine.machine_status === "idle" && !!queue.data?.length;
   const machineUrl = `/equipment/${encodeURIComponent(machine.id)}`;
   return (

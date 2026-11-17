@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { renderSVG } from "uqr";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { usersQuery } from "~/lib/api/users";
@@ -90,6 +91,21 @@ export function StationClaim({
       ? null
       : (document.activeElement as HTMLElement | null)
   );
+  // This dialog only opens after a click, so the browser supplies the public origin.
+  const phoneUrl = useMemo(() => {
+    const url = new URL(
+      `/parts/${encodeURIComponent(card.id)}`,
+      window.location.origin
+    );
+    url.searchParams.set("intent", "claim");
+    url.searchParams.set("machineId", machine.id);
+    return url.href;
+  }, [card.id, machine.id]);
+  const qrSource = useMemo(
+    () =>
+      `data:image/svg+xml,${encodeURIComponent(renderSVG(phoneUrl, { border: 4, ecc: "M" }))}`,
+    [phoneUrl]
+  );
   const client = useQueryClient();
   const roster = useQuery({
     ...stationRosterQuery(processId),
@@ -152,69 +168,91 @@ export function StationClaim({
           <Dialog.Description>
             {card.title} · {machine.name}
           </Dialog.Description>
-          <label htmlFor="station-member-search">Search all members</label>
-          <input
-            id="station-member-search"
-            value={search}
-            disabled={busy}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <h3>{term ? "Matching members" : "At this station today"}</h3>
-          <p id="station-remove-help">
-            Hold a name to remove it from today's list, or focus it and press
-            Delete.
-          </p>
-          {removing ? (
-            <section aria-label="Remove member">
-              <p>Remove {removing.name || "this member"} from today's list?</p>
-              <button
-                className="station-control"
+          <div className="station-claim-options">
+            <div className="station-claim-members">
+              <label htmlFor="station-member-search">Search all members</label>
+              <input
+                id="station-member-search"
+                value={search}
                 disabled={busy}
-                autoFocus
-                onClick={() => removal.mutate(removing)}
-              >
-                Remove name
-              </button>
-              <button
-                className="station-control"
-                disabled={busy}
-                onClick={() => setRemoving(null)}
-              >
-                Cancel removal
-              </button>
-            </section>
-          ) : (
-            <div className="station-members">
-              {members?.map((member) => (
-                <MemberButton
-                  key={member.onshape_user_id}
-                  member={member}
-                  disabled={busy}
-                  roster={
-                    !!roster.data?.members.some(
-                      (m) => m.onshape_user_id === member.onshape_user_id
-                    )
-                  }
-                  pick={() => claim.mutate(member.onshape_user_id)}
-                  remove={() => setRemoving(member)}
-                />
-              ))}
-              {members?.length === 0 && (
-                <p>
-                  {term
-                    ? "No members found."
-                    : "No one here yet. Search for your name."}
-                </p>
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <h3>{term ? "Matching members" : "At this station today"}</h3>
+              <p id="station-remove-help">
+                Hold a name to remove it from today's list, or focus it and
+                press Delete.
+              </p>
+              {removing ? (
+                <section aria-label="Remove member">
+                  <p>
+                    Remove {removing.name || "this member"} from today's list?
+                  </p>
+                  <button
+                    className="station-control"
+                    disabled={busy}
+                    autoFocus
+                    onClick={() => removal.mutate(removing)}
+                  >
+                    Remove name
+                  </button>
+                  <button
+                    className="station-control"
+                    disabled={busy}
+                    onClick={() => setRemoving(null)}
+                  >
+                    Cancel removal
+                  </button>
+                </section>
+              ) : (
+                <div className="station-members">
+                  {members?.map((member) => (
+                    <MemberButton
+                      key={member.onshape_user_id}
+                      member={member}
+                      disabled={busy}
+                      roster={
+                        !!roster.data?.members.some(
+                          (m) => m.onshape_user_id === member.onshape_user_id
+                        )
+                      }
+                      pick={() => claim.mutate(member.onshape_user_id)}
+                      remove={() => setRemoving(member)}
+                    />
+                  ))}
+                  {members?.length === 0 && (
+                    <p>
+                      {term
+                        ? "No members found."
+                        : "No one here yet. Search for your name."}
+                    </p>
+                  )}
+                </div>
               )}
+              {(term ? users.isPending : roster.isPending) && (
+                <p role="status">Loading members…</p>
+              )}
+              {roster.error && <ErrorMessage error={roster.error} />}
+              {users.error && <ErrorMessage error={users.error} />}
+              {claim.error && <ErrorMessage error={claim.error} />}
+              {removal.error && <ErrorMessage error={removal.error} />}
             </div>
-          )}
-          {(term ? users.isPending : roster.isPending) && (
-            <p role="status">Loading members…</p>
-          )}
-          {roster.error && <ErrorMessage error={roster.error} />}
-          {users.error && <ErrorMessage error={users.error} />}
-          {claim.error && <ErrorMessage error={claim.error} />}
-          {removal.error && <ErrorMessage error={removal.error} />}
+            <aside
+              className="station-claim-phone"
+              aria-label="Claim on your phone"
+            >
+              <h3>Use your own phone</h3>
+              <img
+                src={qrSource}
+                width={256}
+                height={256}
+                alt="Scan to claim on your phone"
+              />
+              <p>Scan, sign in as yourself, then tap Claim.</p>
+              <a className="station-control" href={phoneUrl}>
+                Open on your phone
+              </a>
+            </aside>
+          </div>
           <button className="station-control" disabled={busy} onClick={close}>
             Cancel claim
           </button>

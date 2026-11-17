@@ -256,9 +256,17 @@ export async function claim(
   // A process-queue part takes the machine it is claimed at; a part already
   // on a machine can only be claimed there.
   const linkMachine = machineId !== undefined && card.machine_id === null;
-  if (linkMachine) requireMachineCanTake(db, machineId, [card.id]);
-  else if (machineId !== undefined && machineId !== card.machine_id)
-    throw new OtherMachineError(card.id);
+  if (machineId !== undefined) {
+    if (!linkMachine && machineId !== card.machine_id)
+      throw new OtherMachineError(card.id);
+    // A station URL can outlive maintenance or process changes, including
+    // for a part already assigned here. Preserve retries of an existing claim.
+    if (
+      card.column_id === WORKFLOW_COLUMN_IDS.backlog ||
+      card.assignee !== userId
+    )
+      requireMachineCanTake(db, machineId, [card.id]);
+  }
   await updateCard(
     card.id,
     {

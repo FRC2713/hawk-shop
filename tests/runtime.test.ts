@@ -1718,3 +1718,80 @@ test("station roster authenticates reads and rejects foreign-origin picks and re
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "private, no-store");
 });
+
+test("a phone claim refreshes the shared station through real SSE", async () => {
+  const processId = "process-3d-printing";
+  const { equipment: machine } = await json("/api/equipment", "POST", {
+    name: "QR live printer",
+    processIds: [processId],
+  });
+  const { card } = await json("/api/kanban/cards", "POST", {
+    id: "qr-live-phone",
+    title: "QR live bracket",
+    processIds: [processId],
+  });
+  const browser = await chromium.launch();
+  try {
+    const station = await browser.newPage({
+      viewport: { width: 1280, height: 800 },
+      extraHTTPHeaders: identity,
+    });
+    await station.goto(`${origin}/station/${processId}`);
+    const column = station.getByRole("region", {
+      name: machine.name,
+      exact: true,
+    });
+    await column.getByRole("button", { name: "Claim QR live bracket" }).click();
+    const dialog = station.getByRole("dialog", { name: "Who's making this?" });
+    const target = await dialog
+      .getByRole("link", { name: "Open on your phone" })
+      .getAttribute("href");
+    assert.equal(
+      target,
+      `${origin}/parts/${card.id}?intent=claim&machineId=${machine.id}`
+    );
+    const phone = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    await phone.goto(target!);
+    assert.equal(
+      new URL(phone.url()).searchParams.get("redirect"),
+      new URL(target!).pathname + new URL(target!).search
+    );
+    const suiteLogin = await phone
+      .getByRole("link", { name: "Sign in with Hawk Suite" })
+      .getAttribute("href");
+    assert.equal(new URL(suiteLogin!).searchParams.get("redirect_url"), target);
+    // The gateway supplies the phone member's identity after normal Suite sign-in.
+    await phone.setExtraHTTPHeaders({
+      ...identity,
+      "x-token-subject": "slack:TTEAM:UPHONE",
+      "x-hawk-slack-user": "UPHONE",
+      "x-token-user-name": "Phone",
+    });
+    await phone.goto(new URL(suiteLogin!).searchParams.get("redirect_url")!);
+    const claim = phone.getByRole("button", { name: "Claim", exact: true });
+    await expect(claim).toBeEnabled();
+    await expect(phone.getByRole("status")).toContainText(
+      "Claim at QR live printer"
+    );
+    await expect(
+      column.getByRole("button", { name: "Done QR live bracket" })
+    ).toHaveCount(0);
+    await claim.click();
+    await expect(
+      phone.getByRole("button", { name: "Done, send to review" })
+    ).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      column.getByRole("button", { name: "Done QR live bracket" })
+    ).toBeVisible();
+    await expect(column.getByText("Phone", { exact: true })).toBeVisible();
+    const response = await call(`/api/kanban/cards/${card.id}`);
+    const updated = (await response.json()).card;
+    assert.equal(updated.machine_id, machine.id);
+    assert.equal(updated.assignee, "slack:TTEAM:UPHONE");
+  } finally {
+    await browser.close();
+  }
+});

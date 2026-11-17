@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   approveCard,
+  equipmentQuery,
   claimCard,
   markCardDone,
   queryKeys,
@@ -61,6 +62,32 @@ export function PartActionBar({
   card: KanbanCardWithProcesses;
   viewerId: string;
 }) {
+  // Keep URL intent through Suite recovery, but never turn navigation into a mutation.
+  const [claimMachineId, setClaimMachineId] = useState<
+    string | null | undefined
+  >();
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("intent") === "claim")
+      setClaimMachineId(
+        params.getAll("machineId").length === 1
+          ? params.get("machineId") || null
+          : null
+      );
+  }, []);
+  const stationIntent = claimMachineId !== undefined;
+  const equipment = useQuery({ ...equipmentQuery(), enabled: stationIntent });
+  const intendedMachine = equipment.data?.find(
+    (machine) => machine.id === claimMachineId
+  );
+  const claimRun = useCallback(
+    (id: string) =>
+      claimCard(
+        id,
+        stationIntent && claimMachineId ? { machineId: claimMachineId } : {}
+      ),
+    [stationIntent, claimMachineId]
+  );
   const queryClient = useQueryClient();
   const { data: users = [] } = useQuery(usersQuery());
   const [askingReason, setAskingReason] = useState(false);
@@ -80,17 +107,19 @@ export function PartActionBar({
   let conflict = isConflict(action.error) ? action.error.message : null;
   if (
     conflict &&
-    action.variables === CLAIM.run &&
+    action.variables === claimRun &&
     card.assignee &&
     card.assignee !== viewerId
   )
     conflict = `${memberName(users, card.assignee)} already claimed this part`;
 
   const actions = ACTIONS[card.column_id];
-  if (!actions) return null;
-  const [secondary, main] = actions;
+  if (!actions && !stationIntent) return null;
+  const [secondary, main] = actions ?? [null, null];
   const choose = (chosen: Action) =>
-    chosen.run ? action.mutate(chosen.run) : setAskingReason(true);
+    chosen.run
+      ? action.mutate(chosen === CLAIM ? claimRun : chosen.run)
+      : setAskingReason(true);
   const sendBack = () =>
     action.mutate((id) => sendCardBack(id, reason.trim()), {
       onSuccess: () => setReason(""),
@@ -99,30 +128,78 @@ export function PartActionBar({
 
   return (
     <div className="flex w-full flex-col gap-2">
+      {stationIntent && (
+        <div
+          id="station-claim-intent"
+          role="status"
+          className="border-status-active rounded-lg border-l-4 px-3 py-2 text-sm"
+        >
+          {card.column_id !== WORKFLOW_COLUMN_IDS.backlog ? (
+            <p>
+              This part has already moved out of Backlog. Check its current
+              status.
+            </p>
+          ) : intendedMachine ? (
+            <p>
+              Claim at {intendedMachine.name}. Tap Claim to make this part as
+              yourself.
+            </p>
+          ) : (
+            <p>
+              {equipment.isPending && claimMachineId
+                ? "Loading station machine…"
+                : "This station link has no available machine. Open the part again or scan a new code."}
+            </p>
+          )}
+          {equipment.error && <ErrorMessage error={equipment.error} />}
+          <a
+            className="underline"
+            href={`/parts/${encodeURIComponent(card.id)}`}
+          >
+            Open part without station claim
+          </a>
+        </div>
+      )}
       {conflict && (
         <p role="alert" className="text-sm font-semibold">
           {conflict}
         </p>
       )}
-      <div className="flex gap-2">
-        {secondary && (
+      {main && (
+        <div className="flex gap-2">
+          {secondary && (
+            <Button
+              variant="outline"
+              className="h-12"
+              disabled={action.isPending}
+              onClick={() => choose(secondary)}
+            >
+              {secondary.label}
+            </Button>
+          )}
           <Button
-            variant="outline"
-            className="h-12"
-            disabled={action.isPending}
-            onClick={() => choose(secondary)}
+            className={
+              stationIntent && main === CLAIM
+                ? "ring-status-active h-12 flex-1 ring-2 ring-offset-2"
+                : "h-12 flex-1"
+            }
+            aria-describedby={
+              stationIntent && main === CLAIM
+                ? "station-claim-intent"
+                : undefined
+            }
+            disabled={
+              action.isPending ||
+              (main === CLAIM &&
+                stationIntent &&
+                (!intendedMachine || !!equipment.error))
+            }
+            onClick={() => choose(main)}
           >
-            {secondary.label}
+            {main.label}
           </Button>
-        )}
-        <Button
-          className="h-12 flex-1"
-          disabled={action.isPending}
-          onClick={() => choose(main)}
-        >
-          {main.label}
-        </Button>
-      </div>
+        </div>
+      )}
 
       <Dialog open={askingReason} onOpenChange={setAskingReason}>
         <DialogContent>
