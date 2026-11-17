@@ -35,3 +35,11 @@ export function phoneBoardRedirect(boardUrl: URL): string {
   const cardId = boardUrl.searchParams.get("cardId");
   return cardId ? partHref(cardId) : PHONE_HOME;
 }
+
+/**
+ * Where a machine row opens: the equipment list with that machine selected,
+ * until machines get their own page (#120).
+ */
+export function machineHref(machineId: string): string {
+  return `/equipment?machine=${encodeURIComponent(machineId)}`;
+}
