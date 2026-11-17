@@ -340,6 +340,8 @@ test("every move and the deletion reply in order in the part's thread", async ()
           { id: "backlog", title: "Queued", position: 0 },
           { id: "review", title: "Review", position: 1 },
           { id: "done", title: "Done", position: 2 },
+          // Workflow columns can't be deleted, only moved and renamed.
+          { id: "in-progress", title: "In Progress", position: 3 },
         ],
       }),
       {}
@@ -716,6 +718,9 @@ test("column labels are captured at the move and never looked up at delivery", a
     const custom = [
       { id: "backlog", title: "Queued & ready", position: 0 },
       { id: "laser", title: "Laser <@UFAKE>", position: 1 },
+      { id: "in-progress", title: "In Progress", position: 2 },
+      { id: "review", title: "Review", position: 3 },
+      { id: "done", title: "Done", position: 4 },
     ];
     let response = await endpoint(columns, "PUT")(
       jsonRequest("/api/kanban/config", "PUT", cookie, { columns: custom }),

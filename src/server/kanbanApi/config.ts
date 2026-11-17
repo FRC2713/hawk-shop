@@ -8,6 +8,7 @@ import {
   type KanbanColumnConfig,
 } from "~/server/db/schema";
 import { publishKanbanEvent } from "~/server/events/bus";
+import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 
 /**
  * Kanban columns are a JSON blob on the single `kanban_config` row with
@@ -53,7 +54,26 @@ export async function getKanbanConfig(): Promise<KanbanConfig> {
   return { columns: await getKanbanColumns() };
 }
 
+/** A save would delete a column that shop workflow actions move cards to. */
+export class WorkflowColumnRemovedError extends Error {}
+
 export async function saveKanbanConfig(config: KanbanConfig): Promise<void> {
+  const kept = new Set(config.columns.map((column) => column.id));
+  const removed = Object.values(WORKFLOW_COLUMN_IDS).filter(
+    (id) => !kept.has(id)
+  );
+  if (removed.length) {
+    const current = await getKanbanColumns();
+    const titles = removed.map(
+      (id) =>
+        current.find((column) => column.id === id)?.title ??
+        DEFAULT_KANBAN_COLUMNS.find((column) => column.id === id)?.title ??
+        id
+    );
+    throw new WorkflowColumnRemovedError(
+      `${titles.join(", ")} can be renamed but not deleted: claiming, review and approval move parts there`
+    );
+  }
   try {
     await db
       .insert(kanbanConfig)
