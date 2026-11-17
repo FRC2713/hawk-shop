@@ -1,7 +1,24 @@
 ---
-// #139 will own the machine page. Keep canonical machine links usable meanwhile.
-return Astro.redirect(
-  `/equipment/${encodeURIComponent(Astro.params.id!)}/edit`,
-  302
-);
+import AppLayout from "~/layouts/AppLayout.astro";
+import MachinePage from "~/components/islands/MachinePage";
+import { getEquipmentById } from "~/server/equipmentApi/equipment";
+const equipment = await getEquipmentById(Astro.params.id!);
+if (!equipment) Astro.response.status = 404;
 ---
+
+<AppLayout title={equipment?.name || "Equipment not found"} workspace>
+  {
+    equipment ? (
+      <MachinePage id={equipment.id} client:load />
+    ) : (
+      <section class="p-6">
+        <>
+          <h1>Equipment not found</h1>
+          <a href="/equipment" class="underline">
+            Back to equipment
+          </a>
+        </>
+      </section>
+    )
+  }
+</AppLayout>

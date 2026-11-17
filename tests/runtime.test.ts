@@ -1497,7 +1497,10 @@ test("equipment add and edit routes hydrate at phone and desktop widths and miss
         .getByRole("searchbox", { name: "Search equipment" })
         .fill("Route printer");
       await page.getByRole("link", { name: /Route printer/ }).click();
-      await expect(page).toHaveURL(origin + `/equipment/${machine.id}/edit`);
+      await expect(page).toHaveURL(origin + `/equipment/${machine.id}`);
+      await expect(
+        page.getByRole("link", { name: "Edit equipment" })
+      ).toHaveAttribute("href", `/equipment/${machine.id}/edit`);
       assert.ok(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth
@@ -1505,14 +1508,84 @@ test("equipment add and edit routes hydrate at phone and desktop widths and miss
       );
     }
     const canonical = await call(`/equipment/${machine.id}`);
-    assert.equal(canonical.status, 302);
-    assert.equal(
-      canonical.headers.get("location"),
-      `/equipment/${machine.id}/edit`
-    );
+    assert.equal(canonical.status, 200);
+    assert.equal(canonical.headers.get("location"), null);
     assert.equal((await call("/equipment/missing-machine/edit")).status, 404);
     await context.close();
   } finally {
     await browser.close();
+  }
+});
+
+test("canonical machine route hydrates and saves queue order against the production API", async () => {
+  const { equipment: machine } = await json("/api/equipment", "POST", {
+    name: "Machine page fixture",
+    location: "Machine room",
+  });
+  const ids: string[] = [];
+  for (const title of ["Machine queue first", "Machine queue urgent"]) {
+    const { card } = await json("/api/kanban/cards", "POST", {
+      title,
+      machineId: machine.id,
+    });
+    ids.push(card.id);
+  }
+  const machinePath = `/equipment/${encodeURIComponent(machine.id)}`;
+  assert.equal((await call(machinePath)).status, 200);
+  assert.equal(
+    (await call("/equipment/unknown-machine-page-fixture")).status,
+    404
+  );
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ extraHTTPHeaders: identity });
+    for (const [width, colorScheme] of [
+      [390, "dark"],
+      [1280, "light"],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      await page.goto(origin + machinePath);
+      await expect(
+        page.getByRole("heading", { name: machine.name, exact: true })
+      ).toBeVisible();
+      await expect(
+        page.getByRole("region", { name: "Now", exact: true })
+      ).toContainText("No part in progress");
+      await expect(
+        page.getByRole("link", { name: "Add SOP link" })
+      ).toHaveAttribute("href", machinePath + "/edit");
+      assert.equal(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth
+        ),
+        true
+      );
+    }
+    await page
+      .getByRole("button", { name: "Move Machine queue urgent up" })
+      .click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Queue order saved" })
+    ).toHaveText("Queue order saved");
+    const saved = await (
+      await call(`/api/equipment/${machine.id}/queue`)
+    ).json();
+    assert.deepEqual(
+      saved.cards.map((card: { id: string }) => card.id),
+      [ids[1], ids[0]]
+    );
+    await page.reload();
+    await expect(
+      page
+        .getByRole("list", { name: "Machine queue" })
+        .getByRole("listitem")
+        .first()
+    ).toContainText("Machine queue urgent");
+  } finally {
+    await browser.close();
+    for (const id of ids)
+      await call(`/api/kanban/cards/${id}`, { method: "DELETE" });
+    await call(`/api/equipment/${machine.id}`, { method: "DELETE" });
   }
 });

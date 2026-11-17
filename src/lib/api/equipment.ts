@@ -151,3 +151,32 @@ export async function clearEquipmentMaintenance(id: string): Promise<void> {
     fallbackError: "Failed to clear the maintenance flag",
   });
 }
+
+/** #118's derived Backlog queue, including compatible unassigned parts. */
+export function machineQueueQuery(id: string) {
+  return queryOptions({
+    queryKey: queryKeys.kanban.machineQueue(id),
+    queryFn: async () => {
+      const { cards } = await apiFetch<{
+        cards: import("./kanban").KanbanCardWithProcesses[];
+      }>(`/api/equipment/${encodeURIComponent(id)}/queue`, {
+        fallbackError: "Failed to load machine queue",
+      });
+      return cards;
+    },
+  });
+}
+
+export async function reorderMachineQueue(
+  machineId: string,
+  cardIds: string[]
+) {
+  const { cards } = await apiFetch<{
+    cards: import("./kanban").KanbanCardWithProcesses[];
+  }>("/api/kanban/cards/reorder", {
+    method: "POST",
+    json: { machineId, cardIds },
+    fallbackError: "Failed to reorder queue",
+  });
+  return cards;
+}
