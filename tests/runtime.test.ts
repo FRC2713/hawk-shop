@@ -584,7 +584,7 @@ test(
         await page.emulateMedia({ colorScheme: scheme });
         await page.goto(origin + "/");
         await expect(
-          page.getByRole("heading", { name: "Shop overview" })
+          page.getByRole("heading", { name: "Start here" })
         ).toBeVisible();
         if (width === 1280) {
           // Phones never see the board; the phone layout test covers them.
