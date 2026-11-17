@@ -9,12 +9,18 @@ import type { Browser, Page } from "@playwright/test";
  * `npm run build` first). Each test file passes its own port.
  */
 
+const HOUR = 60 * 60 * 1000;
+/** An ISO timestamp `hours` before now. */
+export const ago = (hours: number) =>
+  new Date(Date.now() - hours * HOUR).toISOString();
+
 export const boardColumns = [
   { id: "backlog", title: "Backlog", position: 0 },
   { id: "in-progress", title: "In Progress", position: 1 },
   { id: "review", title: "Review", position: 2 },
   { id: "done", title: "Done", position: 3 },
 ];
+export const BOARD_COLUMNS = boardColumns;
 
 export const boardUsers = [
   { onshape_user_id: "alice", name: "Alice Ng", email: null },
@@ -30,6 +36,13 @@ export const boardProcesses = [
   { id: "milling", name: "CNC Milling", description: null },
   { id: "printing", name: "3D Printing", description: null },
 ];
+
+export const PRINTING = {
+  id: "printing",
+  name: "3D Printing",
+  icon: null,
+  color: null,
+};
 
 export const boardEquipment = [
   {
@@ -52,18 +65,30 @@ export const boardEquipment = [
   },
 ];
 
-const hoursAgo = (hours: number) =>
-  new Date(Date.now() - hours * 3600_000).toISOString();
+type CardOverrides = Record<string, unknown>;
+export type BoardCard = Record<string, unknown> & { id: string; title: string };
 
+/**
+ * A card row with every field the server returns. Call it with
+ * `{ id, title, ...overrides }`, or with a title (also used as the id) and
+ * overrides.
+ */
 export function boardCard(
-  overrides: Record<string, unknown> & { id: string; title: string }
-) {
+  overrides: CardOverrides & { id: string; title: string }
+): BoardCard;
+export function boardCard(title: string, overrides?: CardOverrides): BoardCard;
+export function boardCard(
+  first: string | (CardOverrides & { id: string; title: string }),
+  rest: CardOverrides = {}
+): BoardCard {
+  const overrides =
+    typeof first === "string" ? { id: first, title: first, ...rest } : first;
   return {
     column_id: "backlog",
     image_url: null,
     assignee: null,
-    date_created: hoursAgo(48),
-    date_updated: hoursAgo(2),
+    date_created: ago(48),
+    date_updated: ago(2),
     machine: null,
     machine_id: null,
     queue_position: null,
@@ -91,8 +116,15 @@ export function boardCard(
   };
 }
 
-export async function bundleBoard() {
-  const bundle = await build({
+const PIXEL = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
+
+let boardBundle: Promise<string> | undefined;
+/** The Board island as one script; built once per test process. */
+export function bundleBoard() {
+  boardBundle ??= build({
     bundle: true,
     write: false,
     platform: "browser",
@@ -109,39 +141,70 @@ export async function bundleBoard() {
       createRoot(document.getElementById('root')).render(<Board cardId={cardId} />);
     `,
     },
-  });
-  return bundle.outputFiles[0].text;
+  }).then((result) => result.outputFiles[0].text);
+  return boardBundle;
 }
 
-export type BoardStub = {
-  cards: ReturnType<typeof boardCard>[];
-  /** Every API request as `METHOD /path`. */
-  requests: string[];
-};
+/** A browser with one 1440 x 900 page. */
+export async function launchBoardBrowser(chromium: {
+  launch: () => Promise<Browser>;
+}) {
+  const browser = await chromium.launch();
+  const page = await newBoardPage(browser);
+  return { browser, page };
+}
 
-/**
- * Open `/kanban<search>` on a stubbed origin and mount the board. Returns the
- * stub so a test can change cards or read the request log.
- */
-export async function openBoard(
-  browser: Browser,
-  {
-    port,
-    script,
-    cards,
-    search = "",
-  }: {
-    port: number;
-    script: string;
-    cards: ReturnType<typeof boardCard>[];
-    search?: string;
-  }
-): Promise<{ page: Page; stub: BoardStub; reload: () => Promise<void> }> {
+async function newBoardPage(browser: Browser) {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 900 },
   });
   page.setDefaultTimeout(5000);
-  const stub: BoardStub = { cards, requests: [] };
+  return page;
+}
+
+/** The card face titled `title`; a click opens its details. */
+export function boardCardFace(page: Page, title: string) {
+  return page.getByRole("button", { name: title, exact: true });
+}
+
+export type BoardStub = {
+  cards: BoardCard[];
+  /** Every API request as `METHOD /path`. */
+  requests: string[];
+};
+
+export interface OpenBoardOptions {
+  port: number;
+  cards: BoardCard[];
+  /** The bundled island; defaults to `bundleBoard()`. */
+  script?: string;
+  /** Query string for `/kanban`, e.g. `?project=intake`. */
+  search?: string;
+  users?: Record<string, unknown>[];
+  projects?: Record<string, unknown>[];
+  processes?: Record<string, unknown>[];
+  equipment?: Record<string, unknown>[];
+}
+
+/**
+ * Open `/kanban<search>` on a stubbed origin and mount the board. Pass a
+ * browser for a new 1440 x 900 page, or a page to load it again there.
+ * Returns the stub so a test can change cards or read the request log.
+ */
+export async function openBoard(
+  target: Browser | Page,
+  options: OpenBoardOptions
+): Promise<{ page: Page; stub: BoardStub; reload: () => Promise<void> }> {
+  const { port, search = "" } = options;
+  const page =
+    "newPage" in target ? await newBoardPage(target as Browser) : target;
+  const script = options.script ?? (await bundleBoard());
+  const users = options.users ?? boardUsers;
+  const projects = options.projects ?? boardProjects;
+  const processes = options.processes ?? boardProcesses;
+  const equipment = options.equipment ?? boardEquipment;
+  const stub: BoardStub = { cards: options.cards, requests: [] };
+  await page.unroute(`http://localhost:${port}/**`);
   await page.route(`http://localhost:${port}/**`, (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -164,15 +227,14 @@ export async function openBoard(
       const card = stub.cards.find((candidate) => candidate.id === id);
       return route.fulfill({ json: { card: { ...card, status_history: [] } } });
     }
-    if (path === "/api/users") return route.fulfill({ json: boardUsers });
-    if (path === "/api/projects")
-      return route.fulfill({ json: { projects: boardProjects } });
+    if (path === "/api/users") return route.fulfill({ json: users });
+    if (path === "/api/projects") return route.fulfill({ json: { projects } });
     if (path === "/api/processes")
-      return route.fulfill({ json: { processes: boardProcesses } });
+      return route.fulfill({ json: { processes } });
     if (path === "/api/equipment")
-      return route.fulfill({ json: { equipment: boardEquipment } });
+      return route.fulfill({ json: { equipment } });
     if (path.startsWith("/api/onshape/thumbnail"))
-      return route.fulfill({ status: 404, body: "" });
+      return route.fulfill({ contentType: "image/png", body: PIXEL });
     return route.fulfill({ status: 404, json: { error: "not stubbed" } });
   });
   const styles = globSync("dist/client/_astro/AppLayout.*.css");

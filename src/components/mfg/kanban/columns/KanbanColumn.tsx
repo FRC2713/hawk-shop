@@ -27,6 +27,7 @@ import {
 } from "~/server/kanbanApi/columnTypes";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanColumnCardContainer } from "./KanbanColumnCardContainer";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
 import { splitDoneToday } from "~/lib/doneToday";
 
 interface KanbanColumnProps {
@@ -36,7 +37,7 @@ interface KanbanColumnProps {
   onDelete: (id: string) => void;
   isEditMode?: boolean;
   isDraggingCard?: boolean;
-  hideImages?: boolean;
+  density?: BoardDensity;
   usersMap: Map<string, UserRow>;
   isLastColumn?: boolean;
   selectedCardIds?: Set<string>;
@@ -56,7 +57,7 @@ export function KanbanColumn({
   onDelete,
   isEditMode = false,
   isDraggingCard = false,
-  hideImages = false,
+  density = "compact",
   usersMap,
   isLastColumn = false,
   selectedCardIds = new Set(),
@@ -198,7 +199,7 @@ export function KanbanColumn({
           columnName={column.title}
           cards={filteredCards}
           isDraggingCard={isDraggingCard}
-          hideImages={hideImages}
+          density={density}
           usersMap={usersMap}
           olderCardsCount={isLastColumn ? olderCardsCount : 0}
           columnId={column.id}

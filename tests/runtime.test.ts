@@ -1060,8 +1060,9 @@ test(
       });
       await expect(sourceColumn.getByLabel("Matching cards")).toHaveText("1");
       await expect(targetColumn.getByLabel("Matching cards")).toHaveText("0");
+      // The whole card face is the drag handle.
       const handle = sourceColumn.getByRole("button", {
-        name: "Drag to reorder",
+        name: first.title,
         exact: true,
       });
       const from = await handle.boundingBox();
@@ -1130,14 +1131,12 @@ test(
         page.getByRole("heading", { name: cards[index].title, exact: true });
       await expect(heading(0)).toBeVisible();
       await expect(heading(2)).toBeVisible();
+      const face = (index: number) =>
+        page.getByRole("button", { name: cards[index].title, exact: true });
       await expect(
-        heading(0).locator("..").getByText("Warnings (1)", { exact: true })
+        face(0).getByText("1 warning", { exact: true })
       ).toBeVisible();
-      await expect(
-        heading(2)
-          .locator("..")
-          .getByText(/Warnings/)
-      ).toHaveCount(0);
+      await expect(face(2).getByText(/warning/)).toHaveCount(0);
       await heading(0).click();
       const details = page.getByRole("dialog");
       await expect(

@@ -1,10 +1,11 @@
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useBoardFilters } from "~/hooks/useBoardFilters";
+import { useBoardDensity } from "~/hooks/useBoardDensity";
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Image, KanbanSquare, Rows3 } from "lucide-react";
+import { KanbanSquare, Rows3 } from "lucide-react";
 import {
   KanbanBoard,
   KanbanBoardSkeleton,
@@ -17,6 +18,7 @@ import type {
 } from "~/server/kanbanApi/columnTypes";
 import { KanbanBoardControls } from "~/components/mfg/kanban/board/KanbanBoardControls";
 import { BoardFilterBar } from "~/components/mfg/kanban/board/BoardFilterBar";
+import { BoardDensityToggle } from "~/components/mfg/kanban/board/BoardDensityToggle";
 import { useQuery } from "@tanstack/react-query";
 import { kanbanConfigQuery, queryKeys, saveKanbanConfig } from "~/lib/api";
 
@@ -29,7 +31,7 @@ export function MfgKanbanClient({
 }) {
   const queryClient = useQueryClient();
   const [isEditMode, setIsEditMode] = useState(false);
-  const [hideImages, setHideImages] = useState(false);
+  const { density, setDensity } = useBoardDensity();
   const {
     filters,
     changeFilters,
@@ -212,16 +214,7 @@ export function MfgKanbanClient({
             onClear={clearFilters}
             searchRef={searchRef}
           >
-            <Button
-              variant={hideImages ? "outline" : "secondary"}
-              size="sm"
-              aria-pressed={!hideImages}
-              onClick={() => setHideImages(!hideImages)}
-              className="gap-2"
-            >
-              <Image className="size-4" aria-hidden="true" />
-              Images
-            </Button>
+            <BoardDensityToggle density={density} onChange={setDensity} />
             <Button
               variant={groupByProject ? "secondary" : "outline"}
               size="sm"
@@ -247,7 +240,7 @@ export function MfgKanbanClient({
               config={config}
               onConfigChange={handleConfigChange}
               isEditMode={isEditMode}
-              hideImages={hideImages}
+              density={density}
               filters={filters}
               // Column editing needs whole columns to drag.
               groupByProject={groupByProject && !isEditMode}

@@ -50,6 +50,7 @@ import {
   KanbanSwimlanes,
   type Lane,
 } from "./KanbanSwimlanes";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
 
 type KanbanCardRow = KanbanCardWithProcesses;
 
@@ -57,7 +58,7 @@ interface KanbanBoardProps {
   config: KanbanConfig;
   onConfigChange: (config: KanbanConfig) => void;
   isEditMode?: boolean;
-  hideImages?: boolean;
+  density?: BoardDensity;
   filters?: BoardFilters;
   groupByProject?: boolean;
   onAddColumn?: () => void;
@@ -70,7 +71,7 @@ export function KanbanBoard({
   config,
   onConfigChange,
   isEditMode = false,
-  hideImages = false,
+  density = "compact",
   filters = EMPTY_BOARD_FILTERS,
   groupByProject = false,
   onAddColumn,
@@ -541,7 +542,7 @@ export function KanbanBoard({
           columns={columns}
           lanes={lanes}
           cardsByColumn={laneCardsByColumn}
-          hideImages={hideImages}
+          density={density}
           usersMap={usersMap}
           isDraggingCard={activeCard !== null}
           selectedCardIds={selectedCardIds}
@@ -568,7 +569,7 @@ export function KanbanBoard({
                   onDelete={handleDeleteColumn}
                   isEditMode={isEditMode}
                   isDraggingCard={activeCard !== null}
-                  hideImages={hideImages}
+                  density={density}
                   usersMap={usersMap}
                   isLastColumn={isLastColumn}
                   selectedCardIds={selectedCardIds}
