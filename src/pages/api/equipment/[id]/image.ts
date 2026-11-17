@@ -107,3 +107,42 @@ export const DELETE: APIRoute = async ({ request, params }) => {
     return Response.json({ error: errorMessage, errorId }, { status: 500 });
   }
 };
+
+/** Reorder existing photos. Upload and removal keep their existing endpoints. */
+export const PUT: APIRoute = async ({ request, params }) => {
+  const unauthorized = await requireAuth();
+  if (unauthorized) return unauthorized;
+  let imageUrls: unknown;
+  try {
+    ({ imageUrls } = await request.json());
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  try {
+    const equipment = await getEquipmentById(params.id!);
+    if (!equipment)
+      return Response.json({ error: "Equipment not found" }, { status: 404 });
+    const current = equipment.image_urls ?? [];
+    if (
+      !Array.isArray(imageUrls) ||
+      imageUrls.length !== current.length ||
+      new Set(imageUrls).size !== current.length ||
+      !imageUrls.every(
+        (url) => typeof url === "string" && current.includes(url)
+      )
+    ) {
+      return Response.json(
+        { error: "Photo order must contain each existing photo once." },
+        { status: 400 }
+      );
+    }
+    await updateEquipment(equipment.id, { image_urls: imageUrls });
+    return Response.json({ success: true });
+  } catch (error) {
+    const errorId = logServerError("EQUIPMENT IMAGE", error);
+    return Response.json(
+      { error: "Failed to reorder photos", errorId },
+      { status: 500 }
+    );
+  }
+};
