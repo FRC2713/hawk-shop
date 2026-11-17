@@ -1,0 +1,1 @@
+ALTER TABLE `equipment` ADD `last_maintenance_at` text;

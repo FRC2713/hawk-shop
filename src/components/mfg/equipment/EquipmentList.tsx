@@ -88,7 +88,7 @@ export function EquipmentList({ equipment, groupBy }: EquipmentListProps) {
                 return (
                   <li key={item.id} className="border-t first:border-t-0">
                     <a
-                      href={`/equipment/${item.id}`}
+                      href={`/equipment/${encodeURIComponent(item.id)}`}
                       className="focus-visible:ring-ring/50 hover:bg-muted flex min-h-20 w-full flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
                     >
                       <span className="bg-muted flex h-[42px] w-14 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
@@ -123,7 +123,9 @@ export function EquipmentList({ equipment, groupBy }: EquipmentListProps) {
                           )}
                           {machineStatusLabels[item.machine_status]}
                         </span>
-                        <span className="brand-figures">{count} queued</span>
+                        <span>
+                          <span className="brand-figures">{count}</span> queued
+                        </span>
                       </span>
                     </a>
                   </li>
