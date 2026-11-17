@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Wrench, X } from "lucide-react";
+import { Loader2, User, Wrench, X } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import type { KanbanColumn as KanbanColumnType } from "~/server/kanbanApi/columnTypes";
@@ -22,22 +22,23 @@ import {
 } from "~/components/ui/select";
 import {
   assignCardsToMachine,
+  assignKanbanCard,
   equipmentQuery,
   partActions,
   projectsQuery,
   queryKeys,
   updateKanbanCard,
+  usersQuery,
   ApiError,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
+import { eligibleMachines, machineAssignment } from "~/lib/bulkCardActions";
 import {
-  cardCount,
-  eligibleMachines,
   errorReason,
   forEachCard,
-  machineAssignment,
   type BulkOutcome,
-} from "~/lib/bulkCardActions";
+} from "~/lib/bulkCardRunner";
+import { plural } from "~/lib/plural";
 import { useMachineQueueCounts } from "~/components/mfg/kanban/useMachineQueueCounts";
 
 type Card = KanbanCardWithProcesses;
@@ -59,8 +60,8 @@ interface KanbanBulkEditBarProps {
 }
 
 /**
- * The action bar for selected cards: Move to, Assign machine and Change
- * project. A partial failure names the cards that didn't change and leaves
+ * The action bar for selected cards: Move to, Assign, Assign machine and
+ * Change project. A partial failure names the cards that didn't change and leaves
  * them selected.
  */
 export function KanbanBulkEditBar({
@@ -72,6 +73,16 @@ export function KanbanBulkEditBar({
   const queryClient = useQueryClient();
   const { data: equipment = [] } = useQuery(equipmentQuery());
   const { data: projects = [] } = useQuery(projectsQuery());
+  const { data: users = [] } = useQuery(usersQuery());
+  const people = useMemo(
+    () =>
+      [...users].sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? "", undefined, {
+          sensitivity: "base",
+        })
+      ),
+    [users]
+  );
 
   const machines = useMemo(
     () =>
@@ -98,21 +109,24 @@ export function KanbanBulkEditBar({
         onClearSelection();
         return;
       }
-      toast.error(`${failed.length} of ${cardCount(total)} didn't change`, {
-        duration: 15000,
-        description: (
-          <div>
-            {changed.length > 0 && <p>{success(changed.length)}.</p>}
-            <ul className="list-disc pl-4">
-              {failed.map(({ card, reason }) => (
-                <li key={card.id}>
-                  {card.title}: {reason}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ),
-      });
+      toast.error(
+        `${failed.length} of ${plural(total, "card")} didn't change`,
+        {
+          duration: 15000,
+          description: (
+            <div>
+              {changed.length > 0 && <p>{success(changed.length)}.</p>}
+              <ul className="list-disc pl-4">
+                {failed.map(({ card, reason }) => (
+                  <li key={card.id}>
+                    {card.title}: {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ),
+        }
+      );
       onKeepSelected(failed.map(({ card }) => card.id));
     },
     onError: (error) => {
@@ -125,12 +139,27 @@ export function KanbanBulkEditBar({
 
   const moveTo = (target: KanbanColumnType) =>
     action.mutate(async () => ({
-      success: (n) => `Moved ${cardCount(n)} to ${target.title}`,
+      success: (n) => `Moved ${plural(n, "card")} to ${target.title}`,
       total: cards.length,
       outcome: await forEachCard(cards, (card) =>
         partActions.moveCard(card.id, target.id)
       ),
     }));
+
+  const assignPerson = (userId: string | null) => {
+    const name =
+      people.find((user) => user.onshape_user_id === userId)?.name ?? "them";
+    action.mutate(async () => ({
+      success: (n) =>
+        userId
+          ? `Assigned ${plural(n, "card")} to ${name}`
+          : `Unassigned ${plural(n, "card")}`,
+      total: cards.length,
+      outcome: await forEachCard(cards, (card) =>
+        assignKanbanCard(card.id, userId)
+      ),
+    }));
+  };
 
   const assignMachine = (machineId: string | null) => {
     const machine = machines.find((item) => item.id === machineId) ?? null;
@@ -159,8 +188,8 @@ export function KanbanBulkEditBar({
       return {
         success: (n) =>
           machine
-            ? `Assigned ${cardCount(n)} to ${machine.name}`
-            : `Cleared the machine on ${cardCount(n)}`,
+            ? `Assigned ${plural(n, "card")} to ${machine.name}`
+            : `Cleared the machine on ${plural(n, "card")}`,
         total: cards.length,
         outcome,
       };
@@ -179,7 +208,7 @@ export function KanbanBulkEditBar({
       // Project card counts changed too.
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() });
       return {
-        success: (n) => `Moved ${cardCount(n)} to ${name}`,
+        success: (n) => `Moved ${plural(n, "card")} to ${name}`,
         total: cards.length,
         outcome: result,
       };
@@ -237,6 +266,34 @@ export function KanbanBulkEditBar({
               className="h-8 gap-1"
               disabled={busy}
             >
+              <User className="size-3.5 opacity-50" aria-hidden="true" />
+              Assign
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" className="max-h-72 w-56">
+            {people.map((user) => (
+              <DropdownMenuItem
+                key={user.onshape_user_id}
+                onSelect={() => assignPerson(user.onshape_user_id)}
+              >
+                {user.name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => assignPerson(null)}>
+              Unassigned
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1"
+              disabled={busy}
+            >
               <Wrench className="size-3.5 opacity-50" aria-hidden="true" />
               Assign machine
             </Button>
@@ -251,7 +308,7 @@ export function KanbanBulkEditBar({
                 {notInBacklog > 0 && (
                   <>
                     <DropdownMenuLabel className="text-muted-foreground font-normal">
-                      {cardCount(notInBacklog)} not in Backlog will stay as{" "}
+                      {plural(notInBacklog, "card")} not in Backlog will stay as{" "}
                       {notInBacklog === 1 ? "it is" : "they are"}.
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />

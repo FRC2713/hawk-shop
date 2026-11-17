@@ -228,6 +228,39 @@ test("Assign machine explains that only Backlog cards take a machine", async () 
   }
 });
 
+test("Assign sets or clears the person on each selected card and names the ones that failed", async () => {
+  const assigned: string[] = [];
+  const { page } = await open((request, path) => {
+    if (!path.endsWith("/assign")) return undefined;
+    const id = decodeURIComponent(path.split("/")[4]);
+    assigned.push(`${id}:${request.postDataJSON().assignee}`);
+    return id === "Plate"
+      ? { status: 404, json: { error: "Card not found" } }
+      : { json: { card: {} } };
+  });
+  try {
+    await checkbox(page, "Bracket").click();
+    await checkbox(page, "Plate").click({ modifiers: ["Shift"] });
+    await actionBar(page)
+      .getByRole("button", { name: "Assign", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Alice Ng" }).click();
+
+    await expect(page.getByText("1 of 2 cards didn't change")).toBeVisible();
+    await expect(page.getByText("Assigned 1 card to Alice Ng.")).toBeVisible();
+    await expect(page.getByText("Plate: Card not found")).toBeVisible();
+    assert.deepEqual(assigned.sort(), ["Bracket:alice", "Plate:alice"]);
+
+    await actionBar(page)
+      .getByRole("button", { name: "Assign", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Unassigned" }).click();
+    await expect.poll(() => assigned).toContain("Plate:null");
+  } finally {
+    await page.close();
+  }
+});
+
 test("Change project updates each selected card and names the ones that failed", async () => {
   const patches: string[] = [];
   const { page } = await open((request, path) => {

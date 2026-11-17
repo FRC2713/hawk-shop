@@ -1,7 +1,7 @@
 /**
  * Rules for the board's bulk actions on selected cards: which machines to
- * offer, which cards an action skips, and how a partial failure reads.
- * Pure and client-safe.
+ * offer and which cards an action skips. Pure and client-safe; the requests
+ * run in `bulkCardRunner.ts`.
  */
 import { machineRefusal } from "~/lib/machineQueue";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
@@ -17,35 +17,6 @@ export type BulkMachine = Processes & {
   name: string;
   status: string | null;
 };
-
-export interface BulkOutcome<C extends BulkCard> {
-  changed: C[];
-  failed: { card: C; reason: string }[];
-}
-
-/** Run `request` for every card, all at once, and sort out which failed. */
-export async function forEachCard<C extends BulkCard>(
-  cards: readonly C[],
-  request: (card: C) => Promise<unknown>
-): Promise<BulkOutcome<C>> {
-  const results = await Promise.allSettled(cards.map(request));
-  const outcome: BulkOutcome<C> = { changed: [], failed: [] };
-  results.forEach((result, index) => {
-    if (result.status === "fulfilled") outcome.changed.push(cards[index]);
-    else
-      outcome.failed.push({
-        card: cards[index],
-        reason: errorReason(result.reason),
-      });
-  });
-  return outcome;
-}
-
-export function errorReason(error: unknown) {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Unknown error";
-}
 
 const NOT_IN_BACKLOG = "not in Backlog";
 
@@ -99,9 +70,4 @@ function isBacklog(card: { column_id: string }) {
 
 function processNames(card: Processes) {
   return (card.processes ?? []).map((process) => process.name).join(" or ");
-}
-
-/** "3 cards" / "1 card". */
-export function cardCount(count: number) {
-  return `${count} card${count === 1 ? "" : "s"}`;
 }
