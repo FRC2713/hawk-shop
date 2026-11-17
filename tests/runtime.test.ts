@@ -264,8 +264,8 @@ test("Astro serves useful overview content without JavaScript and registers Suit
   const response = await call("/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Shop overview/);
-  assert.match(html, /Parts in progress/);
+  assert.match(html, /Start here/);
+  assert.match(html, /Make parts/);
   assert.match(html, /Shop Member/);
   assert.match(html, /2713-red.svg/);
   assert.ok(!html.includes("astro-island"));
@@ -612,7 +612,8 @@ test(
           // Pages without a tab stay reachable from the account menu.
           await page.getByLabel("Account: Shop Member").click();
         }
-        await page
+        // On phones the home hub lists Equipment too; use the menu's link.
+        await (width === 1280 ? page : page.locator("[data-account-menu]"))
           .getByRole("link", { name: "Equipment", exact: true })
           .click();
         await expect(
