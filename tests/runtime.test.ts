@@ -1496,8 +1496,9 @@ test("equipment add and edit routes hydrate at phone and desktop widths and miss
       await page
         .getByRole("searchbox", { name: "Search equipment" })
         .fill("Route printer");
-      await page.getByRole("button", { name: /Route printer/ }).click();
-      await page.getByRole("button", { name: "Edit", exact: true }).click();
+      await page.getByRole("link", { name: /Route printer/ }).click();
+      if (width >= 1024)
+        await page.getByRole("button", { name: "Edit", exact: true }).click();
       await expect(page).toHaveURL(origin + `/equipment/${machine.id}/edit`);
       assert.ok(
         await page.evaluate(

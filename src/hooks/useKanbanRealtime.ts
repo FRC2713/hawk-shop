@@ -18,6 +18,7 @@ export function useKanbanRealtime() {
     const onChange = () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.equipment.all() });
     };
 
     source.addEventListener("change", onChange);
