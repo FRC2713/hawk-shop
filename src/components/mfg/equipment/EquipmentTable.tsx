@@ -64,13 +64,15 @@ export function EquipmentTable({
                         !(event.target as HTMLElement).closest("a") &&
                         !window.getSelection()?.toString()
                       )
-                        window.location.assign(`/equipment/${item.id}`);
+                        window.location.assign(
+                          `/equipment/${encodeURIComponent(item.id)}`
+                        );
                     }}
                   >
                     <th scope="row" className="px-4 py-3 font-semibold">
                       <a
                         className="text-[var(--link)] underline-offset-4 hover:underline focus-visible:outline-2"
-                        href={`/equipment/${item.id}`}
+                        href={`/equipment/${encodeURIComponent(item.id)}`}
                       >
                         {item.name}
                       </a>
@@ -100,7 +102,8 @@ export function EquipmentTable({
                       <a
                         className="text-[var(--link)] underline underline-offset-4 focus-visible:outline-2"
                         href={
-                          item.documentation_url || `/equipment/${item.id}/edit`
+                          item.documentation_url ||
+                          `/equipment/${encodeURIComponent(item.id)}/edit`
                         }
                         target={item.documentation_url ? "_blank" : undefined}
                         rel={item.documentation_url ? "noreferrer" : undefined}

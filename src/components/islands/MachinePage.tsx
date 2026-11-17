@@ -7,10 +7,12 @@ import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
 import {
   equipmentQuery,
   flagEquipmentMaintenance,
+  clearEquipmentMaintenance,
   machineQueueQuery,
   reorderMachineQueue,
 } from "~/lib/api/equipment";
-import { kanbanCardDetailsQuery } from "~/lib/api/kanban";
+import { DeleteEquipmentDialog } from "~/components/mfg/equipment/DeleteEquipmentDialog";
+import { kanbanCardsQuery, kanbanCardDetailsQuery } from "~/lib/api/kanban";
 import { userQuery } from "~/lib/api/users";
 import { queryKeys } from "~/lib/api/keys";
 import { machineStatusLabels } from "~/lib/equipment";
@@ -55,6 +57,13 @@ export function MachinePageContent({ id }: { id: string }) {
   const equipment = useQuery(equipmentQuery());
   const queue = useQuery(machineQueueQuery(id));
   const machine = equipment.data?.find((item) => item.id === id);
+  const [deleting, setDeleting] = useState(false);
+  const cards = useQuery({ ...kanbanCardsQuery(), enabled: deleting });
+  const fix = useMutation({
+    mutationFn: () => clearEquipmentMaintenance(id),
+    onSuccess: () =>
+      client.invalidateQueries({ queryKey: queryKeys.equipment.all() }),
+  });
   const [reporting, setReporting] = useState(false);
   const [note, setNote] = useState("");
   const report = useMutation({
@@ -189,6 +198,14 @@ export function MachinePageContent({ id }: { id: string }) {
                 <p>
                   Reported by {machine.maintenance_reported_by || "Unknown"}
                 </p>
+                <Button
+                  variant="outline"
+                  disabled={fix.isPending}
+                  onClick={() => fix.mutate()}
+                >
+                  Mark fixed
+                </Button>
+                {fix.error && <ErrorDisplay error={fix.error} />}
               </aside>
             )}
             <section aria-label="Now" className="space-y-3">
@@ -264,37 +281,54 @@ export function MachinePageContent({ id }: { id: string }) {
               className="space-y-2 rounded-md border p-4"
             >
               <h2 className="text-xl font-semibold">This week</h2>
-              <p className="brand-figures">
-                {machine.weekly_stats.done} parts done
+              <p>
+                <span className="brand-figures">
+                  {machine.weekly_stats.done}
+                </span>{" "}
+                parts done
               </p>
-              <p className="brand-figures">
-                {machine.weekly_stats.sent_back} sent back
+              <p>
+                <span className="brand-figures">
+                  {machine.weekly_stats.sent_back}
+                </span>{" "}
+                sent back
               </p>
               <p className="text-muted-foreground text-sm">
                 Since Monday, UTC. Counts distinct parts, not quantities.
               </p>
             </section>
-            <section className="space-y-2">
+            <section aria-label="Last maintenance" className="space-y-2">
               <h2 className="text-xl font-semibold">Last maintenance</h2>
               <p>
-                {machine.maintenance_reported_at ? (
-                  <>
-                    Problem reported{" "}
-                    <time dateTime={machine.maintenance_reported_at}>
-                      {new Date(
-                        machine.maintenance_reported_at
-                      ).toLocaleString()}
-                    </time>
-                  </>
+                {machine.last_maintenance_at ? (
+                  <time dateTime={machine.last_maintenance_at}>
+                    {new Date(machine.last_maintenance_at).toLocaleString()}
+                  </time>
                 ) : (
                   "No maintenance date recorded."
                 )}
               </p>
-              <p className="text-muted-foreground text-sm">
-                The recorded date is the active problem report. Marking fixed
-                clears it; past repairs are not recorded.
-              </p>
             </section>
+            <div className="border-t pt-4">
+              <Button variant="ghost" onClick={() => setDeleting(true)}>
+                Delete equipment
+              </Button>
+              {deleting && cards.isPending && (
+                <p role="status">Loading linked cards…</p>
+              )}
+              {deleting && cards.error && <ErrorDisplay error={cards.error} />}
+              {cards.isSuccess && (
+                <DeleteEquipmentDialog
+                  open={deleting}
+                  onOpenChange={setDeleting}
+                  equipment={machine}
+                  assignedCount={
+                    cards.data.filter((card) => card.machine_id === id).length
+                  }
+                  onDeleted={() => window.location.assign("/equipment")}
+                />
+              )}
+            </div>
           </>
         )}
       </div>

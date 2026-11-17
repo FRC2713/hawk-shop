@@ -2,7 +2,7 @@ import { Workflow } from "./Workflow";
 import { EquipmentEditor as Editor } from "~/components/mfg/equipment/EquipmentEditor";
 import type { EquipmentWithProcesses } from "~/lib/api";
 
-/** The route and dialog use the same editor and API mutations. */
+/** The add and edit routes share the editor and API mutations. */
 export default function EquipmentEditor({
   equipment,
   allEquipment,

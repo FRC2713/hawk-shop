@@ -268,22 +268,39 @@ export async function setEquipmentMaintenance(
   equipmentId: string,
   maintenance: { note: string; reportedBy: string } | null
 ): Promise<EquipmentRow> {
-  return updateEquipment(
-    equipmentId,
-    maintenance
-      ? {
-          status: "maintenance",
-          maintenance_note: maintenance.note,
-          maintenance_reported_by: maintenance.reportedBy,
-          maintenance_reported_at: new Date().toISOString(),
-        }
-      : {
-          status: null,
-          maintenance_note: null,
-          maintenance_reported_by: null,
-          maintenance_reported_at: null,
-        }
-  );
+  return db.transaction((tx) => {
+    const previous = tx
+      .select()
+      .from(equipmentTable)
+      .where(eq(equipmentTable.id, equipmentId))
+      .get();
+    if (!previous) throw new Error("Equipment not found");
+    const now = new Date().toISOString();
+    return tx
+      .update(equipmentTable)
+      .set({
+        updated_at: now,
+        ...(maintenance
+          ? {
+              status: "maintenance",
+              maintenance_note: maintenance.note,
+              maintenance_reported_by: maintenance.reportedBy,
+              maintenance_reported_at: now,
+            }
+          : {
+              status: null,
+              maintenance_note: null,
+              maintenance_reported_by: null,
+              maintenance_reported_at: null,
+              ...(previous.status === "maintenance"
+                ? { last_maintenance_at: now }
+                : {}),
+            }),
+      })
+      .where(eq(equipmentTable.id, equipmentId))
+      .returning()
+      .get()!;
+  });
 }
 
 /**
