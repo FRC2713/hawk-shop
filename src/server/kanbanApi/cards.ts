@@ -56,6 +56,12 @@ function requireMachine(tx: Transaction, id: string | null) {
   if (!machine) throw new UnknownMachineError();
 }
 
+export class InvalidNotesError extends Error {
+  constructor() {
+    super("Notes must be text");
+  }
+}
+
 function requireProject(tx: Transaction, id: string) {
   const project = tx
     .select()
@@ -375,6 +381,13 @@ export async function updateCard(
   const finalUpdates = Object.fromEntries(
     Object.entries(updates).filter(([key]) => mutableFields.has(key))
   ) as typeof updates;
+  // `content` holds the submitter's notes; blank text means no notes.
+  if (finalUpdates.content !== undefined) {
+    const notes: unknown = finalUpdates.content;
+    if (notes !== null && typeof notes !== "string")
+      throw new InvalidNotesError();
+    finalUpdates.content = notes?.trim() || null;
+  }
   const card = db.transaction((tx) => {
     const previous = tx
       .select()
