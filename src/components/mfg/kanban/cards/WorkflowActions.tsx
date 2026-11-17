@@ -12,26 +12,13 @@ import {
 } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
+import { queryKeys } from "~/lib/api";
 import {
-  approveCard,
-  claimCard,
-  markCardDone,
-  queryKeys,
-  sendCardBack,
-  unclaimCard,
-} from "~/lib/api";
-import { workflowActionsFor, type WorkflowAction } from "~/lib/workflowActions";
+  WORKFLOW_ACTIONS,
+  workflowActionsFor,
+  type WorkflowAction,
+} from "~/lib/workflowActions";
 import { cn } from "~/lib/utils";
-
-const LABELS: Record<WorkflowAction, string> = {
-  claim: "Claim",
-  unclaim: "Unclaim",
-  done: "Done, send to review",
-  approve: "Approve",
-  sendBack: "Send back",
-};
-
-const PRIMARY: WorkflowAction[] = ["claim", "done", "approve"];
 
 /**
  * The buttons for a part's next workflow step: Claim, Unclaim, Done, Approve
@@ -56,20 +43,8 @@ export function WorkflowActions({
   const [reason, setReason] = useState("");
   const reasonId = useId();
   const mutation = useMutation({
-    mutationFn: (action: WorkflowAction) => {
-      switch (action) {
-        case "claim":
-          return claimCard(card.id);
-        case "unclaim":
-          return unclaimCard(card.id);
-        case "done":
-          return markCardDone(card.id);
-        case "approve":
-          return approveCard(card.id);
-        case "sendBack":
-          return sendCardBack(card.id, reason.trim());
-      }
-    },
+    mutationFn: (action: WorkflowAction) =>
+      WORKFLOW_ACTIONS[action].request(card.id, reason.trim()),
     onSuccess: (_card, action) => {
       if (action === "sendBack") {
         setSendBackOpen(false);
@@ -77,9 +52,12 @@ export function WorkflowActions({
       }
     },
     onError: (error, action) =>
-      toast.error(`Couldn't ${LABELS[action].toLowerCase()} "${card.title}"`, {
-        description: error.message,
-      }),
+      toast.error(
+        `Couldn't ${WORKFLOW_ACTIONS[action].label.toLowerCase()} "${card.title}"`,
+        {
+          description: error.message,
+        }
+      ),
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() }),
   });
@@ -95,7 +73,7 @@ export function WorkflowActions({
           type="button"
           size="sm"
           className="flex-1"
-          variant={PRIMARY.includes(action) ? "default" : "outline"}
+          variant={WORKFLOW_ACTIONS[action].primary ? "default" : "outline"}
           disabled={mutation.isPending}
           onClick={() =>
             action === "sendBack"
@@ -103,7 +81,7 @@ export function WorkflowActions({
               : mutation.mutate(action)
           }
         >
-          {LABELS[action]}
+          {WORKFLOW_ACTIONS[action].label}
         </Button>
       ))}
       <Dialog open={sendBackOpen} onOpenChange={setSendBackOpen}>
