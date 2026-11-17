@@ -1,11 +1,9 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
-import TabPlaceholder from "../components/phone/TabPlaceholder.astro";
+import Shop from "../components/islands/Shop";
+
+// The middleware only renders pages for a verified member.
+const viewerId = Astro.locals.identity?.subject ?? "";
 ---
 
-<AppLayout title="Shop"
-  ><TabPlaceholder
-    title="Shop"
-    description="What every machine is doing."
-  /></AppLayout
->
+<AppLayout title="Shop"><Shop viewerId={viewerId} client:load /></AppLayout>

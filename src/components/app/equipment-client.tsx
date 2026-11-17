@@ -44,7 +44,12 @@ export function EquipmentClient() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [groupBy, setGroupBy] = useState<EquipmentGroupBy>("process");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The Shop tab's machine rows link here with `?machine=<id>`.
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("machine")
+  );
   const [dialog, setDialog] = useState<"add" | "edit" | "delete" | null>(null);
   const detailRef = useRef<HTMLElement>(null);
 
