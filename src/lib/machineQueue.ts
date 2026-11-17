@@ -5,7 +5,8 @@
  */
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 
-type Processes = { processes: ReadonlyArray<{ id: string }> };
+/** Client card and equipment types leave `processes` optional; none is []. */
+type Processes = { processes?: ReadonlyArray<{ id: string }> };
 export type QueueMachine = Processes & { id: string; status: string | null };
 export type QueueCard = Processes & {
   id: string;
@@ -20,8 +21,8 @@ export type MachineRefusal =
   "machine_needs_maintenance" | "machine_lacks_process";
 
 const sharesProcess = (machine: Processes, card: Processes) =>
-  card.processes.some((process) =>
-    machine.processes.some((own) => own.id === process.id)
+  (card.processes ?? []).some((process) =>
+    (machine.processes ?? []).some((own) => own.id === process.id)
   );
 
 /**
@@ -34,7 +35,7 @@ export function machineRefusal(
   card: Processes
 ): MachineRefusal | null {
   if (machine.status === "maintenance") return "machine_needs_maintenance";
-  if (card.processes.length > 0 && !sharesProcess(machine, card))
+  if (card.processes?.length && !sharesProcess(machine, card))
     return "machine_lacks_process";
   return null;
 }

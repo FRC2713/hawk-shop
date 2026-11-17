@@ -25,6 +25,7 @@ import {
 } from "~/lib/api";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { cn } from "~/lib/utils";
+import { useMachineQueueCounts } from "~/components/mfg/kanban/useMachineQueueCounts";
 
 interface KanbanBulkEditBarProps {
   selectedCardIds: Set<string>;
@@ -56,6 +57,7 @@ export function KanbanBulkEditBar({
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
   }, [equipment]);
+  const queueCounts = useMachineQueueCounts(sortedEquipment);
 
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) =>
@@ -274,7 +276,10 @@ export function KanbanBulkEditBar({
                   tabIndex={0}
                 >
                   <Wrench className="text-primary size-4" />
-                  {item.name}
+                  <span className="flex-1">{item.name}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {queueCounts.get(item.id) ?? 0} queued
+                  </span>
                 </div>
               ))}
             </div>

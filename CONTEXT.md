@@ -12,7 +12,7 @@ _Avoid_: Assignee when referring to the submitter
 The person assigned to manufacture a released part. The assignee may differ from the submitter.
 
 **Submitter notes**:
-The submitter's manufacturing notes on a card, such as wall thickness, tolerances or finish, shown to whoever makes the part. Any member can edit them, and editing them does not change the card's status.
+The submitter's manufacturing notes on a card, such as wall thickness, tolerances or finish, shown to whoever makes the part. Any member can edit them, and editing them does not change the card's status. The cards API still carries them in the legacy field `content`.
 _Avoid_: Description, content
 
 **Status**:
@@ -25,7 +25,7 @@ A message in the team's designated Slack channel reporting a status change and m
 The permanent record of a card's status changes; unlike status notifications, it is never deleted.
 
 **Machine queue**:
-The parts a machine could make next: Backlog parts assigned to that machine, then Backlog parts in the process queue of any of its processes. Derived, never stored. Within each group, parts a mentor reordered come first in that order, then the rest oldest release first, then due date. A part's place is dropped when its machine changes.
+The parts a machine could make next: Backlog parts assigned to that machine, and Backlog parts in the process queue of any of its processes. Derived, never stored. Parts a mentor positioned come first, in that order, whether assigned or waiting; then its unpositioned assigned parts; then unpositioned waiting parts, each oldest release first, then due date. A waiting part's place is shared by every machine whose queue it is in, and reordering one machine never clears it. A part's place is dropped when its machine changes. A machine in maintenance, or lacking all of a part's processes, can't take that part.
 _Avoid_: Machine backlog, job list
 
 **Process queue**:
