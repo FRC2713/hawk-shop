@@ -30,6 +30,8 @@ export interface KanbanCardUpdate {
   due_date?: string | null;
   quantity_to_make?: number;
   project_id?: string;
+  /** The submitter's notes; blank clears them. */
+  content?: string | null;
   processIds?: string[];
 }
 
