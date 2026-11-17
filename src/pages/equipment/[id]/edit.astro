@@ -1,0 +1,38 @@
+---
+import AppLayout from "~/layouts/AppLayout.astro";
+import EquipmentEditor from "~/components/islands/EquipmentEditor";
+import {
+  getEquipment,
+  getEquipmentById,
+} from "~/server/equipmentApi/equipment";
+const equipment = await getEquipmentById(Astro.params.id!);
+const result = equipment ? await getEquipment() : null;
+if (!equipment) Astro.response.status = 404;
+else if (result?.error) Astro.response.status = 500;
+---
+
+<AppLayout
+  title={equipment ? `Edit ${equipment.name}` : "Equipment not found"}
+  workspace
+>
+  {
+    equipment && result && !result.error ? (
+      <EquipmentEditor
+        equipment={equipment}
+        allEquipment={result.equipment}
+        client:load
+      />
+    ) : (
+      <section class="p-6">
+        <>
+          <h1>
+            {equipment ? "Unable to load equipment" : "Equipment not found"}
+          </h1>
+          <a href="/equipment" class="underline">
+            Back to equipment
+          </a>
+        </>
+      </section>
+    )
+  }
+</AppLayout>

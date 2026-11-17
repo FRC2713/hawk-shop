@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { groupBy as groupInto } from "~/lib/groupBy";
 import { Plus, Search } from "lucide-react";
 import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
 import { Button } from "~/components/ui/button";
@@ -8,23 +7,18 @@ import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
   equipmentQuery,
-  kanbanCardsQuery,
-  kanbanConfigQuery,
   needsMaintenance,
   type EquipmentWithProcesses,
-  type KanbanCardWithProcesses,
 } from "~/lib/api";
 import { cn } from "~/lib/utils";
 import {
   EquipmentList,
   type EquipmentGroupBy,
 } from "~/components/mfg/equipment/EquipmentList";
-import { EquipmentDetailPanel } from "~/components/mfg/equipment/EquipmentDetailPanel";
-import { EquipmentDialog } from "~/components/mfg/equipment/EquipmentDialog";
-import { DeleteEquipmentDialog } from "~/components/mfg/equipment/DeleteEquipmentDialog";
+import { EquipmentTable } from "~/components/mfg/equipment/EquipmentTable";
 import { ProcessesSection } from "~/components/mfg/processes/ProcessesSection";
 
-type Filter = "all" | "maintenance";
+type Filter = "all" | "maintenance" | "no-photo";
 
 function matches(item: EquipmentWithProcesses, query: string) {
   const haystack = [
@@ -44,75 +38,18 @@ export function EquipmentClient() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [groupBy, setGroupBy] = useState<EquipmentGroupBy>("process");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"add" | "edit" | "delete" | null>(null);
-  const detailRef = useRef<HTMLElement>(null);
-
   const { data: equipment = [], isLoading, error } = useQuery(equipmentQuery());
-  const { data: cards = [] } = useQuery(kanbanCardsQuery());
-  const { data: config } = useQuery(kanbanConfigQuery());
-
-  const columns = config?.columns ?? [];
-  const doneId = columns.at(-1)?.id;
-  const columnTitles = useMemo(
-    () => new Map(columns.map((column) => [column.id, column.title])),
-    [columns]
-  );
-
-  // Cards link to their equipment by id; finished cards no longer need it.
-  const cardsByEquipment = useMemo(() => {
-    const linked = groupInto(
-      cards.filter((card) => card.machine_id && card.column_id !== doneId),
-      (card) => card.machine_id
-    );
-    const byId = new Map<string, KanbanCardWithProcesses[]>();
-    for (const item of equipment) {
-      const assigned = (linked.get(item.id) ?? []).sort((a, b) =>
-        (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")
-      );
-      byId.set(item.id, assigned);
-    }
-    return byId;
-  }, [cards, equipment, doneId]);
-
-  const assignedCounts = useMemo(
-    () =>
-      new Map(
-        [...cardsByEquipment.entries()].map(([id, list]) => [id, list.length])
-      ),
-    [cardsByEquipment]
-  );
 
   const maintenanceCount = equipment.filter(needsMaintenance).length;
   const query = search.trim().toLowerCase();
   const visible = equipment.filter(
     (item) =>
-      (filter === "all" || needsMaintenance(item)) &&
+      (filter === "all" ||
+        (filter === "maintenance"
+          ? needsMaintenance(item)
+          : !item.image_urls?.length)) &&
       (!query || matches(item, query))
   );
-
-  const selected = equipment.find((item) => item.id === selectedId) ?? null;
-
-  // Keep a selection while there is equipment to show.
-  useEffect(() => {
-    if (isLoading) return;
-    if (!selected && equipment.length > 0) {
-      const first = [...equipment].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { numeric: true })
-      )[0];
-      setSelectedId(first.id);
-    }
-  }, [equipment, isLoading, selected]);
-
-  const select = (item: EquipmentWithProcesses) => {
-    setSelectedId(item.id);
-    // On a phone the panel sits below the list.
-    if (window.matchMedia("(max-width: 1023px)").matches) {
-      requestAnimationFrame(() =>
-        detailRef.current?.scrollIntoView({ behavior: "smooth" })
-      );
-    }
-  };
 
   if (error) return <ErrorDisplay error={error} />;
 
@@ -123,11 +60,16 @@ export function EquipmentClient() {
       label: "Needs maintenance",
       count: maintenanceCount,
     },
+    {
+      id: "no-photo",
+      label: "No photo",
+      count: equipment.filter((item) => !item.image_urls?.length).length,
+    },
   ];
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 pt-6 pb-28 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-3xl leading-9">Equipment</h1>
           <div className="flex flex-wrap items-center gap-2">
@@ -145,9 +87,14 @@ export function EquipmentClient() {
                 className="bg-card pl-9"
               />
             </div>
-            <Button type="button" onClick={() => setDialog("add")}>
-              <Plus aria-hidden="true" />
-              Add equipment
+            <Button
+              asChild
+              className="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-20 min-h-12 shadow-lg lg:static lg:shadow-none"
+            >
+              <a href="/equipment/new">
+                <Plus aria-hidden="true" />
+                Add equipment
+              </a>
             </Button>
           </div>
         </div>
@@ -172,7 +119,7 @@ export function EquipmentClient() {
               </button>
             ))}
           </div>
-          <label className="ml-auto flex items-center gap-2 py-1">
+          <label className="ml-auto hidden items-center gap-2 py-1 lg:flex">
             <span className="text-xs font-semibold">Group by</span>
             <select
               value={groupBy}
@@ -203,71 +150,45 @@ export function EquipmentClient() {
                     ? "No equipment yet"
                     : filter === "maintenance" && !query
                       ? "Nothing needs maintenance"
-                      : "No equipment matches"}
+                      : filter === "no-photo" && !query
+                        ? "Every machine has a photo"
+                        : "No equipment matches"}
                 </h2>
                 <p className="text-muted-foreground text-sm">
                   {equipment.length === 0
                     ? "Add the machines and tools in your shop so parts can be assigned to them."
                     : filter === "maintenance" && !query
                       ? "Flagged equipment shows up here."
-                      : "Try a different search."}
+                      : filter === "no-photo" && !query
+                        ? "Choose All to browse your equipment."
+                        : "Try a different search or filter."}
                 </p>
                 {equipment.length === 0 && (
-                  <Button type="button" onClick={() => setDialog("add")}>
-                    <Plus aria-hidden="true" />
-                    Add equipment
+                  <Button asChild>
+                    <a href="/equipment/new">
+                      <Plus aria-hidden="true" />
+                      Add equipment
+                    </a>
                   </Button>
                 )}
               </div>
             ) : (
-              <EquipmentList
-                equipment={visible}
-                groupBy={groupBy}
-                selectedId={selectedId}
-                assignedCounts={assignedCounts}
-                onSelect={select}
-              />
+              <>
+                <div className="lg:hidden">
+                  <EquipmentList equipment={visible} groupBy="process" />
+                </div>
+                <div className="hidden min-w-0 lg:block">
+                  <EquipmentTable equipment={visible} groupBy={groupBy} />
+                </div>
+              </>
             )}
           </div>
-
-          {selected && (
-            <aside
-              ref={detailRef}
-              aria-label={`${selected.name} details`}
-              className="bg-card min-w-0 flex-[1_1_360px] scroll-mt-4 overflow-hidden rounded-xl border shadow-xs lg:sticky lg:top-6"
-            >
-              <EquipmentDetailPanel
-                key={selected.id}
-                equipment={selected}
-                assignedCards={cardsByEquipment.get(selected.id) ?? []}
-                columnTitles={columnTitles}
-                onEdit={() => setDialog("edit")}
-                onDelete={() => setDialog("delete")}
-              />
-            </aside>
-          )}
         </div>
 
         <div className="mt-8">
           <ProcessesSection />
         </div>
       </div>
-
-      <EquipmentDialog
-        open={dialog === "add" || dialog === "edit"}
-        onOpenChange={(open) => !open && setDialog(null)}
-        equipment={dialog === "edit" ? selected : null}
-        allEquipment={equipment}
-        onSaved={(id) => setSelectedId(id)}
-      />
-
-      <DeleteEquipmentDialog
-        open={dialog === "delete"}
-        onOpenChange={(open) => !open && setDialog(null)}
-        equipment={selected}
-        assignedCount={selected ? (assignedCounts.get(selected.id) ?? 0) : 0}
-        onDeleted={() => setSelectedId(null)}
-      />
     </div>
   );
 }

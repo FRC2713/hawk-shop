@@ -88,6 +88,8 @@ export const equipment = sqliteTable("equipment", {
   maintenance_note: text("maintenance_note"),
   maintenance_reported_by: text("maintenance_reported_by"),
   maintenance_reported_at: text("maintenance_reported_at"),
+  // Most recent completed maintenance, retained across new problem reports.
+  last_maintenance_at: text("last_maintenance_at"),
   documentation_url: text("documentation_url"),
   image_urls: text("image_urls", { mode: "json" }).$type<string[]>(),
   created_at: text("created_at").notNull().$defaultFn(now),
