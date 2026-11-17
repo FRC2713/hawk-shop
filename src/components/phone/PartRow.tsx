@@ -6,7 +6,8 @@ import { cn } from "~/lib/utils";
  * One part in a phone list: its name and a short detail, linking to the part
  * page. `leading` holds a control before the link (a selection checkbox) and
  * `trailing` one after it (a Claim button); both stay outside the link so a
- * tap on them doesn't open the part. At least 44 px tall.
+ * tap on them doesn't open the part. With either control the detail sits
+ * under the title; without, beside it. At least 44 px tall.
  *
  * Put rows in a `PartList` so they share one bordered panel.
  */
@@ -24,6 +25,9 @@ export function PartRow({
   trailing?: ReactNode;
   className?: string;
 }) {
+  // A row with a control beside it has little width left, so its detail goes
+  // under the title instead of beside it.
+  const stacked = !!(leading || trailing);
   return (
     <li
       className={cn(
@@ -34,11 +38,29 @@ export function PartRow({
       {leading}
       <a
         href={partHref(card.id)}
-        className="text-foreground flex min-h-11 min-w-0 flex-1 items-center justify-between gap-3 py-2 no-underline"
+        className={cn(
+          "text-foreground flex min-h-11 min-w-0 flex-1 py-2 no-underline",
+          stacked
+            ? "flex-col justify-center"
+            : "items-center justify-between gap-3"
+        )}
       >
-        <span className="min-w-0 font-semibold break-words">{card.title}</span>
+        <span
+          className={cn(
+            "min-w-0 font-semibold break-words",
+            !stacked && "flex-1"
+          )}
+        >
+          {card.title}
+        </span>
+        {/* Capped so a long detail wraps instead of squeezing the title. */}
         {detail && (
-          <span className="text-muted-foreground shrink-0 text-right text-xs">
+          <span
+            className={cn(
+              "text-muted-foreground text-xs",
+              !stacked && "max-w-[50%] text-right"
+            )}
+          >
             {detail}
           </span>
         )}
