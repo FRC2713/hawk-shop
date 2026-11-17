@@ -14,6 +14,7 @@ export * from "./projects";
 export * from "./users";
 export * from "./kanban";
 export * from "./onshape";
+export * from "./workflow";
 
 /** Namespaced: its function names (`addCard`, `moveCard`) are generic enough to collide. */
 export * as partActions from "./partActions";

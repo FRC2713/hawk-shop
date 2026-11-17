@@ -43,6 +43,11 @@ export const queryKeys = {
     // Outside "kanban-cards" so a board event never re-runs a failed backfill.
     cardSnapshot: (id: string) => ["kanban-card-snapshot", id] as const,
     columns: () => ["kanban-columns"] as const,
+    // Under "kanban-cards" so a board event refreshes queues too.
+    machineQueue: (id: string) =>
+      ["kanban-cards", "machine-queue", id] as const,
+    processQueue: (id: string) =>
+      ["kanban-cards", "process-queue", id] as const,
   },
   onshape: {
     partsScope: (params: OnshapePartsScope) =>
