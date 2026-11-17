@@ -4,26 +4,21 @@ import {
   kanbanCardsQuery,
   needsMaintenance,
   usersQuery,
-  type EquipmentWithProcesses,
-  type KanbanCardWithProcesses,
 } from "~/lib/api";
 import { machineQueue } from "~/lib/machineQueue";
 import { machineHref, partHref } from "~/lib/phone";
+import {
+  byMachineName,
+  elapsed,
+  machineActivity,
+  plural,
+  runningOn,
+} from "~/lib/phoneParts";
+import { loadState } from "./LoadState";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const { backlog, inProgress, review, done } = WORKFLOW_COLUMN_IDS;
-
-/** "40 min", "3 h", "2 d": how long since `since`. */
-function elapsed(since: string, now: number) {
-  const minutes = Math.max(0, Math.floor((now - Date.parse(since)) / 60_000));
-  if (minutes < 60) return `${minutes} min`;
-  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} h`;
-  return `${Math.floor(minutes / (24 * 60))} d`;
-}
-
-const plural = (count: number, one: string, many: string) =>
-  `${count} ${count === 1 ? one : many}`;
 
 const sameLocalDay = (a: Date, b: Date) =>
   a.toDateString() === b.toDateString();
@@ -33,10 +28,20 @@ const sameLocalDay = (a: Date, b: Date) =>
  * attention, and each machine's status and queue. `date_updated` is when a
  * card entered its current status, so it dates claims, reviews and finishes.
  */
-export function ShopPage({ viewerId }: { viewerId: string }) {
-  const { data: cards = [] } = useQuery(kanbanCardsQuery());
-  const { data: equipment = [] } = useQuery(equipmentQuery());
+export function ShopTab({ viewerId }: { viewerId: string }) {
+  const cardsQuery = useQuery(kanbanCardsQuery());
+  const equipmentResult = useQuery(equipmentQuery());
   const { data: users = [] } = useQuery(usersQuery());
+  const pending = loadState([cardsQuery, equipmentResult], "Loading shop...");
+  if (pending)
+    return (
+      <main className="space-y-4">
+        <h1 className="text-3xl">Shop</h1>
+        {pending}
+      </main>
+    );
+  const cards = cardsQuery.data ?? [];
+  const equipment = equipmentResult.data ?? [];
   const now = Date.now();
   const today = new Date(now);
 
@@ -48,21 +53,11 @@ export function ShopPage({ viewerId }: { viewerId: string }) {
     sameLocalDay(new Date(c.date_updated), today)
   );
 
-  const nameOf = (subject: string | null) =>
-    subject === viewerId
-      ? "You"
-      : subject
-        ? (users.find((user) => user.onshape_user_id === subject)?.name ??
-          subject)
-        : "Nobody";
-
-  const machines = [...equipment]
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
-    .map((machine) => ({
-      machine,
-      queued: machineQueue(machine, cards).length,
-      current: running.find((c) => c.machine_id === machine.id),
-    }));
+  const machines = [...equipment].sort(byMachineName).map((machine) => ({
+    machine,
+    queued: machineQueue(machine, cards).length,
+    current: runningOn(machine, cards),
+  }));
 
   const attention: { text: string; href: string }[] = [
     ...machines
@@ -173,10 +168,7 @@ export function ShopPage({ viewerId }: { viewerId: string }) {
                   {queued}
                 </span>
                 <MachineStatus
-                  machine={machine}
-                  current={current}
-                  owner={current && nameOf(current.assignee)}
-                  now={now}
+                  {...machineActivity(machine, current, users, now, viewerId)}
                 />
                 <span className="text-muted-foreground text-xs">queued</span>
               </a>
@@ -189,29 +181,22 @@ export function ShopPage({ viewerId }: { viewerId: string }) {
 }
 
 function MachineStatus({
-  machine,
-  current,
-  owner,
-  now,
+  text,
+  maintenance,
 }: {
-  machine: EquipmentWithProcesses;
-  current: KanbanCardWithProcesses | undefined;
-  owner: string | undefined;
-  now: number;
+  text: string;
+  maintenance: boolean;
 }) {
-  if (needsMaintenance(machine))
-    return (
-      <span data-status className="text-destructive text-xs font-semibold">
-        {machine.maintenance_note
-          ? `Needs maintenance: ${machine.maintenance_note}`
-          : "Needs maintenance"}
-      </span>
-    );
   return (
-    <span data-status className="text-muted-foreground text-xs break-words">
-      {current
-        ? `${owner} · ${current.title} · ${elapsed(current.date_updated, now)}`
-        : "Idle"}
+    <span
+      data-status
+      className={
+        maintenance
+          ? "text-destructive text-xs font-semibold"
+          : "text-muted-foreground text-xs break-words"
+      }
+    >
+      {text}
     </span>
   );
 }

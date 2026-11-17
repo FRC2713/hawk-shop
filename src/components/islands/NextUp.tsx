@@ -1,5 +1,5 @@
 import { Workflow } from "./Workflow";
-import { NextUp as NextUpTab } from "~/components/phone/NextUp";
+import { NextUpTab } from "~/components/phone/NextUpTab";
 
 export default function NextUp(props: { viewerId: string }) {
   return (

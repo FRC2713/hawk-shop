@@ -103,7 +103,7 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
     import React from 'react';
     import { createRoot } from 'react-dom/client';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-    import { ShopPage } from './src/components/phone/ShopPage';
+    import { ShopTab as ShopPage } from './src/components/phone/ShopTab';
     window.show = (viewerId) => {
       const client = new QueryClient({ defaultOptions: {queries: {retry: false}} });
       createRoot(document.getElementById('root')).render(
@@ -224,6 +224,72 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
         () => document.documentElement.scrollWidth <= innerWidth
       )
     );
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the Shop tab says when the shop can't be loaded and tries again", async () => {
+  const bundle = await build({
+    bundle: true,
+    write: false,
+    platform: "browser",
+    format: "iife",
+    jsx: "automatic",
+    stdin: {
+      resolveDir: process.cwd(),
+      loader: "tsx",
+      contents: `
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+    import { ShopTab } from './src/components/phone/ShopTab';
+    window.show = (viewerId) => {
+      const client = new QueryClient({ defaultOptions: {queries: {retry: false}} });
+      createRoot(document.getElementById('root')).render(
+        <QueryClientProvider client={client}>
+          <ShopTab viewerId={viewerId} />
+        </QueryClientProvider>);
+    };
+  `,
+    },
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    page.setDefaultTimeout(3000);
+    let failing = true;
+    await page.route("**/api/**", (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/api/kanban/cards")
+        return failing
+          ? route.fulfill({ status: 500, json: { error: "Database is busy" } })
+          : route.fulfill({ json: { cards } });
+      if (url.pathname === "/api/equipment")
+        return route.fulfill({ json: { equipment } });
+      if (url.pathname === "/api/users") return route.fulfill({ json: [] });
+      return route.fulfill({ json: {} });
+    });
+    await page.route(
+      (url) =>
+        url.host === `localhost:${PORT}` && !url.pathname.startsWith("/api/"),
+      (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: '<div id="root"></div>',
+        })
+    );
+    await page.goto(`http://localhost:${PORT}/shop`);
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    await page.evaluate((id) => (window as any).show(id), viewer);
+
+    await page.getByText("Database is busy").waitFor();
+    assert.equal(await page.getByRole("list", { name: "Counts" }).count(), 0);
+    failing = false;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await page.getByRole("list", { name: "Counts" }).waitFor();
   } finally {
     await browser.close();
   }

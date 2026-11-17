@@ -1,5 +1,5 @@
 import { Workflow } from "./Workflow";
-import { MyParts as MyPartsTab } from "~/components/phone/MyParts";
+import { MyPartsTab } from "~/components/phone/MyPartsTab";
 
 export default function MyParts(props: { viewerId: string }) {
   return (

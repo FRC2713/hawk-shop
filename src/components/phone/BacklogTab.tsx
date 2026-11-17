@@ -3,13 +3,14 @@ import { Search, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { kanbanCardsQuery, type KanbanCardWithProcesses } from "~/lib/api";
 import { cardMachineName, unlinkedMachineText } from "~/lib/cardMachine";
+import { plural } from "~/lib/phoneParts";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
-import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
 import { cn } from "~/lib/utils";
 import { AssignSheet } from "./AssignSheet";
+import { loadState } from "./LoadState";
 import { PartList, PartRow } from "./PartRow";
 
 type Filter = "no-machine" | "warnings" | "all";
@@ -61,10 +62,6 @@ function groupByProcess(cards: KanbanCardWithProcesses[]) {
     byName.set(name, [...(byName.get(name) ?? []), card]);
   }
   return [...byName].sort(([a], [b]) => byGroupName(a, b));
-}
-
-function plural(count: number, noun: string) {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function partDetail(card: KanbanCardWithProcesses) {
@@ -186,19 +183,7 @@ export function BacklogTab() {
         </div>
       )}
 
-      {cardsQuery.isPending && (
-        <p role="status" className="text-muted-foreground">
-          Loading backlog...
-        </p>
-      )}
-      {cardsQuery.isError && (
-        <div className="space-y-2">
-          <ErrorMessage error={cardsQuery.error} />
-          <Button variant="outline" onClick={() => cardsQuery.refetch()}>
-            Try again
-          </Button>
-        </div>
-      )}
+      {loadState([cardsQuery], "Loading backlog...")}
       {cardsQuery.data && groups.length === 0 && (
         <p className="text-muted-foreground bg-muted rounded-lg p-4 text-sm">
           {term

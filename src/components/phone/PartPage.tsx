@@ -17,6 +17,8 @@ import { openProblemReport } from "~/lib/api/reports";
 import { cardMachineName, unlinkedMachineText } from "~/lib/cardMachine";
 import { cardOnshapeUrl } from "~/lib/onshapeLinks";
 import { PHONE_HOME } from "~/lib/phone";
+import { memberName } from "~/lib/phoneParts";
+import { loadState } from "./LoadState";
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { Button } from "~/components/ui/button";
 import {
@@ -58,37 +60,25 @@ type PartPageProps = {
  */
 export function PartPage({ cardId, viewerId }: PartPageProps) {
   const details = useQuery(kanbanCardDetailsQuery(cardId));
-  if (details.isPending)
-    return (
-      <PartShell>
-        <p role="status" className="text-muted-foreground p-4">
-          Loading part...
-        </p>
-      </PartShell>
-    );
-  if (details.isError) {
-    const missing =
-      details.error instanceof ApiError && details.error.status === 404;
+  if (details.error instanceof ApiError && details.error.status === 404)
     return (
       <PartShell>
         <section role="alert" className="space-y-2 p-4">
-          <h1 className="text-2xl">
-            {missing ? "Part not found" : "Unable to load this part"}
-          </h1>
-          {missing ? (
-            <p>It may have been deleted.</p>
-          ) : (
-            <>
-              <ErrorMessage error={details.error} cardId={cardId} />
-              <Button variant="outline" onClick={() => details.refetch()}>
-                Try again
-              </Button>
-            </>
-          )}
+          <h1 className="text-2xl">Part not found</h1>
+          <p>It may have been deleted.</p>
         </section>
       </PartShell>
     );
-  }
+  const pending = loadState([details], "Loading part...", {
+    title: "Unable to load this part",
+    cardId,
+  });
+  if (pending || !details.data)
+    return (
+      <PartShell>
+        <div className="p-4">{pending}</div>
+      </PartShell>
+    );
   return <PartDetails card={details.data} viewerId={viewerId} />;
 }
 
@@ -115,11 +105,7 @@ function PartDetails({
       }),
   });
 
-  const nameOf = (subject: string | null) =>
-    subject
-      ? (users.find((user) => user.onshape_user_id === subject)?.name ??
-        subject)
-      : null;
+  const nameOf = (subject: string | null) => memberName(users, subject);
   const submitter = nameOf(card.created_by);
   const machine = cardMachineName(card) ?? unlinkedMachineText(card);
   const processes = card.processes ?? [];
@@ -224,9 +210,7 @@ function PartDetails({
             {processes.map((process) => process.name).join(", ") || "None"}
           </Fact>
           <Fact name="Made by">
-            {card.assignee === viewerId
-              ? "You"
-              : (nameOf(card.assignee) ?? "Nobody yet")}
+            {memberName(users, card.assignee, viewerId) ?? "Nobody yet"}
           </Fact>
           <Fact name="Due">
             {card.due_date

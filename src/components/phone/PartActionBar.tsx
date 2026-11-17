@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ApiError,
   approveCard,
   claimCard,
   markCardDone,
@@ -12,6 +11,7 @@ import {
   usersQuery,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
+import { isConflict, memberName } from "~/lib/phoneParts";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { Button } from "~/components/ui/button";
@@ -83,12 +83,8 @@ export function PartActionBar({
     action.variables === CLAIM.run &&
     card.assignee &&
     card.assignee !== viewerId
-  ) {
-    const claimer = users.find(
-      (user) => user.onshape_user_id === card.assignee
-    );
-    conflict = `${claimer?.name ?? "Someone else"} already claimed this part`;
-  }
+  )
+    conflict = `${memberName(users, card.assignee)} already claimed this part`;
 
   const actions = ACTIONS[card.column_id];
   if (!actions) return null;
@@ -174,8 +170,4 @@ export function PartActionBar({
       </Dialog>
     </div>
   );
-}
-
-function isConflict(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 409;
 }

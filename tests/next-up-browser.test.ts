@@ -81,7 +81,11 @@ const shared = card({
   title: "Torx drive 4x",
   quantity_to_make: 4,
   onshape_material: "PETG",
+  due_date: "2026-11-16",
 });
+
+// 1 pm in New York on Tuesday, Nov 17.
+const now = new Date("2026-11-17T18:00:00.000Z");
 
 let browser: Browser;
 let bundleText: string;
@@ -100,7 +104,7 @@ before(async () => {
     import React from 'react';
     import { createRoot } from 'react-dom/client';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-    import { NextUp } from './src/components/phone/NextUp';
+    import { NextUpTab as NextUp } from './src/components/phone/NextUpTab';
     window.show = (viewerId) => {
       const client = new QueryClient({ defaultOptions: {queries: {retry: false}} });
       createRoot(document.getElementById('root')).render(
@@ -123,8 +127,12 @@ after(() => browser?.close());
  * Returns the page and the `METHOD path` calls it made.
  */
 async function phone(cards: Card[]) {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    timezoneId: "America/New_York",
+  });
   page.setDefaultTimeout(3000);
+  await page.clock.setFixedTime(now);
   const requests: string[] = [];
   await page.route("**/api/**", (route) => {
     const request = route.request();
@@ -132,6 +140,12 @@ async function phone(cards: Card[]) {
     requests.push(`${request.method()} ${url.pathname}`);
     const claim = url.pathname.match(/^\/api\/kanban\/cards\/(.+)\/claim$/);
     const done = url.pathname.match(/^\/api\/kanban\/cards\/(.+)\/done$/);
+    const unclaim = url.pathname.match(/^\/api\/kanban\/cards\/(.+)\/unclaim$/);
+    if (unclaim) {
+      const index = cards.findIndex((item) => item.id === unclaim[1]);
+      cards[index] = { ...cards[index], column_id: "backlog", assignee: null };
+      return route.fulfill({ json: { card: cards[index] } });
+    }
     if (claim) {
       const index = cards.findIndex((item) => item.id === claim[1]);
       const body = request.postDataJSON();
@@ -250,6 +264,11 @@ test("without a machine, Next up asks for one and remembers the choice", async (
     await page
       .getByRole("button", { name: "Machine: Tormach. Change" })
       .waitFor();
+
+    // The choice is for today: the next morning asks again.
+    await page.clock.setFixedTime(new Date("2026-11-18T13:00:00.000Z"));
+    await open();
+    await page.getByText("Which machine are you on?").waitFor();
   } finally {
     await page.close();
   }
@@ -274,8 +293,13 @@ test("queue rows show the facts and claim at this machine", async () => {
     );
     assert.deepEqual(await queueRows(page), [
       "Counter Sunk Head | PLA · ×3 · due Fri | Claim",
-      "Torx drive 4x | PETG · ×4 | any 3D Printing | Claim",
+      "Torx drive 4x | PETG · ×4 · overdue, due Nov 16 | any 3D Printing | Claim",
     ]);
+    const overdue = page
+      .getByRole("listitem")
+      .filter({ hasText: "Torx drive 4x" })
+      .locator("[data-overdue]");
+    assert.equal(await overdue.count(), 1);
     assert.equal(
       await page
         .getByRole("link", { name: /Torx drive 4x/ })
@@ -327,6 +351,27 @@ test("the operator's part shows its facts, notes and SOP, and Done sends it to r
     await working.waitFor({ state: "detached" });
     assert.ok(requests.includes("POST /api/kanban/cards/socket/done"));
     assert.ok(!requests.some((request) => request.endsWith("/claim")));
+  } finally {
+    await page.close();
+  }
+});
+
+test("Unclaim beside Done puts the operator's part back in the queue", async () => {
+  const { page, requests } = await phone([making, assigned]);
+  try {
+    await onPrinter2(page);
+    const working = page.getByRole("region", { name: "Working on" });
+    await working
+      .getByRole("button", { name: "Done, send to review" })
+      .waitFor();
+    await working.getByRole("button", { name: "Unclaim" }).click();
+    await working.waitFor({ state: "detached" });
+    assert.ok(requests.includes("POST /api/kanban/cards/socket/unclaim"));
+    assert.ok(!requests.some((request) => request.endsWith("/done")));
+    await page
+      .getByRole("list", { name: "Waiting for Printer 2" })
+      .getByText("Socket Cap Head")
+      .waitFor();
   } finally {
     await page.close();
   }

@@ -65,7 +65,24 @@ const cards = [
         id: 2,
         text: "Hole pattern doesn't match v3.",
         author_name: "Riley",
-        created_at: hoursAgo(30),
+        // Written with the send-back, a moment after the move.
+        created_at: hoursAgo(29.99),
+      },
+    ],
+  }),
+  // Sent back, then unclaimed and claimed again: someone is remaking it.
+  card("Remade bracket", {
+    column_id: "in-progress",
+    assignee: "slack:TTEAM:USAM",
+    machine_id: "printer-2",
+    linked_machine: printer2,
+    date_updated: hoursAgo(5),
+    review_notes: [
+      {
+        id: 4,
+        text: "Wrong hole size.",
+        author_name: "Riley",
+        created_at: hoursAgo(20),
       },
     ],
   }),
@@ -131,7 +148,7 @@ async function bundle() {
     import React from 'react';
     import { createRoot } from 'react-dom/client';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-    import { MyParts } from './src/components/phone/MyParts';
+    import { MyPartsTab as MyParts } from './src/components/phone/MyPartsTab';
     window.show = (viewerId) => {
       const client = new QueryClient({ defaultOptions: {queries: {retry: false}} });
       createRoot(document.getElementById('root')).render(
@@ -184,7 +201,7 @@ test("My parts puts what needs the submitter first, then groups the rest by stat
     page.setDefaultTimeout(3000);
     await open(page, script, cards);
 
-    await page.getByText("Released by you · 6 active").waitFor();
+    await page.getByText("Released by you · 7 active").waitFor();
 
     const needsYou = page.getByRole("list", { name: "Needs you" });
     await page.getByRole("heading", { name: "Needs you · 2" }).waitFor();
@@ -206,6 +223,7 @@ test("My parts puts what needs the submitter first, then groups the rest by stat
       return rows(page.getByRole("list", { name }));
     };
     assert.deepEqual(await group("Being made"), [
+      "Remade bracket | Printer 2 · Sam Park",
       "Button Head 4x Size | Printer 2 · Sam Park",
     ]);
     assert.deepEqual(await group("Waiting"), [
@@ -213,7 +231,7 @@ test("My parts puts what needs the submitter first, then groups the rest by stat
       "Torx drive 4x | Any 3D Printing",
     ]);
     assert.deepEqual(await group("In review"), ["Phillips 4x | since 2 h"]);
-    await page.getByRole("heading", { name: "Being made · 1" }).waitFor();
+    await page.getByRole("heading", { name: "Being made · 2" }).waitFor();
     await page.getByRole("heading", { name: "Waiting · 2" }).waitFor();
     await page.getByRole("heading", { name: "In review · 1" }).waitFor();
 

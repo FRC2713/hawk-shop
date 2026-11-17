@@ -135,6 +135,7 @@ type Call = { method: string; path: string; body: unknown };
 async function open(): Promise<{ page: Page; calls: Call[] }> {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.setDefaultTimeout(3000);
+  await page.clock.setFixedTime(new Date("2026-11-12T15:40:00.000Z"));
   const calls: Call[] = [];
   await page.route("**/api/**", (route) => {
     const request = route.request();
@@ -244,11 +245,13 @@ test("selected parts are assigned from a sheet of the machines that can take the
       text: "Any 3D PrintingWhoever runs 3D Printing claims them first3",
       disabled: false,
     },
-    { text: "Printer 1Idle0", disabled: false },
-    { text: "Printer 2Running · Sam Park2", disabled: false },
-    { text: "Printer 3Needs maintenance0", disabled: true },
+    // Queue sizes count what Shop and Next up count: the machine's own parts
+    // and the parts waiting for any machine of its process.
+    { text: "Printer 1Idle3", disabled: false },
+    { text: "Printer 2Sam Park · Gusset · 40 min5", disabled: false },
+    { text: "Printer 3Needs maintenance3", disabled: true },
   ]);
-  await sheet.getByText("Numbers are parts already queued.").waitFor();
+  await sheet.getByText("Numbers are parts already in each queue.").waitFor();
 
   await sheet.getByRole("button", { name: /Printer 1/ }).click();
   await sheet.waitFor({ state: "detached" });
@@ -288,7 +291,7 @@ test("selected parts are assigned from a sheet of the machines that can take the
     .waitFor();
   assert.deepEqual(
     (await choices(page)).map((choice) => choice.text),
-    ["No machineBack to each part's process queue"]
+    ["Back to process queuesEach part waits in its own process queue"]
   );
   await page.close();
 });

@@ -11,7 +11,13 @@ import {
   type EquipmentWithProcesses,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
-import { machineRefusal } from "~/lib/machineQueue";
+import { machineQueue, machineRefusal } from "~/lib/machineQueue";
+import {
+  byMachineName,
+  machineActivity,
+  plural,
+  runningOn,
+} from "~/lib/phoneParts";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import {
@@ -47,19 +53,14 @@ function capableMachines(
     .filter((machine) =>
       cards.every((card) => !machineRefusal({ ...machine, status: null }, card))
     )
-    .sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-    );
-}
-
-function plural(count: number, noun: string) {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+    .sort(byMachineName);
 }
 
 /**
- * The bottom sheet a mentor assigns selected backlog parts from: "Any
- * <process>" (back to the process queue) and each machine that can make them
- * all, with how many parts are already queued on it and what it's doing.
+ * The bottom sheet a mentor assigns selected backlog parts from: back to the
+ * process queues ("Any <process>" when the parts share exactly one process)
+ * and each machine that can make them all, with its queue size (the same
+ * `machineQueue` count as Shop and Next up) and what it's doing.
  */
 export function AssignSheet({
   cards,
@@ -96,22 +97,13 @@ export function AssignSheet({
   const backlog = allCards.filter(
     (card) => card.column_id === WORKFLOW_COLUMN_IDS.backlog
   );
-  const process = sharedProcesses(cards)[0];
+  const shared = sharedProcesses(cards);
+  // "Any <process>" only names a process when it is the one they all share.
+  const process = shared.length === 1 ? shared[0] : undefined;
   const machines = capableMachines(equipment, cards);
-  const nameOf = (subject: string) =>
-    users.find((user) => user.onshape_user_id === subject)?.name ?? subject;
-  const activity = (machine: EquipmentWithProcesses) => {
-    if (needsMaintenance(machine)) return "Needs maintenance";
-    const running = allCards.find(
-      (card) =>
-        card.column_id === WORKFLOW_COLUMN_IDS.inProgress &&
-        card.machine_id === machine.id
-    );
-    if (!running) return "Idle";
-    return running.assignee
-      ? `Running · ${nameOf(running.assignee)}`
-      : "Running";
-  };
+  const now = Date.now();
+  const activity = (machine: EquipmentWithProcesses) =>
+    machineActivity(machine, runningOn(machine, allCards), users, now).text;
   const title = `Assign ${plural(cards.length, "part")}`;
 
   return (
@@ -137,15 +129,15 @@ export function AssignSheet({
           </SheetClose>
         </div>
         <SheetDescription className="text-xs">
-          Numbers are parts already queued.
+          Numbers are parts already in each queue.
         </SheetDescription>
 
         <Choice
-          name={process ? `Any ${process.name}` : "No machine"}
+          name={process ? `Any ${process.name}` : "Back to process queues"}
           detail={
             process
               ? `Whoever runs ${process.name} claims them first`
-              : "Back to each part's process queue"
+              : "Each part waits in its own process queue"
           }
           count={
             process
@@ -166,9 +158,7 @@ export function AssignSheet({
             name={machine.name}
             detail={activity(machine)}
             warn={needsMaintenance(machine)}
-            count={
-              backlog.filter((card) => card.machine_id === machine.id).length
-            }
+            count={machineQueue(machine, allCards).length}
             disabled={needsMaintenance(machine) || assign.isPending}
             onSelect={() => assign.mutate(machine.id)}
           />

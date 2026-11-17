@@ -1,6 +1,6 @@
 # Hawk Shop architecture
 
-Shop follows Hawk Eye's Astro architecture. The server renders page layout, navigation, account identity, and the overview. React islands own the manufacturing board, completed cards, equipment and process editor, and Onshape part selection. Each island keeps its existing query cache, drag-and-drop, dialogs, filters, bulk selection, and SSE subscription in one React root.
+Shop follows Hawk Eye's Astro architecture. The server renders page layout, navigation, account identity, and the overview. React islands own the manufacturing board, completed cards, equipment and process editor, Onshape part selection, and the phone screens (Next up, Backlog, Shop, My parts and the part page). Each island keeps its existing query cache, drag-and-drop, dialogs, filters, bulk selection, and SSE subscription in one React root.
 
 `src/pages/api/` retains the existing endpoint URLs and payloads. `src/server/` owns SQLite repositories, migrations, storage, and the event bus. `src/lib/api/` contains browser fetchers and shared query keys. The build rejects browser imports of modules marked `virtual:hawk-shop/server-only`.
 

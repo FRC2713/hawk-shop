@@ -11,39 +11,16 @@ import { cardMachineName, unlinkedMachineText } from "~/lib/cardMachine";
 import { machineQueue } from "~/lib/machineQueue";
 import { partHref } from "~/lib/phone";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
-import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
-import { Button } from "~/components/ui/button";
+import { elapsed, memberName, needsYouReason } from "~/lib/phoneParts";
+import { loadState } from "./LoadState";
 import { PartList, PartRow } from "./PartRow";
 
 type Card = KanbanCardWithProcesses;
 
 const WEEK_MS = 7 * 24 * 3_600_000;
 
-/** Why a part needs its submitter, or null when it doesn't. */
-function needsYouReason(card: Card): string | null {
-  const notes = card.review_notes ?? [];
-  const sentBack =
-    notes.length > 0 &&
-    (card.column_id === WORKFLOW_COLUMN_IDS.backlog ||
-      card.column_id === WORKFLOW_COLUMN_IDS.inProgress);
-  if (sentBack) return `Sent back from review: ${notes[notes.length - 1].text}`;
-  const issue = card.release_issues?.[0];
-  if (issue && card.column_id !== WORKFLOW_COLUMN_IDS.done)
-    return `Release warning: ${issue.message}`;
-  return null;
-}
-
 const newestFirst = (a: Card, b: Card) =>
   b.date_updated.localeCompare(a.date_updated);
-
-/** "45 min", "2 h", "3 d": how long ago `iso` was. */
-function elapsed(iso: string, now: number) {
-  const minutes = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} h`;
-  return `${Math.floor(hours / 24)} d`;
-}
 
 function ordinal(n: number) {
   const tens = n % 100;
@@ -57,34 +34,18 @@ function ordinal(n: number) {
 
 /**
  * The My parts tab: the signed-in member's released parts. Parts sent back
- * from review or released with warnings come first under "Needs you"; the
+ * from review (until someone acts on them again) or released with warnings
+ * come first under "Needs you"; the
  * rest group by status. Reads `kanbanCardsQuery`, so live board events
  * refresh it.
  */
-export function MyParts({ viewerId }: { viewerId: string }) {
+export function MyPartsTab({ viewerId }: { viewerId: string }) {
   const cards = useQuery(kanbanCardsQuery());
   const { data: users = [] } = useQuery(usersQuery());
   const { data: equipment = [] } = useQuery(equipmentQuery());
 
-  if (cards.isPending)
-    return (
-      <MyPartsShell>
-        <p role="status" className="text-muted-foreground">
-          Loading your parts...
-        </p>
-      </MyPartsShell>
-    );
-  if (cards.isError)
-    return (
-      <MyPartsShell>
-        <section role="alert" className="space-y-2">
-          <ErrorMessage error={cards.error} />
-          <Button variant="outline" onClick={() => cards.refetch()}>
-            Try again
-          </Button>
-        </section>
-      </MyPartsShell>
-    );
+  const pending = loadState([cards], "Loading your parts...");
+  if (pending || !cards.data) return <MyPartsShell>{pending}</MyPartsShell>;
 
   const now = Date.now();
   const mine = cards.data.filter((card) => card.created_by === viewerId);
@@ -97,11 +58,7 @@ export function MyParts({ viewerId }: { viewerId: string }) {
       </MyPartsShell>
     );
 
-  const nameOf = (subject: string | null) =>
-    subject
-      ? (users.find((user) => user.onshape_user_id === subject)?.name ??
-        subject)
-      : null;
+  const nameOf = (subject: string | null) => memberName(users, subject);
 
   const needsYou = mine
     .map((card) => ({ card, reason: needsYouReason(card) }))
