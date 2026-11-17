@@ -1,32 +1,31 @@
-import { PlusCircle, SquareDashedKanban, ArrowRight } from "lucide-react";
+import { PlusCircle, SquareDashedKanban } from "lucide-react";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanCard } from "../cards/KanbanCard";
-import { Button } from "~/components/ui/button";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
+import type { CardSelectHandler } from "~/lib/cardSelection";
+import { OlderDoneLink } from "./OlderDoneLink";
 
 interface KanbanColumnCardContainerProps {
   columnName: string;
   cards: KanbanCardRow[];
   isDraggingCard?: boolean;
-  hideImages?: boolean;
+  density?: BoardDensity;
   usersMap: Map<string, UserRow>;
+  now: number;
   olderCardsCount?: number;
   columnId?: string;
-  selectedCardIds?: Set<string>;
+  selectedCardIds?: ReadonlySet<string>;
   selectedColumnId?: string | null;
-  onCardSelect?: (
-    cardId: string,
-    columnId: string,
-    cardIndex: number,
-    event: React.MouseEvent
-  ) => void;
+  onCardSelect?: CardSelectHandler;
 }
 
 export function KanbanColumnCardContainer({
   columnName,
   cards,
   isDraggingCard = false,
-  hideImages = false,
+  density = "compact",
   usersMap,
+  now,
   olderCardsCount = 0,
   columnId = "",
   selectedCardIds = new Set(),
@@ -52,30 +51,19 @@ export function KanbanColumnCardContainer({
 
   return (
     <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-      {cards.map((card, index) => (
+      {cards.map((card) => (
         <KanbanCard
           key={card.id}
           card={card}
-          hideImages={hideImages}
+          density={density}
           usersMap={usersMap}
+          now={now}
           isSelected={selectedCardIds.has(card.id)}
           columnId={columnId}
-          cardIndex={index}
           onSelect={onCardSelect}
         />
       ))}
-      {olderCardsCount > 0 && (
-        <Button
-          variant="outline"
-          className="hover:bg-muted/50 flex w-full items-center justify-center gap-2 border-dashed py-6"
-          onClick={() => window.location.assign("/kanban/done")}
-        >
-          <span className="text-sm font-medium">
-            View {olderCardsCount} older card{olderCardsCount !== 1 ? "s" : ""}
-          </span>
-          <ArrowRight className="size-4" />
-        </Button>
-      )}
+      <OlderDoneLink count={olderCardsCount} className="w-full py-6" />
     </div>
   );
 }

@@ -22,7 +22,9 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly path: string,
-    readonly errorId?: string
+    readonly errorId?: string,
+    /** The cards a bulk route refused, when it names them. */
+    readonly cardIds?: string[]
   ) {
     super(message);
     this.name = "ApiError";
@@ -86,7 +88,13 @@ export async function apiFetch<T>(
       response,
       fallbackError ?? `Request to ${path} failed`
     );
-    throw new ApiError(failure.message, response.status, path, failure.errorId);
+    throw new ApiError(
+      failure.message,
+      response.status,
+      path,
+      failure.errorId,
+      failure.cardIds
+    );
   }
 
   return (await response.json()) as T;
@@ -122,7 +130,7 @@ export function redirectToSignIn(): void {
 async function readError(
   response: Response,
   fallback: string
-): Promise<{ message: string; errorId?: string }> {
+): Promise<{ message: string; errorId?: string; cardIds?: string[] }> {
   const headerId = response.headers.get("X-Error-ID") ?? undefined;
   try {
     const body = await response.json();
@@ -130,6 +138,9 @@ async function readError(
       return {
         message: body.error,
         errorId: typeof body.errorId === "string" ? body.errorId : headerId,
+        cardIds: Array.isArray(body.cardIds)
+          ? body.cardIds.filter((id: unknown) => typeof id === "string")
+          : undefined,
       };
     }
   } catch {

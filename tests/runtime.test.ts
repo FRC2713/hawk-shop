@@ -591,13 +591,13 @@ test(
           // Phones never see the board; the phone layout test covers them.
           await page.getByRole("link", { name: "Board", exact: true }).click();
           await expect(
-            page.getByPlaceholder("Search by part number or name...")
+            page.getByRole("searchbox", { name: "Search parts" })
           ).toBeVisible();
           await expect(
             page.getByText("Live update fixture", { exact: true })
           ).toBeVisible();
           await page
-            .getByPlaceholder("Search by part number or name...")
+            .getByRole("searchbox", { name: "Search parts" })
             .fill("FIXTURE-PART");
           await expect(
             page.getByText("FIXTURE-PART", { exact: true })
@@ -1030,11 +1030,9 @@ test("error displays and workflow boundaries open reports with their error refer
       title: "Report selected card",
     });
     await page.goto(origin + "/kanban?cardId=report-selected-card");
+    await page.getByRole("button", { name: "More actions" }).click();
     await page
-      .getByRole("button", {
-        name: "Report a problem with this card",
-        exact: true,
-      })
+      .getByRole("menuitem", { name: "Report a problem", exact: true })
       .click();
     await expect(page.getByRole("dialog").last()).toBeVisible();
     await page.getByLabel("What went wrong?").fill("This card is stuck");
@@ -1113,7 +1111,7 @@ test(
       });
       const page = await context.newPage();
       await page.goto(origin + "/kanban?q=112&keep=yes#board");
-      const search = page.getByPlaceholder("Search by part number or name...");
+      const search = page.getByRole("searchbox", { name: "Search parts" });
       await expect(search).toHaveValue("112");
       const bracket = page.getByRole("heading", {
         name: first.title,
@@ -1135,16 +1133,17 @@ test(
       await expect(bracket).toBeVisible();
       await search.fill("search");
       await expect(plate).toBeVisible();
-      await page.getByRole("button", { name: "Filter by Process" }).click();
+      await page.getByRole("button", { name: "Process: All" }).click();
       await page
         .getByRole("menuitemcheckbox", { name: "CNC Milling", exact: true })
         .click();
       await page.keyboard.press("Escape");
       await expect(plate).toHaveCount(0);
       await expect(bracket).toBeVisible();
-      await page.getByRole("button", { name: "Sort by user" }).click();
+      await page.getByRole("combobox", { name: "Sort" }).click();
+      await page.getByRole("option", { name: "Assignee" }).click();
       await expect(bracket).toBeVisible();
-      await page.getByRole("button", { name: "Processes (1)" }).click();
+      await page.getByRole("button", { name: "Process: CNC Milling" }).click();
       await page
         .getByRole("menuitem", { name: "Show all", exact: true })
         .click();
@@ -1170,8 +1169,9 @@ test(
       });
       await expect(sourceColumn.getByLabel("Matching cards")).toHaveText("1");
       await expect(targetColumn.getByLabel("Matching cards")).toHaveText("0");
+      // The whole card face is the drag handle.
       const handle = sourceColumn.getByRole("button", {
-        name: "Drag to reorder",
+        name: first.title,
         exact: true,
       });
       const from = await handle.boundingBox();
@@ -1240,14 +1240,12 @@ test(
         page.getByRole("heading", { name: cards[index].title, exact: true });
       await expect(heading(0)).toBeVisible();
       await expect(heading(2)).toBeVisible();
+      const face = (index: number) =>
+        page.getByRole("button", { name: cards[index].title, exact: true });
       await expect(
-        heading(0).locator("..").getByText("Warnings (1)", { exact: true })
+        face(0).getByText("1 warning", { exact: true })
       ).toBeVisible();
-      await expect(
-        heading(2)
-          .locator("..")
-          .getByText(/Warnings/)
-      ).toHaveCount(0);
+      await expect(face(2).getByText(/warning/)).toHaveCount(0);
       await heading(0).click();
       const details = page.getByRole("dialog");
       await expect(
@@ -1266,23 +1264,23 @@ test(
       await expect(heading(0)).toBeVisible();
       await expect(heading(1)).toBeVisible();
       await expect(heading(2)).toHaveCount(0);
-      await page.getByRole("button", { name: "Filter by Process" }).click();
+      await page.getByRole("button", { name: "Process: All" }).click();
       await page
         .getByRole("menuitemcheckbox", { name: "CNC Milling", exact: true })
         .click();
       await page.keyboard.press("Escape");
       await expect(heading(0)).toBeVisible();
       await expect(heading(1)).toHaveCount(0);
-      await page.getByRole("textbox", { name: "Search board" }).fill("plate");
+      await page.getByRole("searchbox", { name: "Search parts" }).fill("plate");
       await expect(heading(0)).toHaveCount(0);
       await expect(heading(1)).toHaveCount(0);
-      await page.getByRole("button", { name: "Processes (1)" }).click();
+      await page.getByRole("button", { name: "Process: CNC Milling" }).click();
       await page
         .getByRole("menuitem", { name: "Show all", exact: true })
         .click();
       await expect(heading(1)).toBeVisible();
       await page
-        .getByRole("textbox", { name: "Search board" })
+        .getByRole("searchbox", { name: "Search parts" })
         .fill("warning review");
       await page
         .getByRole("button", { name: "Has warnings", exact: true })
