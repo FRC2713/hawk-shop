@@ -18,10 +18,10 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import {
+  assignCardsToMachine,
   assignKanbanCard,
   equipmentQuery,
   queryKeys,
-  updateKanbanCard,
 } from "~/lib/api";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { cn } from "~/lib/utils";
@@ -113,11 +113,11 @@ export function KanbanBulkEditBar({
   });
 
   const machineMutation = useMutation({
-    mutationFn: async (machineId: string | null) => {
-      await runForEachCard((card) =>
-        updateKanbanCard(card.id, { machine_id: machineId })
-      );
-    },
+    mutationFn: (machineId: string | null) =>
+      assignCardsToMachine(
+        selectedCards.map((card) => card.id),
+        machineId
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
       setMachinePopoverOpen(false);
