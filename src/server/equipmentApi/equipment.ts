@@ -19,6 +19,7 @@ import type {
   EquipmentWithProcesses,
   ProcessRow,
 } from "~/server/db/types";
+import { getMachineWeeklyStats } from "./stats";
 import { deleteEquipmentImage } from "./images";
 
 /**
@@ -78,6 +79,7 @@ export async function getEquipment(): Promise<GetEquipmentResult> {
 
     const result = await getCards();
     if (result.error) throw new Error(result.error);
+    const stats = await getMachineWeeklyStats();
     const running = new Set(
       result.cards
         .filter((card) => card.column_id === WORKFLOW_COLUMN_IDS.inProgress)
@@ -94,6 +96,18 @@ export async function getEquipment(): Promise<GetEquipmentResult> {
               : running.has(row.id)
                 ? "running"
                 : "idle",
+          weekly_stats: {
+            week_start: stats.week_start,
+            week_end: stats.week_end,
+            ...(stats.by_machine.get(row.id) ?? { done: 0, sent_back: 0 }),
+          },
+          current_parts: result.cards
+            .filter(
+              (card) =>
+                card.machine_id === row.id &&
+                card.column_id === WORKFLOW_COLUMN_IDS.inProgress
+            )
+            .map(({ id, title }) => ({ id, title })),
           queue_size: machineQueue(item, result.cards).length,
         };
       }),
