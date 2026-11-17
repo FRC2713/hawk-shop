@@ -1,20 +1,20 @@
 import { Image as ImageIcon, Wrench } from "lucide-react";
-import { needsMaintenance, type EquipmentWithProcesses } from "~/lib/api";
+import type { EquipmentWithProcesses } from "~/lib/api";
+import { machineStatusLabels, type EquipmentListItem } from "~/lib/equipment";
 import { cn } from "~/lib/utils";
 
 export type EquipmentGroupBy = "process" | "location" | "none";
 
 interface EquipmentListProps {
-  equipment: EquipmentWithProcesses[];
+  equipment: EquipmentListItem[];
   groupBy: EquipmentGroupBy;
   selectedId: string | null;
-  assignedCounts: Map<string, number>;
   onSelect: (item: EquipmentWithProcesses) => void;
 }
 
 interface Group {
   name: string;
-  items: EquipmentWithProcesses[];
+  items: EquipmentListItem[];
 }
 
 function groupKey(item: EquipmentWithProcesses, groupBy: EquipmentGroupBy) {
@@ -24,13 +24,17 @@ function groupKey(item: EquipmentWithProcesses, groupBy: EquipmentGroupBy) {
 }
 
 function groupEquipment(
-  equipment: EquipmentWithProcesses[],
+  equipment: EquipmentListItem[],
   groupBy: EquipmentGroupBy
 ): Group[] {
-  const groups = new Map<string, EquipmentWithProcesses[]>();
+  const groups = new Map<string, EquipmentListItem[]>();
   for (const item of equipment) {
-    const key = groupKey(item, groupBy);
-    groups.set(key, [...(groups.get(key) ?? []), item]);
+    const keys =
+      groupBy === "process" && item.processes.length
+        ? item.processes.map((process) => process.name)
+        : [groupKey(item, groupBy)];
+    for (const key of new Set(keys))
+      groups.set(key, [...(groups.get(key) ?? []), item]);
   }
   const byName = (a: string, b: string) =>
     a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
@@ -51,8 +55,7 @@ function rowDetail(item: EquipmentWithProcesses, groupBy: EquipmentGroupBy) {
   const location = item.location?.trim();
   const processes = (item.processes ?? []).map((p) => p.name);
   if (groupBy === "process") {
-    const others = processes.slice(1);
-    return [location, others.length ? `also ${others.join(", ")}` : null]
+    return [location, processes.length > 1 ? processes.join(", ") : null]
       .filter(Boolean)
       .join(" · ");
   }
@@ -64,7 +67,6 @@ export function EquipmentList({
   equipment,
   groupBy,
   selectedId,
-  assignedCounts,
   onSelect,
 }: EquipmentListProps) {
   const groups = groupEquipment(equipment, groupBy);
@@ -72,10 +74,6 @@ export function EquipmentList({
   return (
     <div className="flex flex-col gap-4">
       {groups.map((group) => {
-        const parts = group.items.reduce(
-          (sum, item) => sum + (assignedCounts.get(item.id) ?? 0),
-          0
-        );
         return (
           <section
             key={group.name}
@@ -86,25 +84,35 @@ export function EquipmentList({
               <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-4 py-3">
                 <h2 className="text-base">{group.name}</h2>
                 <span className="text-muted-foreground text-xs">
-                  {plural(group.items.length, "item", "items")} ·{" "}
-                  {plural(parts, "part", "parts")} assigned
+                  {plural(group.items.length, "machine", "machines")}
                 </span>
               </div>
             )}
             <ul>
               {group.items.map((item) => {
                 const selected = item.id === selectedId;
-                const count = assignedCounts.get(item.id) ?? 0;
+                const count = item.queue_size;
                 const cover = item.image_urls?.[0];
                 const detail = rowDetail(item, groupBy);
                 return (
                   <li key={item.id} className="border-t first:border-t-0">
-                    <button
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => onSelect(item)}
+                    <a
+                      href={`/equipment/${item.id}`}
+                      aria-current={selected ? "true" : undefined}
+                      onClick={(event) => {
+                        if (
+                          window.matchMedia("(min-width: 1024px)").matches &&
+                          !event.metaKey &&
+                          !event.ctrlKey &&
+                          !event.shiftKey &&
+                          !event.altKey
+                        ) {
+                          event.preventDefault();
+                          onSelect(item);
+                        }
+                      }}
                       className={cn(
-                        "focus-visible:ring-ring/50 flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-inset",
+                        "focus-visible:ring-ring/50 flex min-h-20 w-full flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-inset",
                         selected
                           ? "bg-muted shadow-[inset_4px_0_0_var(--primary)]"
                           : "hover:bg-muted"
@@ -125,7 +133,7 @@ export function EquipmentList({
                           />
                         )}
                       </span>
-                      <span className="flex min-w-0 flex-[1_1_180px] flex-col">
+                      <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate font-semibold">
                           {item.name}
                         </span>
@@ -135,21 +143,16 @@ export function EquipmentList({
                           </span>
                         )}
                       </span>
-                      <span className="flex min-h-5 flex-[0_0_160px] items-center gap-1.5 text-xs font-semibold text-[var(--emphasis)]">
-                        {needsMaintenance(item) && (
-                          <>
+                      <span className="flex shrink-0 flex-col items-end gap-1 text-xs">
+                        <span className="flex items-center gap-1 font-semibold">
+                          {item.machine_status === "needs-maintenance" && (
                             <Wrench className="size-4" aria-hidden="true" />
-                            Needs maintenance
-                          </>
-                        )}
+                          )}
+                          {machineStatusLabels[item.machine_status]}
+                        </span>
+                        <span className="brand-figures">{count} queued</span>
                       </span>
-                      <span className="flex-[0_0_96px] text-right text-xs">
-                        <span className="brand-figures text-[13px] font-bold">
-                          {count}
-                        </span>{" "}
-                        {count === 1 ? "part" : "parts"}
-                      </span>
-                    </button>
+                    </a>
                   </li>
                 );
               })}

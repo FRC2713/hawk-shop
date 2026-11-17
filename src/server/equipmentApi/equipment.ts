@@ -1,4 +1,8 @@
 import "virtual:hawk-shop/server-only";
+import { machineQueue } from "~/lib/machineQueue";
+import type { EquipmentListItem } from "~/lib/equipment";
+import { getCards } from "~/server/kanbanApi/cards";
+import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 import { logServerError } from "~/server/errors";
 
 import { count, desc, eq, inArray } from "drizzle-orm";
@@ -21,7 +25,7 @@ import { deleteEquipmentImage } from "./images";
  * Result type for getEquipment to distinguish errors from empty results
  */
 export interface GetEquipmentResult {
-  equipment: EquipmentWithProcesses[];
+  equipment: EquipmentListItem[];
   error?: string;
   errorId?: string;
 }
@@ -72,11 +76,27 @@ export async function getEquipment(): Promise<GetEquipmentResult> {
 
     const byEquipment = await processesByEquipmentId(rows.map((row) => row.id));
 
+    const result = await getCards();
+    if (result.error) throw new Error(result.error);
+    const running = new Set(
+      result.cards
+        .filter((card) => card.column_id === WORKFLOW_COLUMN_IDS.inProgress)
+        .map((card) => card.machine_id)
+    );
     return {
-      equipment: rows.map((row) => ({
-        ...row,
-        processes: byEquipment.get(row.id) ?? [],
-      })),
+      equipment: rows.map((row) => {
+        const item = { ...row, processes: byEquipment.get(row.id) ?? [] };
+        return {
+          ...item,
+          machine_status:
+            row.status === "maintenance"
+              ? "needs-maintenance"
+              : running.has(row.id)
+                ? "running"
+                : "idle",
+          queue_size: machineQueue(item, result.cards).length,
+        };
+      }),
     };
   } catch (error) {
     const message =

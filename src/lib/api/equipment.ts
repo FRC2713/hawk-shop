@@ -1,3 +1,4 @@
+import type { EquipmentListItem } from "~/lib/equipment";
 import { queryOptions } from "@tanstack/react-query";
 import type { EquipmentRow, ProcessRow } from "~/server/db/types";
 import { apiFetch } from "./client";
@@ -39,7 +40,7 @@ export function equipmentQuery() {
     queryKey: queryKeys.equipment.all(),
     queryFn: async () => {
       const { equipment } = await apiFetch<{
-        equipment: EquipmentWithProcesses[];
+        equipment: EquipmentListItem[];
       }>("/api/equipment", { fallbackError: "Failed to fetch equipment" });
       return equipment;
     },
