@@ -1,4 +1,5 @@
 import { buildSearchIndex } from "./search";
+import { cardMachineName, unlinkedMachineText } from "./cardMachine";
 import type { KanbanCardWithProcesses } from "~/lib/api";
 import type { UserRow } from "~/server/db/types";
 
@@ -18,7 +19,7 @@ export function buildCardSearchIndex(
     { value: (card) => card.content, weight: 2 },
     { value: (card) => userName(card.assignee) },
     { value: (card) => userName(card.created_by) },
-    { value: (card) => card.machine },
+    { value: (card) => cardMachineName(card) ?? unlinkedMachineText(card) },
     { value: (card) => card.project?.name },
     {
       value: (card) => card.processes?.map((process) => process.name).join(" "),

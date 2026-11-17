@@ -1,8 +1,10 @@
 import { queryOptions } from "@tanstack/react-query";
 import type {
+  CardMachine,
   CardProject,
   KanbanCardRow,
   ProcessRow,
+  ReviewNoteRow,
   StatusHistoryRow,
 } from "~/server/db/types";
 import type {
@@ -17,19 +19,27 @@ import {
 import { apiFetch } from "./client";
 import { queryKeys } from "./keys";
 
-/** `/api/kanban/cards` joins each card to its processes and project. */
+/**
+ * `/api/kanban/cards` joins each card to its processes, project, machine and
+ * review notes (why it was sent back, oldest first).
+ */
 export type KanbanCardWithProcesses = KanbanCardRow & {
   processes?: ProcessRow[];
   project?: CardProject | null;
+  linked_machine?: CardMachine | null;
+  review_notes?: ReviewNoteRow[];
 };
 
 /** Fields `/api/kanban/cards/:id` accepts on PATCH. */
 export interface KanbanCardUpdate {
   column_id?: string;
-  machine?: string | null;
+  /** Equipment id; null clears the machine. */
+  machine_id?: string | null;
   due_date?: string | null;
   quantity_to_make?: number;
   project_id?: string;
+  /** The submitter's notes; blank clears them. */
+  content?: string | null;
   processIds?: string[];
 }
 
@@ -144,6 +154,26 @@ export async function deleteKanbanCard(id: string): Promise<void> {
     method: "DELETE",
     fallbackError: "Failed to delete card",
   });
+}
+
+/**
+ * Assign cards to a machine, or with null return them to their process queue.
+ * All or nothing: a machine under maintenance, or one lacking a card's process,
+ * is refused (409) and no card changes.
+ */
+export async function assignCardsToMachine(
+  cardIds: string[],
+  machineId: string | null
+): Promise<KanbanCardWithProcesses[]> {
+  const { cards } = await apiFetch<{ cards: KanbanCardWithProcesses[] }>(
+    "/api/kanban/cards/assign-machine",
+    {
+      method: "POST",
+      json: { cardIds, machineId },
+      fallbackError: "Failed to set machine",
+    }
+  );
+  return cards;
 }
 
 export async function assignKanbanCard(

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { groupBy as groupInto } from "~/lib/groupBy";
 import { Plus, Search } from "lucide-react";
 import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
 import { Button } from "~/components/ui/button";
@@ -58,16 +59,15 @@ export function EquipmentClient() {
     [columns]
   );
 
-  // Cards name their equipment by text; finished cards no longer need it.
+  // Cards link to their equipment by id; finished cards no longer need it.
   const cardsByEquipment = useMemo(() => {
-    const byName = new Map<string, KanbanCardWithProcesses[]>();
-    for (const card of cards) {
-      if (!card.machine || card.column_id === doneId) continue;
-      byName.set(card.machine, [...(byName.get(card.machine) ?? []), card]);
-    }
+    const linked = groupInto(
+      cards.filter((card) => card.machine_id && card.column_id !== doneId),
+      (card) => card.machine_id
+    );
     const byId = new Map<string, KanbanCardWithProcesses[]>();
     for (const item of equipment) {
-      const assigned = (byName.get(item.name) ?? []).sort((a, b) =>
+      const assigned = (linked.get(item.id) ?? []).sort((a, b) =>
         (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")
       );
       byId.set(item.id, assigned);

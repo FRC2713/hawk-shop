@@ -104,7 +104,18 @@ export const kanbanCards = sqliteTable(
     assignee: text("assignee"),
     date_created: text("date_created").notNull().$defaultFn(now),
     date_updated: text("date_updated").notNull().$defaultFn(now),
+    // Legacy free text from before cards linked to equipment. No longer
+    // written; kept so unmatched values stay visible until a mentor picks a
+    // machine. Ignored while machine_id is set.
     machine: text("machine"),
+    // The equipment this card is assigned to; null waits in its process queue.
+    machine_id: text("machine_id").references(() => equipment.id, {
+      onDelete: "set null",
+    }),
+    // A mentor's place for this card in its machine queue, lowest first. Set
+    // only by reordering; null follows the default order. Cleared when the
+    // card's machine changes.
+    queue_position: integer("queue_position"),
     due_date: text("due_date"),
     content: text("content"),
     release_issues: text("release_issues", { mode: "json" }).$type<
@@ -137,6 +148,7 @@ export const kanbanCards = sqliteTable(
     index("idx_kanban_cards_column_id").on(table.column_id),
     index("idx_kanban_cards_project_id").on(table.project_id),
     index("idx_kanban_cards_date_created").on(table.date_created),
+    index("idx_kanban_cards_machine_id").on(table.machine_id),
   ]
 );
 
@@ -160,6 +172,27 @@ export const statusHistory = sqliteTable(
   (table) => [
     index("idx_status_history_card_moved_at").on(table.card_id, table.moved_at),
     index("idx_status_history_moved_at").on(table.moved_at),
+  ]
+);
+
+// Why a reviewer sent a part back. Belongs to the card and goes with it.
+export const reviewNotes = sqliteTable(
+  "review_notes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    card_id: text("card_id")
+      .notNull()
+      .references(() => kanbanCards.id, { onDelete: "cascade" }),
+    author_id: text("author_id").notNull(),
+    author_name: text("author_name").notNull(),
+    text: text("text").notNull(),
+    created_at: text("created_at").notNull().$defaultFn(now),
+  },
+  (table) => [
+    index("idx_review_notes_card_created_at").on(
+      table.card_id,
+      table.created_at
+    ),
   ]
 );
 

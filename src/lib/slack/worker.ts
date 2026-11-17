@@ -28,6 +28,7 @@ import {
   cleanupSlackPending,
   getPendingSlackNotifications,
   onshapeCardUrl,
+  slackMachineLabel,
   type PendingSlackNotification,
 } from "./queue";
 import { getSlackSettings } from "./settings";
@@ -153,7 +154,7 @@ function partDetails(row: PendingSlackNotification): {
     : undefined;
   return {
     payload: {
-      machine: card?.machine ?? null,
+      machine: card ? slackMachineLabel(db, card) : null,
       due_date: card?.due_date ?? null,
       processes,
       issues: (card?.release_issues ?? []).map((issue) => ({

@@ -41,7 +41,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
-import type { KanbanCardRow, UserRow, ProcessRow } from "~/server/db/types";
+import type {
+  CardMachine,
+  KanbanCardRow,
+  UserRow,
+  ProcessRow,
+  ReviewNoteRow,
+} from "~/server/db/types";
 import { Badge } from "~/components/ui/badge";
 import type { UseMutationResult } from "@tanstack/react-query";
 import {
@@ -53,6 +59,7 @@ import {
 } from "~/lib/api";
 import { AssignCardDialog } from "./AssignCardDialog";
 import { MachineSelectDialog } from "./MachineSelectDialog";
+import { SubmitterNotes } from "./SubmitterNotes";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 import {
   MATERIAL_UNKNOWN,
@@ -132,7 +139,11 @@ function buildOnshapeDocumentUrl(
 }
 
 interface KanbanCardDetailsProps {
-  card: KanbanCardRow & { processes?: ProcessRow[] };
+  card: KanbanCardRow & {
+    processes?: ProcessRow[];
+    linked_machine?: CardMachine | null;
+    review_notes?: ReviewNoteRow[];
+  };
   imageUrl?: string;
   deleteCardMutation: UseMutationResult<unknown, Error, string, unknown>;
   onDelete: () => void;
@@ -219,6 +230,7 @@ export function KanbanCardDetails({
       !!(
         card.column_id ||
         card.assignee ||
+        card.machine_id ||
         card.machine ||
         card.due_date ||
         card.quantity_to_make ||
@@ -227,6 +239,7 @@ export function KanbanCardDetails({
     [
       card.column_id,
       card.assignee,
+      card.machine_id,
       card.machine,
       card.due_date,
       card.quantity_to_make,
@@ -326,19 +339,38 @@ export function KanbanCardDetails({
           </div>
         )}
 
-        {/* Description */}
-        {card.content && (
-          <div className="space-y-2">
+        {!!card.review_notes?.length && (
+          <section aria-label="Sent back" className="space-y-2">
             <h4 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
-              Description
+              Sent back
             </h4>
-            <div className="bg-muted/50 rounded-lg p-4">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {card.content}
-              </p>
-            </div>
-          </div>
+            <ol className="divide-y rounded-lg border">
+              {card.review_notes.map((note) => (
+                <li key={note.id} className="space-y-1 px-4 py-3 text-sm">
+                  <p className="leading-relaxed break-words whitespace-pre-wrap">
+                    {note.text}
+                  </p>
+                  <p className="text-muted-foreground break-words">
+                    {note.author_name}
+                  </p>
+                  <time
+                    dateTime={note.created_at}
+                    className="brand-figures text-muted-foreground block text-xs"
+                  >
+                    {new Date(note.created_at).toLocaleString()}
+                  </time>
+                </li>
+              ))}
+            </ol>
+          </section>
         )}
+
+        <SubmitterNotes
+          key={card.id}
+          cardId={card.id}
+          notes={card.content}
+          submitterName={creator?.name || "the submitter"}
+        />
 
         {/* Details Table */}
         {hasMeta && (

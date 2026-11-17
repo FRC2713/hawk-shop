@@ -1,6 +1,8 @@
 import "virtual:hawk-shop/server-only";
 import { and, asc, eq, lte, ne, notExists, or } from "drizzle-orm";
-import { db } from "~/server/db/client";
+import { db, type Transaction } from "~/server/db/client";
+import { legacyMachineText } from "~/lib/cardMachine";
+import { findMachine } from "~/server/kanbanApi/machines";
 import {
   DEFAULT_KANBAN_COLUMNS,
   kanbanCards,
@@ -15,7 +17,6 @@ import type { KanbanCardRow } from "~/server/db/types";
 import type { SessionActor } from "~/lib/sessionActor";
 import { getSlackSettings } from "./settings";
 
-type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type PendingSlackNotification = typeof slackPending.$inferSelect;
 export const DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -23,6 +24,14 @@ type Snapshot = Pick<
   KanbanCardRow,
   "id" | "title" | "quantity_to_make" | "column_id" | "created_by"
 >;
+/** The linked machine's name, or a legacy card's unlinked text. */
+export function slackMachineLabel(
+  tx: Transaction | typeof db,
+  card: Pick<KanbanCardRow, "machine" | "machine_id">
+) {
+  if (!card.machine_id) return legacyMachineText(card.machine);
+  return findMachine(tx, card.machine_id)?.name ?? null;
+}
 function columnTitle(tx: Transaction, id: string) {
   const columns =
     tx.select().from(kanbanConfig).where(eq(kanbanConfig.id, "default")).get()
@@ -100,7 +109,7 @@ export function captureSlackRelease(
     kind: "release",
     old_column_id: card.column_id,
     payload: {
-      machine: card.machine,
+      machine: slackMachineLabel(tx, card),
       due_date: card.due_date,
       processes: processNames,
       issues: (card.release_issues ?? []).map((issue) => ({

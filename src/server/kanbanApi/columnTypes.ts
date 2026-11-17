@@ -16,6 +16,22 @@ export interface KanbanConfig {
   columns: KanbanColumn[];
 }
 
+/**
+ * The statuses shop workflow actions (claim, unclaim, done, approve, send
+ * back) move cards between. Edit Columns may rename these columns but never
+ * delete them.
+ */
+export const WORKFLOW_COLUMN_IDS = {
+  backlog: "backlog",
+  inProgress: "in-progress",
+  review: "review",
+  done: "done",
+} as const;
+
+export function isWorkflowColumn(id: string): boolean {
+  return (Object.values(WORKFLOW_COLUMN_IDS) as string[]).includes(id);
+}
+
 export const DEFAULT_KANBAN_COLUMNS: KanbanColumn[] = [
   { id: "backlog", title: "Backlog", position: 0 },
   { id: "in-progress", title: "In Progress", position: 1 },

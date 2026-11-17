@@ -339,7 +339,7 @@ export function EquipmentDialog({
                 )}
                 {editing && form.name.trim() !== equipment!.name && (
                   <span className="text-muted-foreground text-xs">
-                    Renaming also updates the machine on its assigned cards.
+                    Assigned cards show the new name.
                   </span>
                 )}
               </div>

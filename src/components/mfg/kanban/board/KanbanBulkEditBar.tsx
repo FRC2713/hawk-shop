@@ -18,13 +18,14 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import {
+  assignCardsToMachine,
   assignKanbanCard,
   equipmentQuery,
   queryKeys,
-  updateKanbanCard,
 } from "~/lib/api";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { cn } from "~/lib/utils";
+import { useMachineQueueCounts } from "~/components/mfg/kanban/useMachineQueueCounts";
 
 interface KanbanBulkEditBarProps {
   selectedCardIds: Set<string>;
@@ -56,6 +57,7 @@ export function KanbanBulkEditBar({
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
   }, [equipment]);
+  const queueCounts = useMachineQueueCounts(sortedEquipment);
 
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) =>
@@ -113,9 +115,11 @@ export function KanbanBulkEditBar({
   });
 
   const machineMutation = useMutation({
-    mutationFn: async (machine: string | null) => {
-      await runForEachCard((card) => updateKanbanCard(card.id, { machine }));
-    },
+    mutationFn: (machineId: string | null) =>
+      assignCardsToMachine(
+        selectedCards.map((card) => card.id),
+        machineId
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
       setMachinePopoverOpen(false);
@@ -146,8 +150,8 @@ export function KanbanBulkEditBar({
     assignMutation.mutate(user?.onshape_user_id ?? null);
   };
 
-  const handleMachineSelect = (machine: string | null) => {
-    machineMutation.mutate(machine);
+  const handleMachineSelect = (machineId: string | null) => {
+    machineMutation.mutate(machineId);
   };
 
   const isAssigning = assignMutation.isPending;
@@ -264,15 +268,18 @@ export function KanbanBulkEditBar({
                 <div
                   key={item.id}
                   className="hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center gap-3 rounded-sm px-2 py-1.5 text-sm"
-                  onClick={() => handleMachineSelect(item.name)}
+                  onClick={() => handleMachineSelect(item.id)}
                   onKeyDown={(e) =>
-                    e.key === "Enter" && handleMachineSelect(item.name)
+                    e.key === "Enter" && handleMachineSelect(item.id)
                   }
                   role="button"
                   tabIndex={0}
                 >
                   <Wrench className="text-primary size-4" />
-                  {item.name}
+                  <span className="flex-1">{item.name}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {queueCounts.get(item.id) ?? 0} queued
+                  </span>
                 </div>
               ))}
             </div>

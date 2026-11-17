@@ -11,6 +11,7 @@ const { endpoint, signIn, jsonRequest } = await import("./http-fixture");
 const cards = await import("../src/pages/api/kanban/cards/index");
 const card = await import("../src/pages/api/kanban/cards/[id]");
 const config = await import("../src/pages/api/slack/config");
+const equipment = await import("../src/pages/api/equipment/index");
 
 type Post = {
   channel: string;
@@ -189,8 +190,12 @@ test("a release posts the part's own message, and every later move replies in it
     transport();
     await save();
     const start = posts.length;
+    const laser = await endpoint(
+      equipment,
+      "POST"
+    )(jsonRequest("/api/equipment", "POST", owner, { name: "Laser" }));
     await release("first", owner, "Bracket <@UFAKE>", {
-      machine: "Laser",
+      machineId: (await laser.json()).equipment.id,
       dueDate: "2026-12-01",
     });
     await tick();
@@ -335,6 +340,8 @@ test("every move and the deletion reply in order in the part's thread", async ()
           { id: "backlog", title: "Queued", position: 0 },
           { id: "review", title: "Review", position: 1 },
           { id: "done", title: "Done", position: 2 },
+          // Workflow columns can't be deleted, only moved and renamed.
+          { id: "in-progress", title: "In Progress", position: 3 },
         ],
       }),
       {}
@@ -711,6 +718,9 @@ test("column labels are captured at the move and never looked up at delivery", a
     const custom = [
       { id: "backlog", title: "Queued & ready", position: 0 },
       { id: "laser", title: "Laser <@UFAKE>", position: 1 },
+      { id: "in-progress", title: "In Progress", position: 2 },
+      { id: "review", title: "Review", position: 3 },
+      { id: "done", title: "Done", position: 4 },
     ];
     let response = await endpoint(columns, "PUT")(
       jsonRequest("/api/kanban/config", "PUT", cookie, { columns: custom }),
