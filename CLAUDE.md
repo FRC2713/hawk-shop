@@ -123,6 +123,8 @@ Anything that adds a new Onshape call belongs behind the gateway. The uncached c
 
 `src/pages/` contains Astro pages and typed APIRoute endpoints. `src/layouts/AppLayout.astro` renders the shared branded header, navigation, account disclosure, and skip link. `/` renders the overview on the server. `/kanban`, `/kanban/done`, `/equipment`, and `/onshape_connector` mount contained interactive workflows.
 
+Below the desktop breakpoint (Tailwind `lg`, `DESKTOP_MEDIA_QUERY` in `src/lib/phone.ts`) pages show bottom tabs (`/next`, `/backlog`, `/shop`, `/my-parts`; `src/components/phone/PhoneTabBar.astro`) instead of the top navigation, and parts open on `/parts/[id]`. AppLayout's `phone` prop picks the mode: `tabs` (default), `page` (full-screen, the part page) or `plain` (the connector). On phones `/kanban` redirects before rendering: Slack's `/kanban?cardId=…` links to the part page, anything else to Next up. Shared phone pieces (`PartRow`, `StatusBar`, `PartActionBar`, `PartPage`) live in `src/components/phone/`.
+
 Dynamic endpoint segments use `[id]` and files use `[...path]`. Query parameters on the connector identify its Part Studio; an incomplete scope shows instructions. The embedded entry offers a top-level continuation because Suite cookies use SameSite=Lax. Keep the full connector query in that continuation.
 
 Kanban columns remain a JSON blob in `kanban_config` row `id = 'default'`, with `DEFAULT_KANBAN_COLUMNS` as fallback. Card `column_id` values refer to those ids.

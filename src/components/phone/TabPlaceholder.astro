@@ -1,0 +1,14 @@
+---
+/** A phone tab whose content hasn't been built yet. Replace with the tab's island. */
+interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+---
+
+<main class="space-y-2">
+  <h1 class="text-3xl">{title}</h1>
+  <p class="text-muted-foreground">{description}</p>
+  <p class="bg-muted rounded-lg p-4 text-sm">Coming soon</p>
+</main>

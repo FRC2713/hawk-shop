@@ -30,6 +30,11 @@ export type KanbanCardWithProcesses = KanbanCardRow & {
   review_notes?: ReviewNoteRow[];
 };
 
+/** `/api/kanban/cards/:id`: one card with its permanent status history. */
+export type KanbanCardWithHistory = KanbanCardWithProcesses & {
+  status_history: StatusHistoryRow[];
+};
+
 /** Fields `/api/kanban/cards/:id` accepts on PATCH. */
 export interface KanbanCardUpdate {
   column_id?: string;
@@ -78,11 +83,12 @@ export function kanbanCardDetailsQuery(id: string) {
   return queryOptions({
     queryKey: queryKeys.kanban.cardDetails(id),
     queryFn: async () => {
-      const { card } = await apiFetch<{
-        card: KanbanCardWithProcesses & { status_history: StatusHistoryRow[] };
-      }>(`/api/kanban/cards/${encodeURIComponent(id)}`, {
-        fallbackError: "Failed to load status history",
-      });
+      const { card } = await apiFetch<{ card: KanbanCardWithHistory }>(
+        `/api/kanban/cards/${encodeURIComponent(id)}`,
+        {
+          fallbackError: "Failed to load status history",
+        }
+      );
       return card;
     },
   });

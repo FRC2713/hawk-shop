@@ -587,26 +587,32 @@ test(
         await expect(
           page.getByRole("heading", { name: "Shop overview" })
         ).toBeVisible();
-        await page.getByRole("link", { name: "Board", exact: true }).click();
-        await expect(
-          page.getByPlaceholder("Search by part number or name...")
-        ).toBeVisible();
-        await expect(
-          page.getByText("Live update fixture", { exact: true })
-        ).toBeVisible();
-        await page
-          .getByPlaceholder("Search by part number or name...")
-          .fill("FIXTURE-PART");
-        await expect(
-          page.getByText("FIXTURE-PART", { exact: true })
-        ).toBeVisible();
-        await expect(
-          page.getByText("Live update fixture", { exact: true })
-        ).toHaveCount(0);
-        await page.screenshot({
-          path: `/tmp/hawk-shop-board-${width}.png`,
-          fullPage: true,
-        });
+        if (width === 1280) {
+          // Phones never see the board; the phone layout test covers them.
+          await page.getByRole("link", { name: "Board", exact: true }).click();
+          await expect(
+            page.getByPlaceholder("Search by part number or name...")
+          ).toBeVisible();
+          await expect(
+            page.getByText("Live update fixture", { exact: true })
+          ).toBeVisible();
+          await page
+            .getByPlaceholder("Search by part number or name...")
+            .fill("FIXTURE-PART");
+          await expect(
+            page.getByText("FIXTURE-PART", { exact: true })
+          ).toBeVisible();
+          await expect(
+            page.getByText("Live update fixture", { exact: true })
+          ).toHaveCount(0);
+          await page.screenshot({
+            path: `/tmp/hawk-shop-board-${width}.png`,
+            fullPage: true,
+          });
+        } else {
+          // Pages without a tab stay reachable from the account menu.
+          await page.getByLabel("Account: Shop Member").click();
+        }
         await page
           .getByRole("link", { name: "Equipment", exact: true })
           .click();
@@ -823,6 +829,9 @@ test(
         await page.setViewportSize({ width, height: 900 });
         await page.emulateMedia({ colorScheme: scheme });
         await page.goto(origin + "/kanban?cardId=history-browser");
+        // Phones open the part page, where history sits behind its row.
+        if (width === 390)
+          await page.getByRole("button", { name: /^History/ }).click();
         const history = page.getByRole("region", { name: "Status history" });
         await expect(history).toBeVisible();
         await expect(
@@ -849,6 +858,96 @@ test(
       await context.close();
     } finally {
       await browser.close();
+    }
+  }
+);
+
+test(
+  "phones get bottom tabs and a part page; Slack board links open it on phones and the side panel on desktops",
+  { timeout: 60000 },
+  async () => {
+    await json("/api/kanban/cards", "POST", {
+      id: "phone-part",
+      title: "Phone fixture part",
+    });
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const context = await browser.newContext({
+        extraHTTPHeaders: identity,
+        viewport: { width: 390, height: 844 },
+        colorScheme: "dark",
+      });
+      const page = await context.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      const noSidewaysScroll = async (where: string) =>
+        assert.ok(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth
+          ),
+          `Sideways scroll on ${where}`
+        );
+
+      for (const [label, path] of [
+        ["Next up", "/next"],
+        ["Backlog", "/backlog"],
+        ["Shop", "/shop"],
+        ["My parts", "/my-parts"],
+      ] as const) {
+        await page.goto(origin + "/");
+        const tabs = page.getByRole("navigation", { name: "Sections" });
+        await tabs.getByRole("link", { name: label, exact: true }).click();
+        await expect(page).toHaveURL(origin + path);
+        await expect(
+          page.getByRole("heading", { name: label, level: 1 })
+        ).toBeVisible();
+        await expect(page.getByText("Coming soon")).toBeVisible();
+        await expect(
+          tabs.getByRole("link", { name: label, exact: true })
+        ).toHaveAttribute("aria-current", "page");
+        for (const link of await tabs.getByRole("link").all()) {
+          const box = await link.boundingBox();
+          assert.ok(box && box.height >= 44 && box.width >= 44, label);
+        }
+        await expect(
+          page.getByRole("navigation", { name: "Main navigation" })
+        ).toBeHidden();
+        const tabsBox = await tabs.boundingBox();
+        assert.ok(
+          tabsBox && Math.round(tabsBox.y + tabsBox.height) === 844,
+          `Tabs not at the bottom of ${path}`
+        );
+        await noSidewaysScroll(path);
+      }
+
+      await page.goto(origin + "/kanban?cardId=phone-part");
+      await expect(page).toHaveURL(origin + "/parts/phone-part");
+      await expect(
+        page.getByRole("heading", { name: "Phone fixture part" })
+      ).toBeVisible();
+      await expect(page.getByRole("list", { name: "Status" })).toBeVisible();
+      await expect(
+        page.getByRole("navigation", { name: "Sections" })
+      ).toHaveCount(0);
+      await noSidewaysScroll("the part page");
+
+      await page.goto(origin + "/kanban");
+      await expect(page).toHaveURL(origin + "/next");
+
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(origin + "/kanban?cardId=phone-part");
+      await expect(page).toHaveURL(/\/kanban\?cardId=phone-part$/);
+      await expect(
+        page.getByRole("dialog").getByText("Phone fixture part")
+      ).toBeVisible();
+      await expect(
+        page.getByRole("navigation", { name: "Sections" })
+      ).toBeHidden();
+      assert.deepEqual(errors, []);
+      await context.close();
+    } finally {
+      await browser.close();
+      await call("/api/kanban/cards/phone-part", { method: "DELETE" });
     }
   }
 );

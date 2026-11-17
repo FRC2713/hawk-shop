@@ -1,0 +1,11 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import Part from "../../components/islands/Part";
+
+// The middleware only renders pages for a verified member.
+const viewerId = Astro.locals.identity?.subject ?? "";
+---
+
+<AppLayout title="Part" phone="page"
+  ><Part cardId={Astro.params.id!} viewerId={viewerId} client:load /></AppLayout
+>
