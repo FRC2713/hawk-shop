@@ -1,5 +1,5 @@
 import { useDroppable } from "@dnd-kit/core";
-import { ChevronDown, ChevronRight, FolderKanban } from "lucide-react";
+import { ChevronDown, ChevronRight, Cog, FolderKanban } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "~/components/ui/badge";
 import type { KanbanCardWithProcesses } from "~/lib/api";
@@ -9,22 +9,27 @@ import { cn } from "~/lib/utils";
 import { KanbanCard } from "../cards/KanbanCard";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
 import { DONE_TODAY_TITLE } from "~/lib/doneToday";
+import type { BoardRow } from "~/lib/boardRows";
 
-/** Droppable ids for lane cells; a drop moves the card's column only. */
-const CELL_PREFIX = "lane|";
-export function laneCellId(projectId: string, columnId: string) {
-  return `${CELL_PREFIX}${projectId}|${columnId}`;
+/**
+ * Droppable ids for row cells; a drop moves the card's column only, never its
+ * process or project.
+ */
+const CELL_PREFIX = "row|";
+export function laneCellId(rowId: string, columnId: string) {
+  return `${CELL_PREFIX}${rowId}|${columnId}`;
 }
-/** The column a drop target stands for, whether a column or a lane cell. */
+/** The column a drop target stands for, whether a column or a row cell. */
 export function dropTargetColumnId(overId: string) {
   if (!overId.startsWith(CELL_PREFIX)) return overId;
   const rest = overId.slice(CELL_PREFIX.length);
   return rest.slice(rest.indexOf("|") + 1);
 }
 
-export type Lane = { id: string; name: string; archived: boolean };
+export type Lane = BoardRow;
 
 const COLUMN_WIDTH = "w-[280px] sm:w-[320px]";
+const ROW_HEADER_WIDTH = "w-40";
 
 function LaneCell({
   laneId,
@@ -84,13 +89,16 @@ function LaneCell({
 }
 
 /**
- * One horizontal band per project, each running across every status column.
- * Lanes come in the order given (alphabetical, Miscellaneous last); lanes with
- * no matching cards are not passed in. Collapsing is per browser tab.
+ * One horizontal row per process or project, each running across every status
+ * column under a header with its name (and, for processes, its machines).
+ * Rows come in the order given; `rowOf` names the one row each card is in.
+ * Empty cells stay drop targets. Collapsing is per browser tab.
  */
 export function KanbanSwimlanes({
   columns,
+  rowKind,
   lanes,
+  rowOf,
   cardsByColumn,
   density,
   usersMap,
@@ -99,7 +107,9 @@ export function KanbanSwimlanes({
   onCardSelect,
 }: {
   columns: KanbanColumn[];
+  rowKind: "Process" | "Project";
   lanes: Lane[];
+  rowOf: (card: KanbanCardWithProcesses) => string;
   cardsByColumn: Record<string, KanbanCardWithProcesses[]>;
   density: BoardDensity;
   usersMap: Map<string, UserRow>;
@@ -121,14 +131,19 @@ export function KanbanSwimlanes({
       return next;
     });
   const inLane = (laneId: string, columnId: string) =>
-    (cardsByColumn[columnId] ?? []).filter(
-      (card) => card.project_id === laneId
-    );
+    (cardsByColumn[columnId] ?? []).filter((card) => rowOf(card) === laneId);
+  const RowIcon = rowKind === "Process" ? Cog : FolderKanban;
 
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
       <div className="inline-flex min-w-full flex-col gap-3">
-        <div className="bg-background sticky top-0 z-10 flex gap-3 pb-1 sm:gap-4">
+        <div className="bg-background sticky top-0 z-20 flex gap-3 pb-1 sm:gap-4">
+          <div
+            className={cn(
+              "bg-background sticky left-0 shrink-0",
+              ROW_HEADER_WIDTH
+            )}
+          />
           {columns.map((column, index) => (
             <div
               key={column.id}
@@ -159,41 +174,68 @@ export function KanbanSwimlanes({
           return (
             <section
               key={lane.id}
-              aria-label={`Project ${lane.name}`}
-              className="flex flex-col gap-2"
+              aria-label={`${rowKind} ${lane.name}`}
+              className="flex gap-3 sm:gap-4"
             >
-              <button
-                type="button"
-                onClick={() => toggle(lane.id)}
-                aria-expanded={!isCollapsed}
-                className="hover:bg-muted sticky left-0 flex w-fit items-center gap-2 rounded-md px-2 py-1 text-left"
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="size-4" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="size-4" aria-hidden="true" />
+              <div
+                className={cn(
+                  "bg-background sticky left-0 z-10 flex shrink-0 flex-col gap-0.5 py-1",
+                  ROW_HEADER_WIDTH
                 )}
-                <FolderKanban
-                  className="size-4 text-[var(--hawk-teal)]"
-                  aria-hidden="true"
-                />
-                <span className="font-heading font-semibold">{lane.name}</span>
-                {lane.archived && (
-                  <span className="text-muted-foreground text-xs">
-                    (archived)
+              >
+                <button
+                  type="button"
+                  onClick={() => toggle(lane.id)}
+                  aria-expanded={!isCollapsed}
+                  className="hover:bg-muted flex w-full items-start gap-1.5 rounded-md px-1 py-1 text-left"
+                >
+                  {isCollapsed ? (
+                    <ChevronRight
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <ChevronDown
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <RowIcon
+                    className="size-4 shrink-0 text-[var(--hawk-teal)]"
+                    aria-hidden="true"
+                  />
+                  <span className="font-heading min-w-0 leading-tight font-semibold break-words">
+                    {lane.name}
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    className="ml-auto text-xs tabular-nums"
+                  >
+                    {count}
+                  </Badge>
+                </button>
+                {lane.meta && (
+                  <span className="text-muted-foreground px-1 text-xs">
+                    {lane.meta}
                   </span>
                 )}
-                <Badge variant="secondary" className="text-xs tabular-nums">
-                  {count}
-                </Badge>
-              </button>
+                {lane.archived && (
+                  <span className="text-muted-foreground px-1 text-xs">
+                    Archived
+                  </span>
+                )}
+              </div>
               {!isCollapsed && (
                 <div className="flex gap-3 sm:gap-4">
-                  {columns.map((column) => (
+                  {columns.map((column, index) => (
                     <LaneCell
                       key={column.id}
                       laneId={lane.id}
-                      column={column}
+                      column={
+                        index === columns.length - 1
+                          ? { ...column, title: DONE_TODAY_TITLE }
+                          : column
+                      }
                       cards={inLane(lane.id, column.id)}
                       density={density}
                       usersMap={usersMap}

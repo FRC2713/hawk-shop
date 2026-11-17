@@ -33,8 +33,10 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
+  equipmentQuery,
   kanbanCardsQuery,
   partActions,
+  processesQuery,
   projectsQuery,
   queryKeys,
   sortProjectsForDisplay,
@@ -45,11 +47,14 @@ import { KanbanCard as KanbanCardComponent } from "../cards/KanbanCard";
 import { KanbanColumn } from "../columns/KanbanColumn";
 import { KanbanBulkEditBar } from "./KanbanBulkEditBar";
 import { DONE_TODAY_TITLE, splitDoneToday } from "~/lib/doneToday";
+import { dropTargetColumnId, KanbanSwimlanes } from "./KanbanSwimlanes";
 import {
-  dropTargetColumnId,
-  KanbanSwimlanes,
-  type Lane,
-} from "./KanbanSwimlanes";
+  cardRowId,
+  processRows,
+  projectRows,
+  type BoardRow,
+  type BoardRowsBy,
+} from "~/lib/boardRows";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
 
 type KanbanCardRow = KanbanCardWithProcesses;
@@ -60,7 +65,7 @@ interface KanbanBoardProps {
   isEditMode?: boolean;
   density?: BoardDensity;
   filters?: BoardFilters;
-  groupByProject?: boolean;
+  rowsBy?: BoardRowsBy;
   onAddColumn?: () => void;
   onRenameColumn?: (id: string, newTitle: string) => void;
   onDeleteColumn?: (id: string) => void;
@@ -73,7 +78,7 @@ export function KanbanBoard({
   isEditMode = false,
   density = "compact",
   filters = EMPTY_BOARD_FILTERS,
-  groupByProject = false,
+  rowsBy = "none",
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -115,6 +120,8 @@ export function KanbanBoard({
     useQuery(kanbanCardsQuery());
   const { data: users = [] } = useQuery(usersQuery());
   const { data: projects = [] } = useQuery(projectsQuery());
+  const { data: processes = [] } = useQuery(processesQuery());
+  const { data: equipment = [] } = useQuery(equipmentQuery());
 
   // Lane and sort order: alphabetical, Miscellaneous last.
   const orderedProjects = useMemo(
@@ -210,8 +217,8 @@ export function KanbanBoard({
     // Sort cards within each column
     Object.keys(grouped).forEach((columnId) => {
       grouped[columnId].sort((a, b) => {
-        // Lanes read top to bottom in project order, so grouping sorts too.
-        if (sortByProject || groupByProject) {
+        // Rows read top to bottom in project order, so grouping sorts too.
+        if (sortByProject || rowsBy === "project") {
           const projectCompare =
             (projectRank.get(a.project_id) ?? Infinity) -
             (projectRank.get(b.project_id) ?? Infinity);
@@ -240,36 +247,33 @@ export function KanbanBoard({
     filteredCards,
     sortByUser,
     sortByProject,
-    groupByProject,
+    rowsBy,
     projectRank,
     searchScores,
   ]);
 
-  // Swimlanes show Done like its column does: today's parts only.
+  // Rows show Done like its column does: today's parts only.
   const laneCardsByColumn = useMemo(() => {
-    if (!groupByProject || columns.length === 0) return cardsByColumn;
+    if (rowsBy === "none" || columns.length === 0) return cardsByColumn;
     const lastId = columns[columns.length - 1].id;
     return {
       ...cardsByColumn,
       [lastId]: splitDoneToday(cardsByColumn[lastId] ?? []).today,
     };
-  }, [groupByProject, cardsByColumn, columns]);
+  }, [rowsBy, cardsByColumn, columns]);
 
-  const lanes = useMemo<Lane[]>(() => {
-    if (!groupByProject) return [];
-    const used = new Set(
-      Object.values(laneCardsByColumn)
-        .flat()
-        .map((card) => card.project_id)
-    );
-    return orderedProjects
-      .filter((project) => used.has(project.id))
-      .map((project) => ({
-        id: project.id,
-        name: project.name,
-        archived: !!project.archived_at,
-      }));
-  }, [groupByProject, laneCardsByColumn, orderedProjects]);
+  const rowOf = useMemo(() => {
+    const machinesById = new Map(equipment.map((item) => [item.id, item]));
+    return (card: KanbanCardRow) => cardRowId(card, rowsBy, machinesById);
+  }, [rowsBy, equipment]);
+
+  const rows = useMemo<BoardRow[]>(() => {
+    if (rowsBy === "none") return [];
+    const used = new Set(Object.values(laneCardsByColumn).flat().map(rowOf));
+    return rowsBy === "process"
+      ? processRows(processes, equipment, used)
+      : projectRows(orderedProjects, used);
+  }, [rowsBy, laneCardsByColumn, rowOf, processes, equipment, orderedProjects]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -537,10 +541,12 @@ export function KanbanBoard({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      {groupByProject ? (
+      {rowsBy !== "none" ? (
         <KanbanSwimlanes
           columns={columns}
-          lanes={lanes}
+          rowKind={rowsBy === "process" ? "Process" : "Project"}
+          lanes={rows}
+          rowOf={rowOf}
           cardsByColumn={laneCardsByColumn}
           density={density}
           usersMap={usersMap}

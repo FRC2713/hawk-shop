@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { globSync, readFileSync } from "node:fs";
 import { build } from "esbuild";
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 
 /**
  * Shared harness for desktop board browser tests: the real Board island
@@ -162,9 +162,9 @@ async function newBoardPage(browser: Browser) {
   return page;
 }
 
-/** The card face titled `title`; a click opens its details. */
-export function boardCardFace(page: Page, title: string) {
-  return page.getByRole("button", { name: title, exact: true });
+/** The card face titled `title` (within `scope`); a click opens its details. */
+export function boardCardFace(scope: Page | Locator, title: string) {
+  return scope.getByRole("button", { name: title, exact: true });
 }
 
 export type BoardStub = {
