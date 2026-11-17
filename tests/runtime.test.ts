@@ -589,13 +589,13 @@ test(
         ).toBeVisible();
         await page.getByRole("link", { name: "Board", exact: true }).click();
         await expect(
-          page.getByPlaceholder("Search by part number or name...")
+          page.getByRole("searchbox", { name: "Search parts" })
         ).toBeVisible();
         await expect(
           page.getByText("Live update fixture", { exact: true })
         ).toBeVisible();
         await page
-          .getByPlaceholder("Search by part number or name...")
+          .getByRole("searchbox", { name: "Search parts" })
           .fill("FIXTURE-PART");
         await expect(
           page.getByText("FIXTURE-PART", { exact: true })
@@ -1004,7 +1004,7 @@ test(
       });
       const page = await context.newPage();
       await page.goto(origin + "/kanban?q=112&keep=yes#board");
-      const search = page.getByPlaceholder("Search by part number or name...");
+      const search = page.getByRole("searchbox", { name: "Search parts" });
       await expect(search).toHaveValue("112");
       const bracket = page.getByRole("heading", {
         name: first.title,
@@ -1026,16 +1026,17 @@ test(
       await expect(bracket).toBeVisible();
       await search.fill("search");
       await expect(plate).toBeVisible();
-      await page.getByRole("button", { name: "Filter by Process" }).click();
+      await page.getByRole("button", { name: "Process: All" }).click();
       await page
         .getByRole("menuitemcheckbox", { name: "CNC Milling", exact: true })
         .click();
       await page.keyboard.press("Escape");
       await expect(plate).toHaveCount(0);
       await expect(bracket).toBeVisible();
-      await page.getByRole("button", { name: "Sort by user" }).click();
+      await page.getByRole("combobox", { name: "Sort" }).click();
+      await page.getByRole("option", { name: "Assignee" }).click();
       await expect(bracket).toBeVisible();
-      await page.getByRole("button", { name: "Processes (1)" }).click();
+      await page.getByRole("button", { name: "Process: CNC Milling" }).click();
       await page
         .getByRole("menuitem", { name: "Show all", exact: true })
         .click();
@@ -1157,23 +1158,23 @@ test(
       await expect(heading(0)).toBeVisible();
       await expect(heading(1)).toBeVisible();
       await expect(heading(2)).toHaveCount(0);
-      await page.getByRole("button", { name: "Filter by Process" }).click();
+      await page.getByRole("button", { name: "Process: All" }).click();
       await page
         .getByRole("menuitemcheckbox", { name: "CNC Milling", exact: true })
         .click();
       await page.keyboard.press("Escape");
       await expect(heading(0)).toBeVisible();
       await expect(heading(1)).toHaveCount(0);
-      await page.getByRole("textbox", { name: "Search board" }).fill("plate");
+      await page.getByRole("searchbox", { name: "Search parts" }).fill("plate");
       await expect(heading(0)).toHaveCount(0);
       await expect(heading(1)).toHaveCount(0);
-      await page.getByRole("button", { name: "Processes (1)" }).click();
+      await page.getByRole("button", { name: "Process: CNC Milling" }).click();
       await page
         .getByRole("menuitem", { name: "Show all", exact: true })
         .click();
       await expect(heading(1)).toBeVisible();
       await page
-        .getByRole("textbox", { name: "Search board" })
+        .getByRole("searchbox", { name: "Search parts" })
         .fill("warning review");
       await page
         .getByRole("button", { name: "Has warnings", exact: true })

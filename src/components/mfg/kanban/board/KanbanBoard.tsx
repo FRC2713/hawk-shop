@@ -20,6 +20,11 @@ import { Columns3, Plus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { buildCardSearchIndex, buildCardUsersMap } from "~/lib/card-search";
+import {
+  EMPTY_BOARD_FILTERS,
+  filterCards,
+  type BoardFilters,
+} from "~/lib/boardFilter";
 import type {
   KanbanColumn as KanbanColumnType,
   KanbanConfig,
@@ -53,13 +58,8 @@ interface KanbanBoardProps {
   onConfigChange: (config: KanbanConfig) => void;
   isEditMode?: boolean;
   hideImages?: boolean;
-  processFilterIds?: string[];
-  sortByUser?: boolean;
-  projectFilterIds?: string[];
-  sortByProject?: boolean;
+  filters?: BoardFilters;
   groupByProject?: boolean;
-  searchQuery?: string;
-  hasWarningsOnly?: boolean;
   onAddColumn?: () => void;
   onRenameColumn?: (id: string, newTitle: string) => void;
   onDeleteColumn?: (id: string) => void;
@@ -71,13 +71,8 @@ export function KanbanBoard({
   onConfigChange,
   isEditMode = false,
   hideImages = false,
-  processFilterIds = [],
-  sortByUser = false,
-  projectFilterIds = [],
-  sortByProject = false,
+  filters = EMPTY_BOARD_FILTERS,
   groupByProject = false,
-  searchQuery = "",
-  hasWarningsOnly = false,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -96,6 +91,9 @@ export function KanbanBoard({
     null
   );
   const queryClient = useQueryClient();
+  const searchQuery = filters.q;
+  const sortByUser = filters.sort === "user";
+  const sortByProject = filters.sort === "project";
 
   // Use columns directly from config
   const columns = config.columns;
@@ -144,19 +142,8 @@ export function KanbanBoard({
   );
 
   const filteredCards = useMemo(
-    () =>
-      cards.filter(
-        (card) =>
-          searchScores.has(card.id) &&
-          (!hasWarningsOnly || !!card.release_issues?.length) &&
-          (projectFilterIds.length === 0 ||
-            projectFilterIds.includes(card.project_id)) &&
-          (processFilterIds.length === 0 ||
-            card.processes?.some((process) =>
-              processFilterIds.includes(process.id)
-            ))
-      ),
-    [cards, searchScores, processFilterIds, projectFilterIds, hasWarningsOnly]
+    () => filterCards(cards, filters, searchScores),
+    [cards, filters, searchScores]
   );
 
   // Mutation to update card column

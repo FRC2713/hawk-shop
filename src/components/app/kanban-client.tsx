@@ -1,23 +1,22 @@
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
-import { useUrlSearch } from "~/hooks/useUrlSearch";
-import { useUrlProjectView } from "~/hooks/useUrlProjectView";
+import { useBoardFilters } from "~/hooks/useBoardFilters";
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KanbanSquare, Search, Settings2, Edit, Save, X } from "lucide-react";
+import { Image, KanbanSquare, Rows3 } from "lucide-react";
 import {
   KanbanBoard,
   KanbanBoardSkeleton,
 } from "~/components/mfg/kanban/board/KanbanBoard";
 import { KanbanBoardErrorBoundary } from "~/components/mfg/kanban/board/KanbanBoardErrorBoundary";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 import type {
   KanbanConfig,
   KanbanColumn,
 } from "~/server/kanbanApi/columnTypes";
 import { KanbanBoardControls } from "~/components/mfg/kanban/board/KanbanBoardControls";
+import { BoardFilterBar } from "~/components/mfg/kanban/board/BoardFilterBar";
 import { useQuery } from "@tanstack/react-query";
 import { kanbanConfigQuery, queryKeys, saveKanbanConfig } from "~/lib/api";
 
@@ -31,11 +30,14 @@ export function MfgKanbanClient({
   const queryClient = useQueryClient();
   const [isEditMode, setIsEditMode] = useState(false);
   const [hideImages, setHideImages] = useState(false);
-  const [selectedProcessIds, setSelectedProcessIds] = useState<string[]>([]);
-  const [hasWarningsOnly, setHasWarningsOnly] = useState(false);
-  const [sortByUser, setSortByUser] = useState(false);
-  const { searchQuery, changeSearch, searchRef } = useUrlSearch();
-  const projectView = useUrlProjectView();
+  const {
+    filters,
+    changeFilters,
+    clearFilters,
+    groupByProject,
+    setGroupByProject,
+    searchRef,
+  } = useBoardFilters();
   const [originalConfig, setOriginalConfig] = useState<KanbanConfig | null>(
     null
   );
@@ -120,18 +122,6 @@ export function MfgKanbanClient({
     }
   };
 
-  const handleHideImages = () => {
-    setHideImages(!hideImages);
-  };
-
-  const handleProcessFilterChange = (processIds: string[]) => {
-    setSelectedProcessIds(processIds);
-  };
-
-  const handleSortByUserChange = (value: boolean) => {
-    setSortByUser(value);
-  };
-
   // Column operation handlers
   const handleAddColumn = useCallback(() => {
     if (config) {
@@ -197,42 +187,15 @@ export function MfgKanbanClient({
       <CardDeepLink cardId={cardId} onClose={onCloseCard} />
       {/* Page Header */}
       <header className="bg-muted/30 relative border-b bg-linear-to-r">
-        <div className="relative px-4 py-2">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex flex-col gap-2 px-4 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="bg-primary/10 ring-primary/20 flex size-6 shrink-0 items-center justify-center rounded-xl ring-1 sm:size-8">
                 <KanbanSquare className="text-primary size-5 sm:size-6" />
               </div>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-                  Kanban Board
-                </h1>
-              </div>
-            </div>
-            <div className="relative w-full min-w-0 flex-1 sm:max-w-md">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-              <Input
-                ref={searchRef}
-                aria-label="Search board"
-                aria-keyshortcuts="/"
-                type="text"
-                placeholder="Search by part number or name..."
-                value={searchQuery}
-                onChange={(e) => changeSearch(e.target.value)}
-                className="h-9 pr-9 pl-9"
-              />
-              {searchQuery && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-1/2 right-0 size-8 -translate-y-1/2"
-                  onClick={() => changeSearch("")}
-                  title="Clear search"
-                  aria-label="Clear search"
-                >
-                  <X className="size-3.5" />
-                </Button>
-              )}
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+                Kanban Board
+              </h1>
             </div>
             <KanbanBoardControls
               isEditMode={isEditMode}
@@ -241,22 +204,36 @@ export function MfgKanbanClient({
               onEditCancel={handleCancel}
               onEditSave={handleSave}
               isSaving={saveConfigMutation.isPending}
-              onHideImages={handleHideImages}
-              hideImages={hideImages}
-              hasWarningsOnly={hasWarningsOnly}
-              onHasWarningsOnlyChange={setHasWarningsOnly}
-              selectedProcessIds={selectedProcessIds}
-              onProcessFilterChange={handleProcessFilterChange}
-              sortByUser={sortByUser}
-              onSortByUserChange={handleSortByUserChange}
-              selectedProjectIds={projectView.projectIds}
-              onProjectFilterChange={projectView.setProjectIds}
-              sortByProject={projectView.sortByProject}
-              onSortByProjectChange={projectView.setSortByProject}
-              groupByProject={projectView.groupByProject}
-              onGroupByProjectChange={projectView.setGroupByProject}
             />
           </div>
+          <BoardFilterBar
+            filters={filters}
+            onChange={changeFilters}
+            onClear={clearFilters}
+            searchRef={searchRef}
+          >
+            <Button
+              variant={hideImages ? "outline" : "secondary"}
+              size="sm"
+              aria-pressed={!hideImages}
+              onClick={() => setHideImages(!hideImages)}
+              className="gap-2"
+            >
+              <Image className="size-4" aria-hidden="true" />
+              Images
+            </Button>
+            <Button
+              variant={groupByProject ? "secondary" : "outline"}
+              size="sm"
+              aria-pressed={groupByProject}
+              disabled={isEditMode}
+              onClick={() => setGroupByProject(!groupByProject)}
+              className="gap-2"
+            >
+              <Rows3 className="size-4" aria-hidden="true" />
+              Group by project
+            </Button>
+          </BoardFilterBar>
         </div>
       </header>
 
@@ -271,14 +248,9 @@ export function MfgKanbanClient({
               onConfigChange={handleConfigChange}
               isEditMode={isEditMode}
               hideImages={hideImages}
-              processFilterIds={selectedProcessIds}
-              sortByUser={sortByUser}
-              projectFilterIds={projectView.projectIds}
-              sortByProject={projectView.sortByProject}
+              filters={filters}
               // Column editing needs whole columns to drag.
-              groupByProject={projectView.groupByProject && !isEditMode}
-              searchQuery={searchQuery}
-              hasWarningsOnly={hasWarningsOnly}
+              groupByProject={groupByProject && !isEditMode}
               onAddColumn={isEditMode ? handleAddColumn : undefined}
               onRenameColumn={isEditMode ? handleRenameColumn : undefined}
               onDeleteColumn={isEditMode ? handleDeleteColumn : undefined}
