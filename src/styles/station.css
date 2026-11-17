@@ -177,3 +177,55 @@
   background: #ba0c2f;
   color: #fff;
 }
+
+.station-claim-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #000b;
+}
+.station-claim {
+  position: fixed;
+  inset: 32px;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 32px;
+  border: 2px solid #5fc7ba;
+  border-radius: 8px;
+  background: #141414;
+  color: #f2f2f2;
+  color-scheme: dark;
+  font-size: 22px;
+}
+.station-claim h2 {
+  font-size: 36px;
+}
+.station-claim input {
+  min-height: 56px;
+  border: 2px solid #a3a19e;
+  border-radius: 8px;
+  padding: 12px;
+  background: #2a2a2a;
+  color: #f2f2f2;
+}
+.station-claim :focus-visible {
+  outline: 3px solid #5fc7ba;
+  outline-offset: 3px;
+}
+.station-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.station-members button {
+  min-width: 180px;
+  min-height: 80px;
+  touch-action: manipulation;
+  user-select: none;
+}
+.station-control:disabled {
+  opacity: 0.6;
+}

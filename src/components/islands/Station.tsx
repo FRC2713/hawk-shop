@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
+import { StationClaim } from "./StationClaim";
+import { markCardDone } from "~/lib/api/workflow";
+import { queryKeys } from "~/lib/api/keys";
 import { Workflow } from "./Workflow";
 import { cn } from "~/lib/utils";
 import { equipmentQuery, machineQueueQuery } from "~/lib/api/equipment";
@@ -15,6 +18,14 @@ import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 const refresh = { refetchInterval: 180_000, refetchIntervalInBackground: true };
 
 function CurrentPart({ id, title }: { id: string; title: string }) {
+  const client = useQueryClient();
+  const done = useMutation({
+    mutationFn: () => markCardDone(id),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+      client.invalidateQueries({ queryKey: queryKeys.equipment.all() });
+    },
+  });
   const details = useQuery({ ...kanbanCardDetailsQuery(id), ...refresh });
   const user = useQuery({ ...userQuery(details.data?.assignee), ...refresh });
   const entered = details.data?.status_history
@@ -43,13 +54,32 @@ function CurrentPart({ id, title }: { id: string; title: string }) {
           {details.data?.quantity_to_make ?? "Unknown"}
         </span>
       </p>
+      <button
+        className="station-control"
+        aria-label={`Done ${title}`}
+        disabled={done.isPending}
+        onClick={() => done.mutate()}
+      >
+        {done.isPending ? "Sending…" : "Done"}
+      </button>
+      {done.error && <ErrorMessage error={done.error} />}
       {details.error && <ErrorMessage error={details.error} />}
       {user.error && <ErrorMessage error={user.error} />}
     </li>
   );
 }
 
-function MachineColumn({ machine }: { machine: EquipmentListItem }) {
+function MachineColumn({
+  machine,
+  processId,
+}: {
+  machine: EquipmentListItem;
+  processId: string;
+}) {
+  const [claiming, setClaiming] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
   const maintenance = machine.machine_status === "needs-maintenance";
   const queue = useQuery({
     ...machineQueueQuery(machine.id),
@@ -114,6 +144,13 @@ function MachineColumn({ machine }: { machine: EquipmentListItem }) {
                       <span className="brand-figures">
                         Qty {card.quantity_to_make ?? "?"}
                       </span>
+                      <button
+                        className="station-control"
+                        aria-label={`Claim ${card.title}`}
+                        onClick={() => setClaiming(card)}
+                      >
+                        Claim
+                      </button>
                     </li>
                   ))}
                 </ol>
@@ -127,6 +164,14 @@ function MachineColumn({ machine }: { machine: EquipmentListItem }) {
           </>
         )}
       </div>
+      {claiming && (
+        <StationClaim
+          processId={processId}
+          machine={machine}
+          card={claiming}
+          close={() => setClaiming(null)}
+        />
+      )}
       <a
         className="station-control station-sop"
         href={machine.documentation_url || `${machineUrl}/edit`}
@@ -217,7 +262,11 @@ export function StationContent({ processId }: { processId: string | null }) {
       {process && (
         <div className="station-columns">
           {machines?.map((machine) => (
-            <MachineColumn key={machine.id} machine={machine} />
+            <MachineColumn
+              key={machine.id}
+              machine={machine}
+              processId={process.id}
+            />
           ))}
         </div>
       )}

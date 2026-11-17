@@ -63,7 +63,8 @@ function captureStatusHistory(
   tx: Transaction,
   previous: KanbanCardRow | null,
   card: KanbanCardRow,
-  actor: SessionActor
+  actor: SessionActor,
+  device?: SessionActor
 ) {
   const columns = (
     tx.select().from(kanbanConfig).where(eq(kanbanConfig.id, "default")).get()
@@ -89,6 +90,8 @@ function captureStatusHistory(
       ),
       actor_id: actor.onshape_user_id,
       actor_name: actorName(actor, tx),
+      device_id: device?.onshape_user_id ?? null,
+      device_name: device ? actorName(device, tx) : null,
       moved_at: previous ? card.date_updated : card.date_created,
     })
     .run();
@@ -352,7 +355,8 @@ export async function updateCard(
   cardId: string,
   updates: Partial<Omit<KanbanCardRow, "id" | "date_created" | "created_by">>,
   actor: SessionActor,
-  alsoWrite?: (tx: Transaction, card: KanbanCardRow) => void
+  alsoWrite?: (tx: Transaction, card: KanbanCardRow) => void,
+  device?: SessionActor
 ): Promise<KanbanCardRow> {
   // If column_id is being updated, also update date_updated to track when the
   // card entered the column — but only when the column actually changes.
@@ -416,7 +420,7 @@ export async function updateCard(
       .returning()
       .get();
     if (changed) {
-      captureStatusHistory(tx, previous, updated, actor);
+      captureStatusHistory(tx, previous, updated, actor, device);
       captureSlackTransition(tx, previous, updated, actor);
     }
     // Not a status change: no history, no reply. The release message is

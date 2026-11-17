@@ -112,6 +112,24 @@ async function stationFixture(processId: string | null = "printing") {
           },
         },
       });
+    if (path.endsWith("/roster"))
+      return route.fulfill({
+        json: {
+          shop_day: "2026-11-17",
+          members: [{ onshape_user_id: "alice", name: "Alice" }],
+        },
+      });
+    if (path === "/api/users")
+      return route.fulfill({
+        json: [
+          { onshape_user_id: "alice", name: "Alice" },
+          { onshape_user_id: "bob", name: "Bob" },
+        ],
+      });
+    if (path.endsWith("/claim"))
+      return route.fulfill({ json: { card: { id: "next-1" } } });
+    if (path.endsWith("/done"))
+      return route.fulfill({ json: { card: { id: "part" } } });
     if (path === "/api/users/alice")
       return route.fulfill({ json: { name: "Alice" } });
     return route.fulfill({
@@ -259,5 +277,127 @@ test("station entry lists processes and offers recovery for an unknown station",
     ).toBeVisible();
   } finally {
     await invalid.browser.close();
+  }
+});
+
+test("claim screen names the part and machine, lists today's roster and searches all members", async () => {
+  const { browser, page } = await stationFixture();
+  try {
+    await page
+      .getByRole("region", { name: "Beta printer", exact: true })
+      .getByRole("button", { name: "Claim Spare bracket" })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Who's making this?" });
+    await expect(dialog).toContainText("Spare bracket");
+    await expect(dialog).toContainText("Beta printer");
+    await expect(
+      dialog.getByRole("button", { name: "Alice", exact: true })
+    ).toBeVisible();
+    await dialog
+      .getByRole("textbox", { name: "Search all members" })
+      .fill("bo");
+    await expect(
+      dialog.getByRole("button", { name: "Bob", exact: true })
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Alice", exact: true })
+    ).toHaveCount(0);
+    const request = page.waitForRequest((r) =>
+      r.url().endsWith("/next-1/claim")
+    );
+    await dialog.getByRole("button", { name: "Bob", exact: true }).click();
+    assert.deepEqual((await request).postDataJSON(), {
+      machineId: "b",
+      userId: "bob",
+    });
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("roster long press and keyboard removal ask for confirmation without claiming", async () => {
+  const { browser, page } = await stationFixture();
+  try {
+    let claims = 0;
+    let removals = 0;
+    await page.route("**/roster", async (route) => {
+      if (route.request().method() === "DELETE") {
+        removals++;
+        assert.deepEqual(route.request().postDataJSON(), { userId: "alice" });
+        return route.fulfill({ json: { shop_day: "2026-11-17", members: [] } });
+      }
+      return route.fulfill({
+        json: {
+          shop_day: "2026-11-17",
+          members: [{ onshape_user_id: "alice", name: "Alice" }],
+        },
+      });
+    });
+    page.on("request", (r) => {
+      if (r.url().endsWith("/claim")) claims++;
+    });
+    await page
+      .getByRole("region", { name: "Beta printer", exact: true })
+      .getByRole("button", { name: "Claim Spare bracket" })
+      .click();
+    const dialog = page.getByRole("dialog");
+    const alice = dialog.getByRole("button", { name: "Alice", exact: true });
+    await alice.focus();
+    await page.keyboard.press("Delete");
+    await expect(
+      dialog.getByRole("region", { name: "Remove member" })
+    ).toContainText("Remove Alice");
+    await dialog.getByRole("button", { name: "Cancel removal" }).click();
+    await alice.hover();
+    await page.mouse.down();
+    await page.clock.runFor(750);
+    await page.mouse.up();
+    await expect(
+      dialog.getByRole("button", { name: "Remove name" })
+    ).toBeVisible();
+    assert.equal(claims, 0);
+    await dialog.getByRole("button", { name: "Remove name" }).click();
+    await expect(alice).toHaveCount(0);
+    assert.equal(removals, 1);
+    assert.equal(claims, 0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Claim Spare bracket" }).nth(1)
+    ).toBeFocused();
+  } finally {
+    await browser.close();
+  }
+});
+
+test("station Done sends current work to review and claim conflicts stay visible", async () => {
+  const { browser, page } = await stationFixture();
+  try {
+    const done = page.waitForRequest((r) => r.url().endsWith("/part/done"));
+    await page.getByRole("button", { name: "Done Wheel plate" }).click();
+    assert.equal((await done).method(), "POST");
+    await page.route("**/claim", (route) =>
+      route.fulfill({
+        status: 409,
+        json: { error: "Someone else already claimed this part" },
+      })
+    );
+    await page
+      .getByRole("region", { name: "Beta printer", exact: true })
+      .getByRole("button", { name: "Claim Spare bracket" })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Alice", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toContainText(
+      "Someone else already claimed this part"
+    );
+    await expect(
+      page.getByRole("dialog").getByRole("button", { name: "Cancel claim" })
+    ).toBeEnabled();
+  } finally {
+    await browser.close();
   }
 });

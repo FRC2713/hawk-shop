@@ -1,5 +1,6 @@
 import "virtual:hawk-shop/server-only";
 
+import { addCardRoster } from "~/server/stationRoster";
 import { eq, inArray } from "drizzle-orm";
 import { actorName, type SessionActor } from "~/lib/sessionActor";
 import { db } from "~/server/db/client";
@@ -265,6 +266,12 @@ export async function claim(
       column_id: WORKFLOW_COLUMN_IDS.inProgress,
       ...(linkMachine ? { machine_id: machineId } : {}),
     },
+    {
+      onshape_user_id: userId,
+      email: null,
+      name: actorName({ onshape_user_id: userId, email: null }),
+    },
+    (tx, updated) => addCardRoster(tx, updated, userId),
     actor
   );
   return readCard(card.id);
@@ -302,7 +309,12 @@ export async function markDone(
     [WORKFLOW_COLUMN_IDS.inProgress],
     "marked done"
   );
-  await updateCard(card.id, { column_id: WORKFLOW_COLUMN_IDS.review }, actor);
+  await updateCard(
+    card.id,
+    { column_id: WORKFLOW_COLUMN_IDS.review },
+    actor,
+    (tx, updated) => addCardRoster(tx, updated, actor.onshape_user_id)
+  );
   return readCard(card.id);
 }
 

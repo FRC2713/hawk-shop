@@ -1698,3 +1698,23 @@ test("canonical machine route hydrates and saves queue order against the product
     await call(`/api/equipment/${machine.id}`, { method: "DELETE" });
   }
 });
+
+test("station roster authenticates reads and rejects foreign-origin picks and removals", async () => {
+  const path = "/api/processes/process-3d-printing/roster";
+  const denied = await fetch(origin + path);
+  assert.equal(denied.status, 401);
+  for (const method of ["POST", "DELETE"]) {
+    const response = await call(path, {
+      method,
+      headers: {
+        Origin: "https://other.example",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId: identity["x-token-subject"] }),
+    });
+    assert.equal(response.status, 403);
+  }
+  const response = await call(path);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+});

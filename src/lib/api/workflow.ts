@@ -19,8 +19,11 @@ function cardAction(id: string, action: string, fallbackError: string) {
   };
 }
 
-/** Claim a part as the signed-in member, optionally at a machine. */
-export function claimCard(id: string, options: { machineId?: string } = {}) {
+/** Claim as the signed-in member or a picked member, optionally at a machine. */
+export function claimCard(
+  id: string,
+  options: { machineId?: string; userId?: string } = {}
+) {
   return cardAction(id, "claim", "Failed to claim part")(options);
 }
 

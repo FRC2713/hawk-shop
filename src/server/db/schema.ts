@@ -55,6 +55,23 @@ export const processes = sqliteTable("processes", {
   updated_at: text("updated_at").notNull().$defaultFn(now).$onUpdateFn(now),
 });
 
+export const stationRoster = sqliteTable(
+  "station_roster",
+  {
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.onshape_user_id, { onDelete: "cascade" }),
+    process_id: text("process_id")
+      .notNull()
+      .references(() => processes.id, { onDelete: "cascade" }),
+    shop_day: text("shop_day").notNull(),
+    added_at: text("added_at").notNull().$defaultFn(now),
+  },
+  (table) => [
+    primaryKey({ columns: [table.process_id, table.shop_day, table.user_id] }),
+  ]
+);
+
 /** The built-in project for one-off parts. Seeded by migration; never renamed or archived. */
 export const MISCELLANEOUS_PROJECT_ID = "project-miscellaneous";
 
@@ -169,6 +186,8 @@ export const statusHistory = sqliteTable(
     to_column_index: integer("to_column_index").notNull(),
     actor_id: text("actor_id").notNull(),
     actor_name: text("actor_name").notNull(),
+    device_id: text("device_id"),
+    device_name: text("device_name"),
     moved_at: text("moved_at").notNull(),
   },
   (table) => [
