@@ -901,7 +901,7 @@ test(
         await expect(
           page.getByRole("heading", { name: label, level: 1 })
         ).toBeVisible();
-        if (path !== "/backlog")
+        if (label !== "Shop" && label !== "Backlog")
           await expect(page.getByText("Coming soon")).toBeVisible();
         await expect(
           tabs.getByRole("link", { name: label, exact: true })
