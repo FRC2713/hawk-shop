@@ -303,3 +303,41 @@ test("a phone's stale machine intent cannot claim assigned work after maintenanc
   assert.equal(card.column_id, "backlog");
   assert.equal(card.status_history.length, 1);
 });
+
+test("simultaneous claims accept exactly one member and preserve its history", async () => {
+  const bob = await signIn("bob@example.com", "bob");
+  await release("claim-concurrent");
+  const results = await Promise.all([
+    claim("claim-concurrent"),
+    claim("claim-concurrent", {}, bob),
+  ]);
+  assert.deepEqual(results.map((result) => result.status).sort(), [200, 409]);
+  const winner = results.find((result) => result.status === 200)!;
+  const loser = results.find((result) => result.status === 409)!;
+  assert.equal(loser.body.code, "already_claimed");
+  const card = await read("claim-concurrent");
+  assert.equal(card.assignee, winner.body.card.assignee);
+  assert.equal(card.status_history.length, 2);
+  assert.equal(card.status_history.at(-1).actor_id, card.assignee);
+});
+
+test("claim without a machine argument checks the linked machine's maintenance state", async () => {
+  const printer = await addMachine("Broken linked printer", [PRINTING]);
+  await release("claim-linked-maintenance", {
+    processIds: [PRINTING],
+    machineId: printer,
+  });
+  const flagged = await endpoint(maintenance, "POST", { id: printer })(
+    jsonRequest(`/api/equipment/${printer}/maintenance`, "POST", alice, {
+      note: "Bed warped",
+    })
+  );
+  assert.equal(flagged.status, 200);
+  const result = await claim("claim-linked-maintenance");
+  assert.equal(result.status, 409);
+  assert.equal(result.body.code, "machine_needs_maintenance");
+  const card = await read("claim-linked-maintenance");
+  assert.equal(card.column_id, "backlog");
+  assert.equal(card.assignee, null);
+  assert.equal(card.status_history.length, 1);
+});

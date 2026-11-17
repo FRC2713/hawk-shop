@@ -323,15 +323,14 @@ test("card creation, assignment, updates, status, due dates, quantities and dele
   const form = new FormData();
   form.set("action", "moveCard");
   form.set("cardId", id);
-  form.set("columnId", "done");
-  assert.equal(
-    (
-      await (
-        await call("/api/mfg/parts/actions", { method: "POST", body: form })
-      ).json()
-    ).success,
-    true
-  );
+  for (const columnId of ["in-progress", "review", "done"]) {
+    form.set("columnId", columnId);
+    const response = await call("/api/mfg/parts/actions", {
+      method: "POST",
+      body: form,
+    });
+    assert.equal((await response.json()).success, true);
+  }
   assert.equal(
     (await (await call(`/api/kanban/cards/${id}`)).json()).card.column_id,
     "done"

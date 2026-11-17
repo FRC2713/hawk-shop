@@ -59,6 +59,7 @@ import type { BoardDensity } from "~/hooks/useBoardDensity";
 import { useMinuteClock } from "~/hooks/useMinuteClock";
 import { plural } from "~/lib/plural";
 import { useCardSelection } from "./useCardSelection";
+import { useMoveReason } from "./useMoveReason";
 
 type KanbanCardRow = KanbanCardWithProcesses;
 
@@ -116,6 +117,7 @@ export function KanbanBoard({
   const { data: processes = [] } = useQuery(processesQuery());
   const { data: equipment = [] } = useQuery(equipmentQuery());
   const now = useMinuteClock();
+  const { requestReason, reasonDialog } = useMoveReason();
 
   // Row and sort order: alphabetical, Miscellaneous last.
   const orderedProjects = useMemo(
@@ -153,10 +155,12 @@ export function KanbanBoard({
     mutationFn: async ({
       cardId,
       columnId,
+      reason,
     }: {
       cardId: string;
       columnId: string;
-    }) => partActions.moveCard(cardId, columnId),
+      reason?: string;
+    }) => partActions.moveCard(cardId, columnId, reason),
     onMutate: async ({ cardId, columnId }) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.kanban.cards() });
@@ -348,7 +352,7 @@ export function KanbanBoard({
     }
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
     // Get cards to move - use draggingCards if set, otherwise fall back to single card
@@ -382,10 +386,19 @@ export function KanbanBoard({
       const cardsToMoveToNewColumn = cardsToMove.filter(
         (card) => card.column_id !== targetColumnId
       );
+      const reason = await requestReason(
+        cardsToMoveToNewColumn,
+        targetColumnId
+      );
+      if (reason === null) return;
 
       // Move all selected cards to the new column
       cardsToMoveToNewColumn.forEach((card) => {
-        moveCardMutation.mutate({ cardId: card.id, columnId: targetColumnId });
+        moveCardMutation.mutate({
+          cardId: card.id,
+          columnId: targetColumnId,
+          reason,
+        });
       });
 
       // Clear selection after moving
@@ -546,6 +559,7 @@ export function KanbanBoard({
       )}
 
       {/* Floating bulk edit bar - shown when cards are selected */}
+      {reasonDialog}
       {selectedCardIds.size > 0 && (
         <KanbanBulkEditBar
           cards={selectedCards}

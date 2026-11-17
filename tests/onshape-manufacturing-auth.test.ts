@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { endpoint } from "./http-fixture";
+import { endpoint, signIn } from "./http-fixture";
 import { sessionRequest } from "./request-context";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "hawk-onshape-mfg-auth-"));
@@ -104,6 +104,7 @@ test("requests without Suite identity cannot add, move, or edit cards", async ()
 });
 
 test("authenticated actions preserve successful mutations and structured validation failures", async () => {
+  await signIn("test-access@example.com", "test-access");
   const response = await postAction(
     actionRequest("member", {
       ...releaseFields,
@@ -119,6 +120,8 @@ test("authenticated actions preserve successful mutations and structured validat
 
   // Moving and editing need only the verified session, not a user-id cookie.
   const mutations: Record<string, string>[] = [
+    { action: "moveCard", cardId, columnId: "in-progress" },
+    { action: "moveCard", cardId, columnId: "review" },
     { action: "moveCard", cardId, columnId: "done" },
     { action: "updateDueDate", cardId, dueDate: "2026-12-15" },
   ];

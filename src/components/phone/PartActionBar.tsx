@@ -2,13 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  approveCard,
   equipmentQuery,
   claimCard,
-  markCardDone,
   queryKeys,
-  sendCardBack,
-  unclaimCard,
   usersQuery,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
@@ -27,24 +23,11 @@ import {
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 
-type Action = {
-  label: string;
-  /** Absent for Send back, which asks for a reason first. */
-  run?: (id: string) => Promise<unknown>;
-};
-
-const CLAIM: Action = { label: "Claim", run: (id) => claimCard(id) };
-const UNCLAIM: Action = { label: "Unclaim", run: unclaimCard };
-const DONE: Action = { label: "Done, send to review", run: markCardDone };
-const SEND_BACK: Action = { label: "Send back" };
-const APPROVE: Action = { label: "Approve", run: approveCard };
-
-/** The secondary action (if any), then the main one, per status. */
-const ACTIONS: Record<string, [Action | null, Action]> = {
-  [WORKFLOW_COLUMN_IDS.backlog]: [null, CLAIM],
-  [WORKFLOW_COLUMN_IDS.inProgress]: [UNCLAIM, DONE],
-  [WORKFLOW_COLUMN_IDS.review]: [SEND_BACK, APPROVE],
-};
+import {
+  WORKFLOW_ACTIONS,
+  workflowActionsFor,
+  type WorkflowAction,
+} from "~/lib/workflowActions";
 
 /**
  * The action for a part's current status, pinned at the bottom of the part
@@ -113,18 +96,25 @@ export function PartActionBar({
   )
     conflict = `${memberName(users, card.assignee)} already claimed this part`;
 
-  const actions = ACTIONS[card.column_id];
-  if (!actions && !stationIntent) return null;
-  const [secondary, main] = actions ?? [null, null];
-  const choose = (chosen: Action) =>
-    chosen.run
-      ? action.mutate(chosen === CLAIM ? claimRun : chosen.run)
-      : setAskingReason(true);
+  const actions = workflowActionsFor(card);
+  if (actions.length === 0 && !stationIntent) return null;
+  const choose = (chosen: WorkflowAction) => {
+    if (chosen === "sendBack") setAskingReason(true);
+    else
+      action.mutate(
+        chosen === "claim"
+          ? claimRun
+          : (id) => WORKFLOW_ACTIONS[chosen].request(id)
+      );
+  };
   const sendBack = () =>
-    action.mutate((id) => sendCardBack(id, reason.trim()), {
-      onSuccess: () => setReason(""),
-      onSettled: () => setAskingReason(false),
-    });
+    action.mutate(
+      (id) => WORKFLOW_ACTIONS.sendBack.request(id, reason.trim()),
+      {
+        onSuccess: () => setReason(""),
+        onSettled: () => setAskingReason(false),
+      }
+    );
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -165,39 +155,33 @@ export function PartActionBar({
           {conflict}
         </p>
       )}
-      {main && (
+      {actions.length > 0 && (
         <div className="flex gap-2">
-          {secondary && (
+          {actions.map((chosen) => (
             <Button
-              variant="outline"
-              className="h-12"
-              disabled={action.isPending}
-              onClick={() => choose(secondary)}
+              key={chosen}
+              variant={WORKFLOW_ACTIONS[chosen].primary ? "default" : "outline"}
+              className={
+                stationIntent && chosen === "claim"
+                  ? "ring-status-active h-12 flex-1 ring-2 ring-offset-2"
+                  : "h-12 flex-1"
+              }
+              aria-describedby={
+                stationIntent && chosen === "claim"
+                  ? "station-claim-intent"
+                  : undefined
+              }
+              disabled={
+                action.isPending ||
+                (chosen === "claim" &&
+                  stationIntent &&
+                  (!intendedMachine || !!equipment.error))
+              }
+              onClick={() => choose(chosen)}
             >
-              {secondary.label}
+              {WORKFLOW_ACTIONS[chosen].label}
             </Button>
-          )}
-          <Button
-            className={
-              stationIntent && main === CLAIM
-                ? "ring-status-active h-12 flex-1 ring-2 ring-offset-2"
-                : "h-12 flex-1"
-            }
-            aria-describedby={
-              stationIntent && main === CLAIM
-                ? "station-claim-intent"
-                : undefined
-            }
-            disabled={
-              action.isPending ||
-              (main === CLAIM &&
-                stationIntent &&
-                (!intendedMachine || !!equipment.error))
-            }
-            onClick={() => choose(main)}
-          >
-            {main.label}
-          </Button>
+          ))}
         </div>
       )}
 

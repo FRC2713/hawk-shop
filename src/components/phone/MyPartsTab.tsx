@@ -4,13 +4,17 @@ import { ChevronRight } from "lucide-react";
 import {
   equipmentQuery,
   kanbanCardsQuery,
+  kanbanColumnsQuery,
   usersQuery,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
 import { cardMachineName, unlinkedMachineText } from "~/lib/cardMachine";
 import { machineQueue } from "~/lib/machineQueue";
 import { partHref } from "~/lib/phone";
-import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
+import {
+  isWorkflowColumn,
+  WORKFLOW_COLUMN_IDS,
+} from "~/server/kanbanApi/columnTypes";
 import { elapsed, memberName, needsYouReason } from "~/lib/phoneParts";
 import { loadState } from "./LoadState";
 import { PartList, PartRow } from "./PartRow";
@@ -41,6 +45,7 @@ function ordinal(n: number) {
  */
 export function MyPartsTab({ viewerId }: { viewerId: string }) {
   const cards = useQuery(kanbanCardsQuery());
+  const { data: columns = [] } = useQuery(kanbanColumnsQuery());
   const { data: users = [] } = useQuery(usersQuery());
   const { data: equipment = [] } = useQuery(equipmentQuery());
 
@@ -139,6 +144,16 @@ export function MyPartsTab({ viewerId }: { viewerId: string }) {
         cards={inColumn(WORKFLOW_COLUMN_IDS.review).sort(newestFirst)}
         detail={(card) => `since ${elapsed(card.date_updated, now)}`}
       />
+      {[...new Set(rest.map((card) => card.column_id))]
+        .filter((id) => !isWorkflowColumn(id))
+        .map((id) => (
+          <StatusGroup
+            key={id}
+            title={columns.find((column) => column.id === id)?.title ?? id}
+            cards={inColumn(id).sort(newestFirst)}
+            detail={(card) => machineOf(card)}
+          />
+        ))}
       {doneThisWeek.length > 0 && (
         <details className="group space-y-2">
           <summary className="text-status-active flex min-h-11 cursor-pointer list-none items-center gap-1 text-sm">

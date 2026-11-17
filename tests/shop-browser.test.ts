@@ -121,7 +121,7 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
       timezoneId: "America/New_York",
     });
     page.setDefaultTimeout(3000);
-    await page.clock.setFixedTime(now);
+    await page.clock.install({ time: now });
     await page.route("**/api/**", (route) => {
       const url = new URL(route.request().url());
       if (url.pathname === "/api/kanban/cards")
@@ -219,6 +219,14 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
         .getAttribute("href"),
       "/equipment"
     );
+    // No mutations or refocus: the same open screen ages into attention and a new day.
+    await page.clock.fastForward(22 * 60 * 60 * 1000);
+    await attention
+      .getByRole("link", { name: /Belly pan waiting for review/ })
+      .waitFor();
+    assert.equal(await count("Done today"), "0");
+    assert.match((await machine("Printer 2")).status ?? "", /22 h/);
+
     assert.ok(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth

@@ -35,10 +35,7 @@ export function elapsed(iso: string, now: number): string {
   return `${Math.floor(hours / 24)} d`;
 }
 
-/** "1 part", "3 parts". */
-export function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
+export { plural } from "~/lib/plural";
 
 /**
  * A due date as a queue row shows it: "due today", the weekday within the

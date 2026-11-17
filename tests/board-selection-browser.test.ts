@@ -318,3 +318,89 @@ test("dragging a selected card moves the whole selection through moveCard", asyn
     await page.close();
   }
 });
+
+test("bulk moves back from Review ask for a required reason and allow cancellation", async () => {
+  const moves: string[] = [];
+  const { page } = await openBoard(browser, {
+    port: PORT,
+    cards: [
+      boardCard("Review plate", { column_id: "review", assignee: "alice" }),
+    ],
+    answer: (request, path) => {
+      if (path !== "/api/mfg/parts/actions") return undefined;
+      moves.push(request.postData() ?? "");
+      return { json: { success: true } };
+    },
+  });
+  try {
+    await checkbox(page, "Review plate").click();
+    const chooseTarget = async () => {
+      await actionBar(page).getByRole("combobox", { name: "Move to" }).click();
+      await page
+        .getByRole("option", { name: "In Progress", exact: true })
+        .click();
+    };
+    await chooseTarget();
+    const dialog = page.getByRole("dialog");
+    await expect(
+      dialog.getByRole("button", { name: "Send back", exact: true })
+    ).toBeDisabled();
+    assert.equal(moves.length, 0);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    assert.equal(moves.length, 0);
+    await expect(checkbox(page, "Review plate")).toBeChecked();
+    await chooseTarget();
+    await dialog
+      .getByLabel("Reason", { exact: true })
+      .fill("Fix the hole spacing");
+    await dialog
+      .getByRole("button", { name: "Send back", exact: true })
+      .click();
+    await expect.poll(() => moves.length).toBe(1);
+    assert.equal(moveOf(moves[0]), "Review plate->in-progress");
+    assert.match(moves[0], /name="reason"\r\n\r\nFix the hole spacing/);
+  } finally {
+    await page.close();
+  }
+});
+
+test("dragging from Review waits for a send-back reason", async () => {
+  const moves: string[] = [];
+  const { page } = await openBoard(browser, {
+    port: PORT,
+    cards: [
+      boardCard("Review bracket", { column_id: "review", assignee: "alice" }),
+    ],
+    answer: (request, path) => {
+      if (path !== "/api/mfg/parts/actions") return undefined;
+      moves.push(request.postData() ?? "");
+      return { json: { success: true } };
+    },
+  });
+  try {
+    const from = await boardCardFace(page, "Review bracket").boundingBox();
+    const to = await page
+      .getByRole("region", { name: "In Progress", exact: true })
+      .boundingBox();
+    assert.ok(from && to);
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 20, from.y + 20, { steps: 4 });
+    await page.mouse.move(to.x + to.width / 2, to.y + 150, { steps: 12 });
+    await page.mouse.up();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    assert.equal(moves.length, 0);
+    await dialog
+      .getByLabel("Reason", { exact: true })
+      .fill("Remake the bracket");
+    await dialog
+      .getByRole("button", { name: "Send back", exact: true })
+      .click();
+    await expect.poll(() => moves.length).toBe(1);
+    assert.equal(moveOf(moves[0]), "Review bracket->in-progress");
+    assert.match(moves[0], /name="reason"\r\n\r\nRemake the bracket/);
+  } finally {
+    await page.close();
+  }
+});

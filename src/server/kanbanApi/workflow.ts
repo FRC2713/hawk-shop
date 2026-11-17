@@ -3,11 +3,20 @@ import "virtual:hawk-shop/server-only";
 import { addCardRoster } from "~/server/stationRoster";
 import { eq, inArray } from "drizzle-orm";
 import { actorName, type SessionActor } from "~/lib/sessionActor";
-import { db } from "~/server/db/client";
-import { kanbanCards, reviewNotes, users } from "~/server/db/schema";
-import type { KanbanCardWithProcesses } from "~/server/db/types";
+import { db, type Transaction } from "~/server/db/client";
+import {
+  kanbanCards,
+  reviewNotes,
+  users,
+  kanbanConfig,
+  DEFAULT_KANBAN_COLUMNS,
+} from "~/server/db/schema";
+import type { KanbanCardRow, KanbanCardWithProcesses } from "~/server/db/types";
 import { getCards, updateCard } from "~/server/kanbanApi/cards";
-import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
+import {
+  isWorkflowColumn,
+  WORKFLOW_COLUMN_IDS,
+} from "~/server/kanbanApi/columnTypes";
 import { getKanbanColumns } from "~/server/kanbanApi/config";
 import { publishKanbanEvent } from "~/server/events/bus";
 import { requireMachineCanTake } from "~/server/kanbanApi/machines";
@@ -196,36 +205,25 @@ export class NotClaimedError extends WorkflowConflictError {
   }
 }
 
-/**
- * Reads one card and checks it is in one of `statuses`, so a single-card
- * action can validate before it calls `updateCard`. Call it after any `await`
- * the action needs and call `updateCard` straight after the checks: with no
- * `await` in between, two concurrent actions can't both pass them.
- */
-async function requireCardIn(
-  cardId: unknown,
+/** Validate the current row inside updateCard's transaction. */
+function requireCardIn(
+  card: KanbanCardRow,
   statuses: string[],
-  action: string
+  action: string,
+  tx: Transaction
 ) {
-  if (typeof cardId !== "string" || !cardId)
-    throw new InvalidWorkflowInputError("Choose a card");
-  const columns = await getKanbanColumns();
-  const card = db
-    .select()
-    .from(kanbanCards)
-    .where(eq(kanbanCards.id, cardId))
-    .get();
-  if (!card) throw new CardNotFoundError([cardId]);
   if (!statuses.includes(card.column_id)) {
+    const columns =
+      tx.select().from(kanbanConfig).where(eq(kanbanConfig.id, "default")).get()
+        ?.columns ?? DEFAULT_KANBAN_COLUMNS;
     const status =
       columns.find((column) => column.id === card.column_id)?.title ??
       card.column_id;
     throw new WrongStatusError(
-      [cardId],
+      [card.id],
       `This part is in ${status}, so it can't be ${action}`
     );
   }
-  return card;
 }
 
 /**
@@ -245,34 +243,40 @@ export async function claim(
 ): Promise<KanbanCardWithProcesses> {
   if (machineId !== undefined && (typeof machineId !== "string" || !machineId))
     throw new InvalidWorkflowInputError("Choose a machine");
-  const card = await requireCardIn(
-    cardId,
-    [WORKFLOW_COLUMN_IDS.backlog, WORKFLOW_COLUMN_IDS.inProgress],
-    "claimed"
-  );
+  requireCards([cardId]);
   requireMember(userId);
-  if (card.assignee && card.assignee !== userId)
-    throw new AlreadyClaimedError(card.id);
-  // A process-queue part takes the machine it is claimed at; a part already
-  // on a machine can only be claimed there.
-  const linkMachine = machineId !== undefined && card.machine_id === null;
-  if (machineId !== undefined) {
-    if (!linkMachine && machineId !== card.machine_id)
-      throw new OtherMachineError(card.id);
-    // A station URL can outlive maintenance or process changes, including
-    // for a part already assigned here. Preserve retries of an existing claim.
-    if (
-      card.column_id === WORKFLOW_COLUMN_IDS.backlog ||
-      card.assignee !== userId
-    )
-      requireMachineCanTake(db, machineId, [card.id]);
-  }
   await updateCard(
-    card.id,
-    {
-      assignee: userId,
-      column_id: WORKFLOW_COLUMN_IDS.inProgress,
-      ...(linkMachine ? { machine_id: machineId } : {}),
+    cardId,
+    (card, tx) => {
+      requireCardIn(
+        card,
+        [WORKFLOW_COLUMN_IDS.backlog, WORKFLOW_COLUMN_IDS.inProgress],
+        "claimed",
+        tx
+      );
+      if (card.assignee && card.assignee !== userId)
+        throw new AlreadyClaimedError(card.id);
+      if (
+        machineId !== undefined &&
+        card.machine_id !== null &&
+        machineId !== card.machine_id
+      )
+        throw new OtherMachineError(card.id);
+      const effectiveMachine = machineId ?? card.machine_id;
+      // Retries of an existing claim remain idempotent after maintenance starts.
+      if (
+        effectiveMachine &&
+        (card.column_id === WORKFLOW_COLUMN_IDS.backlog ||
+          card.assignee !== userId)
+      )
+        requireMachineCanTake(tx, effectiveMachine, [card.id]);
+      return {
+        assignee: userId,
+        column_id: WORKFLOW_COLUMN_IDS.inProgress,
+        ...(machineId !== undefined && card.machine_id === null
+          ? { machine_id: machineId }
+          : {}),
+      };
     },
     {
       onshape_user_id: userId,
@@ -282,7 +286,7 @@ export async function claim(
     (tx, updated) => addCardRoster(tx, updated, userId),
     actor
   );
-  return readCard(card.id);
+  return readCard(cardId);
 }
 
 /**
@@ -293,18 +297,22 @@ export async function unclaim(
   cardId: string,
   actor: SessionActor
 ): Promise<KanbanCardWithProcesses> {
-  const card = await requireCardIn(
-    cardId,
-    [WORKFLOW_COLUMN_IDS.backlog, WORKFLOW_COLUMN_IDS.inProgress],
-    "unclaimed"
-  );
-  if (!card.assignee) throw new NotClaimedError(card.id);
+  requireCards([cardId]);
   await updateCard(
-    card.id,
-    { assignee: null, column_id: WORKFLOW_COLUMN_IDS.backlog },
+    cardId,
+    (card, tx) => {
+      requireCardIn(
+        card,
+        [WORKFLOW_COLUMN_IDS.backlog, WORKFLOW_COLUMN_IDS.inProgress],
+        "unclaimed",
+        tx
+      );
+      if (!card.assignee) throw new NotClaimedError(card.id);
+      return { assignee: null, column_id: WORKFLOW_COLUMN_IDS.backlog };
+    },
     actor
   );
-  return readCard(card.id);
+  return readCard(cardId);
 }
 
 /** Mark done: an In Progress part goes to Review. */
@@ -312,18 +320,17 @@ export async function markDone(
   cardId: string,
   actor: SessionActor
 ): Promise<KanbanCardWithProcesses> {
-  const card = await requireCardIn(
-    cardId,
-    [WORKFLOW_COLUMN_IDS.inProgress],
-    "marked done"
-  );
+  requireCards([cardId]);
   await updateCard(
-    card.id,
-    { column_id: WORKFLOW_COLUMN_IDS.review },
+    cardId,
+    (card, tx) => {
+      requireCardIn(card, [WORKFLOW_COLUMN_IDS.inProgress], "marked done", tx);
+      return { column_id: WORKFLOW_COLUMN_IDS.review };
+    },
     actor,
     (tx, updated) => addCardRoster(tx, updated, actor.onshape_user_id)
   );
-  return readCard(card.id);
+  return readCard(cardId);
 }
 
 /** Approve: a Review part goes to Done. */
@@ -331,13 +338,16 @@ export async function approve(
   cardId: string,
   actor: SessionActor
 ): Promise<KanbanCardWithProcesses> {
-  const card = await requireCardIn(
+  requireCards([cardId]);
+  await updateCard(
     cardId,
-    [WORKFLOW_COLUMN_IDS.review],
-    "approved"
+    (card, tx) => {
+      requireCardIn(card, [WORKFLOW_COLUMN_IDS.review], "approved", tx);
+      return { column_id: WORKFLOW_COLUMN_IDS.done };
+    },
+    actor
   );
-  await updateCard(card.id, { column_id: WORKFLOW_COLUMN_IDS.done }, actor);
-  return readCard(card.id);
+  return readCard(cardId);
 }
 
 /**
@@ -354,29 +364,69 @@ export async function sendBack(
   const text = typeof reason === "string" ? reason.trim() : "";
   if (!text)
     throw new InvalidWorkflowInputError("Say why this part is going back");
-  const card = await requireCardIn(
-    cardId,
-    [WORKFLOW_COLUMN_IDS.review],
-    "sent back"
-  );
+  requireCards([cardId]);
   await updateCard(
-    card.id,
-    {
-      column_id: card.assignee
-        ? WORKFLOW_COLUMN_IDS.inProgress
-        : WORKFLOW_COLUMN_IDS.backlog,
+    cardId,
+    (card, tx) => {
+      requireCardIn(card, [WORKFLOW_COLUMN_IDS.review], "sent back", tx);
+      return {
+        column_id: card.assignee
+          ? WORKFLOW_COLUMN_IDS.inProgress
+          : WORKFLOW_COLUMN_IDS.backlog,
+      };
     },
     actor,
     (tx) =>
       tx
         .insert(reviewNotes)
         .values({
-          card_id: card.id,
+          card_id: cardId,
           author_id: actor.onshape_user_id,
           author_name: actorName(actor, tx),
           text,
         })
         .run()
   );
-  return readCard(card.id);
+  return readCard(cardId);
+}
+
+/** Desktop moves use the same actions as the part page. Custom columns remain free-form. */
+export async function move(
+  cardId: string,
+  actor: SessionActor,
+  columnId: string,
+  reason?: string
+) {
+  const columns = await getKanbanColumns();
+  if (!columns.some((column) => column.id === columnId))
+    throw new InvalidWorkflowInputError("Choose an existing status");
+  requireCards([cardId]);
+  const card = db
+    .select()
+    .from(kanbanCards)
+    .where(eq(kanbanCards.id, cardId))
+    .get()!;
+  if (card.column_id === columnId) return readCard(cardId);
+  if (!isWorkflowColumn(card.column_id) || !isWorkflowColumn(columnId)) {
+    await updateCard(cardId, { column_id: columnId }, actor);
+    return readCard(cardId);
+  }
+  const { backlog, inProgress, review, done } = WORKFLOW_COLUMN_IDS;
+  if (card.column_id === backlog && columnId === inProgress)
+    return claim(cardId, actor);
+  if (card.column_id === inProgress && columnId === backlog)
+    return unclaim(cardId, actor);
+  if (card.column_id === inProgress && columnId === review)
+    return markDone(cardId, actor);
+  if (card.column_id === review && columnId === done)
+    return approve(cardId, actor);
+  if (
+    card.column_id === review &&
+    columnId === (card.assignee ? inProgress : backlog)
+  )
+    return sendBack(cardId, actor, { reason });
+  throw new WrongStatusError(
+    [cardId],
+    "Use the part's next workflow action to change its status"
+  );
 }
