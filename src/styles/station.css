@@ -1,0 +1,179 @@
+/* Shared displays deliberately use the Red Hawk dark palette in either OS theme. */
+.station-screen {
+  --background: #141414;
+  --foreground: #f2f2f2;
+  --card: #1e1e1e;
+  --muted-foreground: #a3a19e;
+  --border: #333333;
+  --link: #5fc7ba;
+  color-scheme: dark;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100dvh;
+  min-width: 1280px;
+  min-height: 800px;
+  padding: 24px;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 18px;
+}
+.station-screen * {
+  box-sizing: border-box;
+}
+.station-header,
+.station-heading,
+.station-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.station-header {
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.station-heading {
+  min-width: 0;
+}
+.station-heading img {
+  flex-shrink: 0;
+  margin: 12px;
+}
+.station-heading h1 {
+  font-size: 36px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.station-controls {
+  flex-shrink: 0;
+}
+.station-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 12px 20px;
+  border: 2px solid #5fc7ba;
+  border-radius: 8px;
+  color: #f2f2f2;
+  background: #2a2a2a;
+  font: inherit;
+  text-decoration: none;
+}
+.station-control:focus-visible,
+.station-screen a:focus-visible {
+  outline: 3px solid #5fc7ba;
+  outline-offset: 3px;
+}
+.station-control[aria-current="page"] {
+  border-color: #ba0c2f;
+  background: #ba0c2f;
+}
+.station-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  overflow: auto;
+  max-height: 40vh;
+  flex-shrink: 0;
+}
+.station-columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(300px, 1fr);
+  gap: 20px;
+  min-height: 0;
+  flex: 1;
+  overflow-x: auto;
+}
+.station-machine {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 2px solid #333;
+  border-radius: 8px;
+  background: #1e1e1e;
+  overflow: hidden;
+}
+.station-machine > header {
+  padding: 12px 20px;
+  border-bottom: 2px solid #333;
+}
+.station-machine h2 {
+  font-size: 28px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.station-machine h2 a {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  color: inherit;
+  text-decoration: none;
+}
+.station-status {
+  font-weight: 600;
+}
+.station-machine-work {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.station-machine-work h3 {
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+.station-machine-work h3:not(:first-child) {
+  margin-top: 20px;
+}
+.station-machine-work p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.station-current {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.station-part + .station-part {
+  margin-top: 16px;
+}
+.station-part h4 {
+  font-size: 24px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.station-queue {
+  padding-left: 28px;
+  margin: 0;
+}
+.station-queue li {
+  padding: 8px 0;
+  border-bottom: 1px solid #333;
+  overflow-wrap: anywhere;
+}
+.station-queue li span:last-child {
+  display: block;
+  color: #a3a19e;
+}
+.station-sop {
+  margin: 16px 20px;
+  flex-shrink: 0;
+}
+.station-waiting {
+  border-color: #5fc7ba;
+}
+.station-waiting .station-status {
+  color: #5fc7ba;
+}
+.station-maintenance {
+  border-color: #ba0c2f;
+}
+.station-maintenance > header {
+  background: #ba0c2f;
+  color: #fff;
+}

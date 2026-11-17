@@ -85,6 +85,9 @@ test("desktop equipment table groups machines, links rows and SOPs, and contains
     assert.ok(styles.length, "Run npm run build before browser tests");
     await page.addStyleTag({ content: readFileSync(styles[0], "utf8") });
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    await expect(
+      page.getByRole("link", { name: "Open station screen" })
+    ).toHaveAttribute("href", "/station");
     const printingRegion = page.getByRole("region", {
       name: "Printing",
       exact: true,

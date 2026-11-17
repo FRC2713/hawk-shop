@@ -20,7 +20,21 @@ The numbered queue reads `GET /api/equipment/:id/queue`. Up/down controls post t
 
 Report a problem posts `{ note }` to `POST /api/equipment/:id/maintenance`. The server validates the note and records the verified session actor, ignoring caller-supplied reporter fields. It sets the existing maintenance flag and refreshes the page's equipment data; it sends no Slack message. Mark fixed clears the active report and records `last_maintenance_at`. Last maintenance displays this completed maintenance date, retained across later reports, or an empty state when none is recorded. The secondary Delete equipment action loads all cards to count links to this machine, including completed cards, then opens the existing confirmation dialog before deletion. Cancel leaves the machine intact; confirmed deletion returns to the equipment list.
 
-At the #139 integration base, Shop, Next up and station page routes are absent. Their owners should link to `/equipment/${encodeURIComponent(machine.id)}` when adding machine entrypoints. No speculative `/shop`, `/next-up` or station destinations are emitted by this page. #119's separate checkout is not part of this change.
+### Shared station display
+
+Equipment's Open station screen link opens `/station`, where members choose a process. `/station/:id` shows all machines attached to that process, ordered by name. Unknown process ids return 404 and offer Change station. Machine names link to `/equipment/:id`. No station table is needed.
+
+`src/components/islands/Station.tsx` owns one workflow root and uses the existing equipment, processes, machine queue, card details and user queries. Current work shows every In Progress part with its assignee, quantity and time since its latest In Progress history entry. Unknown history is shown as unknown. Queues show the first three entries in server order, including compatible unassigned Backlog parts. Idle machines with work waiting have a teal outline and a Work waiting label. Maintenance replaces current work and the queue with the reported problem. SOP links remain available. The display does not load thumbnails, backfill card snapshots or call Onshape.
+
+The workflow's existing SSE subscriber invalidates equipment, queues and current-part details on change and reconnection. All station queries also refresh every three minutes, including in background tabs, to recover from missed events. Elapsed time updates every minute. Query failures are visible beside the affected data. Normal Suite sign-in recovery still applies if membership expires.
+
+`src/layouts/StationLayout.astro` selects the shared layout's station mode, hiding ordinary navigation, phone tabs and the account menu. Only station routes select this mode. Scoped station styles fix the display to a dark Red Hawk layout for 1280×800 and larger, with 18 px body text, 28 px machine names and 56 px controls. More machines than fit across the display scroll horizontally; long queues or multiple current parts scroll inside their column. Claiming, finishing, today's roster and QR codes belong to #141 and #142, which can extend the machine column without changing the read contracts.
+
+#### Kiosk setup
+
+Use a shared display at 1280×800 or larger and 100% browser zoom. Open Shop through the Suite gateway, sign in with an approved workspace member, choose Equipment → Open station screen, then choose the process. Bookmark that process URL as the display's startup page. Use the browser's full-screen or kiosk mode and the device's power settings to keep the screen awake. Check that the display can reach the gateway and that its session is signed in before shop starts. Change station switches processes; Equipment exits the display.
+
+Device lockdown, automatic browser startup and automatic sign-in are device administration tasks. Shop does not bypass Suite authentication, extend token lifetimes or prevent the operating system from sleeping. If the Suite session expires, sign in again. Maintenance labels are informational and do not physically disable equipment.
 
 SQLite, its ordered Drizzle migrations, and uploaded images retain their existing format and location under `DATA_DIR`. This migration does not replace the database or renumber existing users. The historical `users.onshape_user_id` column accepts Suite subjects for new Suite users; existing Onshape users remain available for historical assignment and submitter display. Cards created after migration record the verified Suite subject as submitter. Changing assignee leaves submitter intact.
 
