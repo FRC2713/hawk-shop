@@ -1,5 +1,6 @@
 import { useUrlSearch } from "~/hooks/useUrlSearch";
 import { useUrlProjectView } from "~/hooks/useUrlProjectView";
+import { useMinuteClock } from "~/hooks/useMinuteClock";
 import { ProjectFilter } from "~/components/mfg/ProjectFilter";
 import { useMemo } from "react";
 import { ArrowLeft, CheckCircle2, Search, X } from "lucide-react";
@@ -17,6 +18,7 @@ export function DoneClient() {
   const { data: cards = [], isLoading: isLoadingCards } =
     useQuery(kanbanCardsQuery());
   const { data: users = [] } = useQuery(usersQuery());
+  const now = useMinuteClock();
 
   // Get the last column ID (Done column)
   const doneColumnId = useMemo(() => {
@@ -157,7 +159,7 @@ export function DoneClient() {
           <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {sortedCards.map((card) => (
               <div key={card.id} className="w-full">
-                <KanbanCard card={card} usersMap={usersMap} />
+                <KanbanCard card={card} usersMap={usersMap} now={now} />
               </div>
             ))}
           </div>

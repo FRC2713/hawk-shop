@@ -51,7 +51,7 @@ export async function updateProject(
 const compareNames = (a: { name: string }, b: { name: string }) =>
   a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
-/** Alphabetical, with Miscellaneous last: the order of lanes and filters. */
+/** Alphabetical, with Miscellaneous last: the order of rows and filters. */
 export function sortProjectsForDisplay<T extends { id: string; name: string }>(
   projects: readonly T[]
 ): T[] {

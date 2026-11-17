@@ -13,6 +13,7 @@ export * from "./processes";
 export * from "./projects";
 export * from "./users";
 export * from "./kanban";
+export * from "./workflow";
 export * from "./onshape";
 export * from "./workflow";
 

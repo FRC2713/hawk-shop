@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -27,6 +27,8 @@ import {
 } from "~/server/kanbanApi/columnTypes";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanColumnCardContainer } from "./KanbanColumnCardContainer";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
+import type { CardSelectHandler } from "~/lib/cardSelection";
 
 interface KanbanColumnProps {
   column: KanbanColumnType;
@@ -35,17 +37,15 @@ interface KanbanColumnProps {
   onDelete: (id: string) => void;
   isEditMode?: boolean;
   isDraggingCard?: boolean;
-  hideImages?: boolean;
+  density?: BoardDensity;
   usersMap: Map<string, UserRow>;
   isLastColumn?: boolean;
-  selectedCardIds?: Set<string>;
+  /** For Done: parts finished before today, which only the link reaches. */
+  olderCardsCount?: number;
+  now: number;
+  selectedCardIds?: ReadonlySet<string>;
   selectedColumnId?: string | null;
-  onCardSelect?: (
-    cardId: string,
-    columnId: string,
-    cardIndex: number,
-    event: React.MouseEvent
-  ) => void;
+  onCardSelect?: CardSelectHandler;
 }
 
 export function KanbanColumn({
@@ -55,34 +55,17 @@ export function KanbanColumn({
   onDelete,
   isEditMode = false,
   isDraggingCard = false,
-  hideImages = false,
+  density = "compact",
   usersMap,
   isLastColumn = false,
+  olderCardsCount = 0,
+  now,
   selectedCardIds = new Set(),
   selectedColumnId = null,
   onCardSelect,
 }: KanbanColumnProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-
-  // Filter cards for the last column (Done) - only show cards from last 24 hours
-  const { filteredCards, olderCardsCount } = useMemo(() => {
-    if (!isLastColumn) {
-      return { filteredCards: cards, olderCardsCount: 0 };
-    }
-
-    const now = Date.now();
-    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-
-    const filtered = cards.filter((card) => {
-      const cardUpdated = new Date(card.date_updated).getTime();
-      return cardUpdated > twentyFourHoursAgo;
-    });
-
-    const olderCount = cards.length - filtered.length;
-
-    return { filteredCards: filtered, olderCardsCount: olderCount };
-  }, [cards, isLastColumn]);
 
   const {
     attributes,
@@ -159,10 +142,10 @@ export function KanbanColumn({
             />
             <Badge
               variant="secondary"
-              className="text-xs tabular-nums"
+              className="brand-figures text-xs"
               aria-label="Matching cards"
             >
-              {isLastColumn ? filteredCards.length : cards.length}
+              {cards.length}
             </Badge>
           </div>
 
@@ -207,11 +190,12 @@ export function KanbanColumn({
         {/* Cards Container */}
         <KanbanColumnCardContainer
           columnName={column.title}
-          cards={filteredCards}
+          cards={cards}
           isDraggingCard={isDraggingCard}
-          hideImages={hideImages}
+          density={density}
           usersMap={usersMap}
-          olderCardsCount={isLastColumn ? olderCardsCount : 0}
+          now={now}
+          olderCardsCount={olderCardsCount}
           columnId={column.id}
           selectedCardIds={selectedCardIds}
           selectedColumnId={selectedColumnId}

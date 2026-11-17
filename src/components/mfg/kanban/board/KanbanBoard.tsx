@@ -20,6 +20,11 @@ import { Columns3, Plus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { buildCardSearchIndex, buildCardUsersMap } from "~/lib/card-search";
+import {
+  EMPTY_BOARD_FILTERS,
+  filterCards,
+  type BoardFilters,
+} from "~/lib/boardFilter";
 import type {
   KanbanColumn as KanbanColumnType,
   KanbanConfig,
@@ -28,8 +33,10 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
+  equipmentQuery,
   kanbanCardsQuery,
   partActions,
+  processesQuery,
   projectsQuery,
   queryKeys,
   sortProjectsForDisplay,
@@ -39,27 +46,29 @@ import {
 import { KanbanCard as KanbanCardComponent } from "../cards/KanbanCard";
 import { KanbanColumn } from "../columns/KanbanColumn";
 import { KanbanBulkEditBar } from "./KanbanBulkEditBar";
+import { DONE_TODAY_TITLE, splitDoneToday } from "~/lib/doneToday";
+import { dropTargetColumnId, KanbanRows } from "./KanbanRows";
 import {
-  dropTargetColumnId,
-  KanbanSwimlanes,
-  type Lane,
-} from "./KanbanSwimlanes";
+  cardRowId,
+  processRows,
+  projectRows,
+  type BoardRow,
+  type BoardRowsBy,
+} from "~/lib/boardRows";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
+import { useMinuteClock } from "~/hooks/useMinuteClock";
+import { plural } from "~/lib/plural";
+import { useCardSelection } from "./useCardSelection";
 
 type KanbanCardRow = KanbanCardWithProcesses;
-const DONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface KanbanBoardProps {
   config: KanbanConfig;
   onConfigChange: (config: KanbanConfig) => void;
   isEditMode?: boolean;
-  hideImages?: boolean;
-  processFilterIds?: string[];
-  sortByUser?: boolean;
-  projectFilterIds?: string[];
-  sortByProject?: boolean;
-  groupByProject?: boolean;
-  searchQuery?: string;
-  hasWarningsOnly?: boolean;
+  density?: BoardDensity;
+  filters?: BoardFilters;
+  rowsBy?: BoardRowsBy;
   onAddColumn?: () => void;
   onRenameColumn?: (id: string, newTitle: string) => void;
   onDeleteColumn?: (id: string) => void;
@@ -70,14 +79,9 @@ export function KanbanBoard({
   config,
   onConfigChange,
   isEditMode = false,
-  hideImages = false,
-  processFilterIds = [],
-  sortByUser = false,
-  projectFilterIds = [],
-  sortByProject = false,
-  groupByProject = false,
-  searchQuery = "",
-  hasWarningsOnly = false,
+  density = "compact",
+  filters = EMPTY_BOARD_FILTERS,
+  rowsBy = "none",
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -85,17 +89,10 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const [activeCard, setActiveCard] = useState<KanbanCardRow | null>(null);
   const [draggingCards, setDraggingCards] = useState<KanbanCardRow[]>([]);
-  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(
-    new Set()
-  );
-  const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
-  const [lastClickedCardIndex, setLastClickedCardIndex] = useState<
-    number | null
-  >(null);
-  const [lastClickedColumnId, setLastClickedColumnId] = useState<string | null>(
-    null
-  );
   const queryClient = useQueryClient();
+  const searchQuery = filters.q;
+  const sortByAssignee = filters.sort === "assignee";
+  const sortByProject = filters.sort === "project";
 
   // Use columns directly from config
   const columns = config.columns;
@@ -116,8 +113,11 @@ export function KanbanBoard({
     useQuery(kanbanCardsQuery());
   const { data: users = [] } = useQuery(usersQuery());
   const { data: projects = [] } = useQuery(projectsQuery());
+  const { data: processes = [] } = useQuery(processesQuery());
+  const { data: equipment = [] } = useQuery(equipmentQuery());
+  const now = useMinuteClock();
 
-  // Lane and sort order: alphabetical, Miscellaneous last.
+  // Row and sort order: alphabetical, Miscellaneous last.
   const orderedProjects = useMemo(
     () => sortProjectsForDisplay(projects),
     [projects]
@@ -144,19 +144,8 @@ export function KanbanBoard({
   );
 
   const filteredCards = useMemo(
-    () =>
-      cards.filter(
-        (card) =>
-          searchScores.has(card.id) &&
-          (!hasWarningsOnly || !!card.release_issues?.length) &&
-          (projectFilterIds.length === 0 ||
-            projectFilterIds.includes(card.project_id)) &&
-          (processFilterIds.length === 0 ||
-            card.processes?.some((process) =>
-              processFilterIds.includes(process.id)
-            ))
-      ),
-    [cards, searchScores, processFilterIds, projectFilterIds, hasWarningsOnly]
+    () => filterCards(cards, filters, searchScores),
+    [cards, filters, searchScores]
   );
 
   // Mutation to update card column
@@ -222,15 +211,14 @@ export function KanbanBoard({
     // Sort cards within each column
     Object.keys(grouped).forEach((columnId) => {
       grouped[columnId].sort((a, b) => {
-        // Lanes read top to bottom in project order, so grouping sorts too.
-        if (sortByProject || groupByProject) {
+        // Rows read top to bottom in project order, so grouping sorts too.
+        if (sortByProject || rowsBy === "project") {
           const projectCompare =
             (projectRank.get(a.project_id) ?? Infinity) -
             (projectRank.get(b.project_id) ?? Infinity);
           if (projectCompare !== 0) return projectCompare;
         }
-        // Sort by user if enabled
-        if (sortByUser) {
+        if (sortByAssignee) {
           const aAssignee = a.assignee || "zzz_Unassigned";
           const bAssignee = b.assignee || "zzz_Unassigned";
           const userCompare = aAssignee.localeCompare(bAssignee);
@@ -250,41 +238,80 @@ export function KanbanBoard({
     return grouped;
   }, [
     filteredCards,
-    sortByUser,
+    sortByAssignee,
     sortByProject,
-    groupByProject,
+    rowsBy,
     projectRank,
     searchScores,
   ]);
 
-  // Swimlanes show Done like its column does: the last 24 hours only.
-  const laneCardsByColumn = useMemo(() => {
-    if (!groupByProject || columns.length === 0) return cardsByColumn;
+  // Done shows today's parts, with or without rows; older ones are behind a
+  // link, so they are out of selection ranges and row counts too.
+  const { shownByColumn, olderDoneCount } = useMemo(() => {
+    if (columns.length === 0)
+      return { shownByColumn: cardsByColumn, olderDoneCount: 0 };
     const lastId = columns[columns.length - 1].id;
-    const since = Date.now() - DONE_WINDOW_MS;
-    return {
-      ...cardsByColumn,
-      [lastId]: (cardsByColumn[lastId] ?? []).filter(
-        (card) => new Date(card.date_updated).getTime() > since
-      ),
-    };
-  }, [groupByProject, cardsByColumn, columns]);
-
-  const lanes = useMemo<Lane[]>(() => {
-    if (!groupByProject) return [];
-    const used = new Set(
-      Object.values(laneCardsByColumn)
-        .flat()
-        .map((card) => card.project_id)
+    const { today, olderCount } = splitDoneToday(
+      cardsByColumn[lastId] ?? [],
+      new Date(now)
     );
-    return orderedProjects
-      .filter((project) => used.has(project.id))
-      .map((project) => ({
-        id: project.id,
-        name: project.name,
-        archived: !!project.archived_at,
-      }));
-  }, [groupByProject, laneCardsByColumn, orderedProjects]);
+    return {
+      shownByColumn: { ...cardsByColumn, [lastId]: today },
+      olderDoneCount: olderCount,
+    };
+  }, [cardsByColumn, columns, now]);
+
+  const rowOf = useMemo(() => {
+    const machinesById = new Map(equipment.map((item) => [item.id, item]));
+    return (card: KanbanCardRow) => cardRowId(card, rowsBy, machinesById);
+  }, [rowsBy, equipment]);
+
+  const rows = useMemo<BoardRow[]>(() => {
+    if (rowsBy === "none") return [];
+    const used = new Set(Object.values(shownByColumn).flat().map(rowOf));
+    return rowsBy === "process"
+      ? processRows(processes, equipment, used)
+      : projectRows(orderedProjects, used);
+  }, [rowsBy, shownByColumn, rowOf, processes, equipment, orderedProjects]);
+
+  // Collapsing is per browser tab. It lives here so selection can see it.
+  const [collapsedRows, setCollapsedRows] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const toggleRow = useCallback(
+    (rowId: string) =>
+      setCollapsedRows((current) => {
+        const next = new Set(current);
+        if (next.has(rowId)) next.delete(rowId);
+        else next.add(rowId);
+        return next;
+      }),
+    []
+  );
+
+  // Shift-click ranges over a column's cards in the order shown: with rows,
+  // each open row's cell from top to bottom.
+  const columnOrder = useCallback(
+    (columnId: string) => {
+      const inColumn = shownByColumn[columnId] ?? [];
+      if (rowsBy === "none") return inColumn.map((card) => card.id);
+      return rows
+        .filter((row) => !collapsedRows.has(row.id))
+        .flatMap((row) =>
+          inColumn.filter((card) => rowOf(card) === row.id).map((c) => c.id)
+        );
+    },
+    [rowsBy, shownByColumn, rows, collapsedRows, rowOf]
+  );
+  const {
+    selection,
+    selectedCards,
+    onCardSelect: handleCardSelect,
+    clear: clearSelection,
+    keepOnly: keepSelected,
+  } = useCardSelection(cards, columnOrder);
+  const selectedCardIds = selection.ids;
+  const selectedColumnId = selection.columnId;
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -362,12 +389,7 @@ export function KanbanBoard({
       });
 
       // Clear selection after moving
-      if (cardsToMoveToNewColumn.length > 0) {
-        setSelectedCardIds(new Set());
-        setSelectedColumnId(null);
-        setLastClickedCardIndex(null);
-        setLastClickedColumnId(null);
-      }
+      if (cardsToMoveToNewColumn.length > 0) clearSelection();
     } else if (isColumn) {
       // Handle column drag (reordering columns) - only in edit mode
       if (isEditMode && active.id !== over.id && onReorderColumns) {
@@ -402,101 +424,6 @@ export function KanbanBoard({
     },
     [onDeleteColumn]
   );
-
-  // Selection handlers
-  const handleCardSelect = useCallback(
-    (
-      cardId: string,
-      columnId: string,
-      cardIndex: number,
-      event: React.MouseEvent
-    ) => {
-      event.stopPropagation();
-
-      // If selecting from a different column, clear previous selection
-      if (selectedColumnId !== null && selectedColumnId !== columnId) {
-        setSelectedCardIds(new Set([cardId]));
-        setSelectedColumnId(columnId);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-        return;
-      }
-
-      const isShiftPressed = event.shiftKey;
-      const isModifierPressed = event.metaKey || event.ctrlKey;
-
-      if (
-        isShiftPressed &&
-        lastClickedCardIndex !== null &&
-        lastClickedColumnId === columnId
-      ) {
-        // Range selection: select all cards between last clicked and current
-        const columnCards = cardsByColumn[columnId] || [];
-        const startIndex = Math.min(lastClickedCardIndex, cardIndex);
-        const endIndex = Math.max(lastClickedCardIndex, cardIndex);
-
-        const newSelectedIds = new Set(selectedCardIds);
-        for (let i = startIndex; i <= endIndex; i++) {
-          if (columnCards[i]) {
-            newSelectedIds.add(columnCards[i].id);
-          }
-        }
-
-        setSelectedCardIds(newSelectedIds);
-        setSelectedColumnId(columnId);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-      } else if (isModifierPressed) {
-        // Toggle selection
-        const newSelectedIds = new Set(selectedCardIds);
-        if (newSelectedIds.has(cardId)) {
-          newSelectedIds.delete(cardId);
-          if (newSelectedIds.size === 0) {
-            setSelectedColumnId(null);
-            setLastClickedCardIndex(null);
-            setLastClickedColumnId(null);
-          }
-        } else {
-          newSelectedIds.add(cardId);
-          setSelectedColumnId(columnId);
-        }
-        setSelectedCardIds(newSelectedIds);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-      } else {
-        // Normal click: toggle this card individually
-        const newSelectedIds = new Set(selectedCardIds);
-        if (newSelectedIds.has(cardId)) {
-          newSelectedIds.delete(cardId);
-          if (newSelectedIds.size === 0) {
-            setSelectedColumnId(null);
-            setLastClickedCardIndex(null);
-            setLastClickedColumnId(null);
-          }
-        } else {
-          newSelectedIds.add(cardId);
-          setSelectedColumnId(columnId);
-        }
-        setSelectedCardIds(newSelectedIds);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-      }
-    },
-    [
-      selectedCardIds,
-      selectedColumnId,
-      lastClickedCardIndex,
-      lastClickedColumnId,
-      cardsByColumn,
-    ]
-  );
-
-  const clearSelection = useCallback(() => {
-    setSelectedCardIds(new Set());
-    setSelectedColumnId(null);
-    setLastClickedCardIndex(null);
-    setLastClickedColumnId(null);
-  }, []);
 
   // Empty state - show when no columns
   if (columns.length === 0) {
@@ -552,16 +479,22 @@ export function KanbanBoard({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      {groupByProject ? (
-        <KanbanSwimlanes
+      {rowsBy !== "none" ? (
+        <KanbanRows
           columns={columns}
-          lanes={lanes}
-          cardsByColumn={laneCardsByColumn}
-          hideImages={hideImages}
+          rowKind={rowsBy === "process" ? "Process" : "Project"}
+          rows={rows}
+          rowOf={rowOf}
+          cardsByColumn={shownByColumn}
+          olderDoneCount={olderDoneCount}
+          density={density}
           usersMap={usersMap}
+          now={now}
           isDraggingCard={activeCard !== null}
           selectedCardIds={selectedCardIds}
           onCardSelect={handleCardSelect}
+          collapsedRows={collapsedRows}
+          onToggleRow={toggleRow}
         />
       ) : (
         <SortableContext
@@ -571,21 +504,23 @@ export function KanbanBoard({
           <div className="flex h-full gap-3 overflow-x-auto p-3 sm:gap-4 sm:p-6">
             {columns.map((column, index) => {
               const isLastColumn = index === columns.length - 1;
-              // Force last column to always be labeled "Done"
+              // The last column is always Done, showing today's parts
               const displayColumn = isLastColumn
-                ? { ...column, title: "Done" }
+                ? { ...column, title: DONE_TODAY_TITLE }
                 : column;
               return (
                 <KanbanColumn
                   key={column.id}
                   column={displayColumn}
-                  cards={cardsByColumn[column.id] || []}
+                  cards={shownByColumn[column.id] || []}
+                  olderCardsCount={isLastColumn ? olderDoneCount : 0}
                   onRename={handleRenameColumn}
                   onDelete={handleDeleteColumn}
                   isEditMode={isEditMode}
                   isDraggingCard={activeCard !== null}
-                  hideImages={hideImages}
+                  density={density}
                   usersMap={usersMap}
+                  now={now}
                   isLastColumn={isLastColumn}
                   selectedCardIds={selectedCardIds}
                   selectedColumnId={selectedColumnId}
@@ -613,15 +548,10 @@ export function KanbanBoard({
       {/* Floating bulk edit bar - shown when cards are selected */}
       {selectedCardIds.size > 0 && (
         <KanbanBulkEditBar
-          selectedCardIds={selectedCardIds}
-          cards={cards}
+          cards={selectedCards}
           columns={columns}
-          users={users}
-          onMoveCard={(cardId, columnId) =>
-            moveCardMutation.mutate({ cardId, columnId })
-          }
           onClearSelection={clearSelection}
-          isMoving={moveCardMutation.isPending}
+          onKeepSelected={keepSelected}
         />
       )}
 
@@ -632,6 +562,7 @@ export function KanbanBoard({
               <KanbanCardComponent
                 card={draggingCards[0]}
                 usersMap={usersMap}
+                now={now}
               />
             </div>
           ) : (
@@ -646,18 +577,25 @@ export function KanbanBoard({
                     zIndex: draggingCards.length - index,
                   }}
                 >
-                  <KanbanCardComponent card={card} usersMap={usersMap} />
+                  <KanbanCardComponent
+                    card={card}
+                    usersMap={usersMap}
+                    now={now}
+                  />
                 </div>
               ))}
               <div className="bg-primary text-primary-foreground absolute -bottom-3 left-1/2 z-50 -translate-x-1/2 rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap shadow-lg">
-                {draggingCards.length} card
-                {draggingCards.length !== 1 ? "s" : ""}
+                {plural(draggingCards.length, "card")}
               </div>
             </div>
           )
         ) : activeCard ? (
           <div className="rotate-3 opacity-95" style={{ width: "300px" }}>
-            <KanbanCardComponent card={activeCard} usersMap={usersMap} />
+            <KanbanCardComponent
+              card={activeCard}
+              usersMap={usersMap}
+              now={now}
+            />
           </div>
         ) : null}
       </DragOverlay>

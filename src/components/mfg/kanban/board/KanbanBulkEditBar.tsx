@@ -1,15 +1,18 @@
-import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Columns3, Loader2, User, Wrench, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Loader2, User, Wrench, X } from "lucide-react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import type { KanbanColumn as KanbanColumnType } from "~/server/kanbanApi/columnTypes";
+import { ProjectPicker } from "~/components/mfg/ProjectPicker";
 import { Button } from "~/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -21,282 +24,336 @@ import {
   assignCardsToMachine,
   assignKanbanCard,
   equipmentQuery,
+  partActions,
+  projectsQuery,
   queryKeys,
+  updateKanbanCard,
+  usersQuery,
+  ApiError,
+  type KanbanCardWithProcesses,
 } from "~/lib/api";
-import type { KanbanCardRow, UserRow } from "~/server/db/types";
-import { cn } from "~/lib/utils";
+import { eligibleMachines, machineAssignment } from "~/lib/bulkCardActions";
+import {
+  errorReason,
+  forEachCard,
+  type BulkOutcome,
+} from "~/lib/bulkCardRunner";
+import { plural } from "~/lib/plural";
 import { useMachineQueueCounts } from "~/components/mfg/kanban/useMachineQueueCounts";
 
-interface KanbanBulkEditBarProps {
-  selectedCardIds: Set<string>;
-  cards: KanbanCardRow[];
-  columns: KanbanColumnType[];
-  users: UserRow[];
-  onMoveCard: (cardId: string, columnId: string) => void;
-  onClearSelection: () => void;
-  isMoving?: boolean;
+type Card = KanbanCardWithProcesses;
+
+interface BulkResult {
+  /** What the action did to the cards that changed, e.g. "Moved to Review". */
+  success: (changed: number) => string;
+  total: number;
+  outcome: BulkOutcome<Card>;
 }
 
+interface KanbanBulkEditBarProps {
+  /** The selected cards, all in one column. */
+  cards: Card[];
+  columns: KanbanColumnType[];
+  onClearSelection: () => void;
+  /** Leave these cards selected, e.g. the ones an action couldn't change. */
+  onKeepSelected: (ids: string[]) => void;
+}
+
+/**
+ * The action bar for selected cards: Move to, Assign, Assign machine and
+ * Change project. A partial failure names the cards that didn't change and leaves
+ * them selected.
+ */
 export function KanbanBulkEditBar({
-  selectedCardIds,
   cards,
   columns,
-  users,
-  onMoveCard,
   onClearSelection,
-  isMoving = false,
+  onKeepSelected,
 }: KanbanBulkEditBarProps) {
   const queryClient = useQueryClient();
-  const [assignPopoverOpen, setAssignPopoverOpen] = useState(false);
-  const [machinePopoverOpen, setMachinePopoverOpen] = useState(false);
-
   const { data: equipment = [] } = useQuery(equipmentQuery());
-
-  const sortedEquipment = useMemo(() => {
-    return [...equipment].sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-    );
-  }, [equipment]);
-  const queueCounts = useMachineQueueCounts(sortedEquipment);
-
-  const sortedUsers = useMemo(() => {
-    return [...users].sort((a, b) =>
-      (a.name ?? "").localeCompare(b.name ?? "", undefined, {
-        sensitivity: "base",
-      })
-    );
-  }, [users]);
-
-  const selectedCards = useMemo(
-    () => cards.filter((c) => selectedCardIds.has(c.id)),
-    [cards, selectedCardIds]
+  const { data: projects = [] } = useQuery(projectsQuery());
+  const { data: users = [] } = useQuery(usersQuery());
+  const people = useMemo(
+    () =>
+      [...users].sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? "", undefined, {
+          sensitivity: "base",
+        })
+      ),
+    [users]
   );
 
-  /**
-   * Apply `request` to every selected card, letting them all run before
-   * reporting. Throws with a count if any failed.
-   *
-   * The requests have to reject on a failed card for this to mean anything —
-   * they do now that they go through the api layer, which is the point of
-   * routing them through it.
-   */
-  const runForEachCard = async (
-    request: (card: KanbanCardRow) => Promise<unknown>
-  ) => {
-    const results = await Promise.allSettled(selectedCards.map(request));
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length > 0) {
-      throw new Error(
-        `${failed.length} of ${selectedCards.length} cards failed to update`
+  const machines = useMemo(
+    () =>
+      eligibleMachines(
+        [...equipment].sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        ),
+        cards
+      ),
+    [equipment, cards]
+  );
+  const queueCounts = useMachineQueueCounts(machines);
+  const notInBacklog = machineAssignment(null, cards).skipped.length;
+
+  const columnId = cards[0]?.column_id;
+  const lastColumnId = columns[columns.length - 1]?.id;
+
+  const action = useMutation({
+    mutationFn: (run: () => Promise<BulkResult>) => run(),
+    onSuccess: ({ success, total, outcome }) => {
+      const { changed, failed } = outcome;
+      if (failed.length === 0) {
+        toast.success(success(changed.length));
+        onClearSelection();
+        return;
+      }
+      toast.error(
+        `${failed.length} of ${plural(total, "card")} didn't change`,
+        {
+          duration: 15000,
+          description: (
+            <div>
+              {changed.length > 0 && <p>{success(changed.length)}.</p>}
+              <ul className="list-disc pl-4">
+                {failed.map(({ card, reason }) => (
+                  <li key={card.id}>
+                    {card.title}: {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ),
+        }
       );
-    }
+      onKeepSelected(failed.map(({ card }) => card.id));
+    },
+    onError: (error) => {
+      toast.error("Bulk change failed", { description: errorReason(error) });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
+    },
+  });
+
+  const moveTo = (target: KanbanColumnType) =>
+    action.mutate(async () => ({
+      success: (n) => `Moved ${plural(n, "card")} to ${target.title}`,
+      total: cards.length,
+      outcome: await forEachCard(cards, (card) =>
+        partActions.moveCard(card.id, target.id)
+      ),
+    }));
+
+  const assignPerson = (userId: string | null) => {
+    const name =
+      people.find((user) => user.onshape_user_id === userId)?.name ?? "them";
+    action.mutate(async () => ({
+      success: (n) =>
+        userId
+          ? `Assigned ${plural(n, "card")} to ${name}`
+          : `Unassigned ${plural(n, "card")}`,
+      total: cards.length,
+      outcome: await forEachCard(cards, (card) =>
+        assignKanbanCard(card.id, userId)
+      ),
+    }));
   };
 
-  const assignMutation = useMutation({
-    mutationFn: async (assignee: string | null) => {
-      await runForEachCard((card) => assignKanbanCard(card.id, assignee));
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
-      setAssignPopoverOpen(false);
-      toast.success(
-        `Assigned ${selectedCards.length} card${selectedCards.length !== 1 ? "s" : ""}`
-      );
-    },
-    onError: (error) => {
-      toast.error("Failed to assign cards", {
-        description: (
-          <ErrorMessage
-            error={error instanceof Error ? error : "Unknown error"}
-          />
-        ),
-      });
-    },
-  });
-
-  const machineMutation = useMutation({
-    mutationFn: (machineId: string | null) =>
-      assignCardsToMachine(
-        selectedCards.map((card) => card.id),
-        machineId
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
-      setMachinePopoverOpen(false);
-      toast.success(
-        `Set machine on ${selectedCards.length} card${selectedCards.length !== 1 ? "s" : ""}`
-      );
-    },
-    onError: (error) => {
-      toast.error("Failed to set machine", {
-        description: (
-          <ErrorMessage
-            error={error instanceof Error ? error : "Unknown error"}
-          />
-        ),
-      });
-    },
-  });
-
-  const handleColumnChange = (columnId: string) => {
-    selectedCards.forEach((card) => {
-      if (card.column_id !== columnId) {
-        onMoveCard(card.id, columnId);
+  const assignMachine = (machineId: string | null) => {
+    const machine = machines.find((item) => item.id === machineId) ?? null;
+    action.mutate(async () => {
+      const { send, skipped } = machineAssignment(machine, cards);
+      const outcome: BulkOutcome<Card> = { changed: [], failed: skipped };
+      try {
+        // All or nothing on the server.
+        await assignCardsToMachine(
+          send.map((card) => card.id),
+          machineId
+        );
+        outcome.changed = send;
+      } catch (error) {
+        const refused =
+          error instanceof ApiError ? new Set(error.cardIds ?? []) : new Set();
+        for (const card of send)
+          outcome.failed.push({
+            card,
+            reason:
+              refused.size === 0 || refused.has(card.id)
+                ? errorReason(error)
+                : "not changed, another card was refused",
+          });
       }
+      return {
+        success: (n) =>
+          machine
+            ? `Assigned ${plural(n, "card")} to ${machine.name}`
+            : `Cleared the machine on ${plural(n, "card")}`,
+        total: cards.length,
+        outcome,
+      };
     });
   };
 
-  const handleAssign = (user: UserRow | null) => {
-    assignMutation.mutate(user?.onshape_user_id ?? null);
+  const changeProject = (projectId: string) => {
+    const name =
+      projects.find((project) => project.id === projectId)?.name ?? "project";
+    action.mutate(async () => {
+      const result = await forEachCard(cards, (card) =>
+        card.project_id === projectId
+          ? Promise.resolve()
+          : updateKanbanCard(card.id, { project_id: projectId })
+      );
+      // Project card counts changed too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() });
+      return {
+        success: (n) => `Moved ${plural(n, "card")} to ${name}`,
+        total: cards.length,
+        outcome: result,
+      };
+    });
   };
 
-  const handleMachineSelect = (machineId: string | null) => {
-    machineMutation.mutate(machineId);
-  };
-
-  const isAssigning = assignMutation.isPending;
-  const isSettingMachine = machineMutation.isPending;
-  const isLoading = isMoving || isAssigning || isSettingMachine;
+  const busy = action.isPending;
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center p-4 pb-8">
-      <div className="bg-card border-border flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg">
-        <span className="text-muted-foreground text-sm whitespace-nowrap">
-          {selectedCardIds.size} card{selectedCardIds.size !== 1 ? "s" : ""}{" "}
-          selected
+      <div
+        role="toolbar"
+        aria-label="Selected cards"
+        className="bg-card border-border flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 shadow-lg"
+      >
+        <span className="text-sm font-semibold whitespace-nowrap">
+          <span className="brand-figures">{cards.length}</span> selected
         </span>
+        {busy && (
+          <Loader2
+            className="size-4 animate-spin"
+            aria-label="Updating cards"
+          />
+        )}
 
         <div className="bg-border h-4 w-px" />
 
-        {/* Move to column */}
-        <Select onValueChange={handleColumnChange} disabled={isLoading}>
-          <SelectTrigger className="h-8 w-[140px] gap-1">
-            <Columns3 className="size-3.5 opacity-50" />
-            <SelectValue placeholder="Move to column" />
+        <Select
+          value=""
+          onValueChange={(id) => {
+            const target = columns.find((column) => column.id === id);
+            if (target) moveTo(target);
+          }}
+          disabled={busy}
+        >
+          <SelectTrigger aria-label="Move to" className="h-8 w-[140px]">
+            <SelectValue placeholder="Move to" />
           </SelectTrigger>
           <SelectContent>
-            {columns.map((col) => {
-              const isLastColumn = col.id === columns[columns.length - 1]?.id;
-              const label = isLastColumn ? "Done" : col.title;
-              return (
-                <SelectItem key={col.id} value={col.id}>
-                  {label}
+            {columns
+              .filter((column) => column.id !== columnId)
+              .map((column) => (
+                <SelectItem key={column.id} value={column.id}>
+                  {column.id === lastColumnId ? "Done" : column.title}
                 </SelectItem>
-              );
-            })}
+              ))}
           </SelectContent>
         </Select>
 
-        {/* Assign to user */}
-        <Popover open={assignPopoverOpen} onOpenChange={setAssignPopoverOpen}>
-          <PopoverTrigger asChild>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
               size="sm"
               className="h-8 gap-1"
-              disabled={isLoading}
+              disabled={busy}
             >
-              {isAssigning ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <User className="size-3.5 opacity-50" />
-              )}
+              <User className="size-3.5 opacity-50" aria-hidden="true" />
               Assign
             </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-56 p-0" align="center" side="top">
-            <div className="max-h-60 overflow-auto p-1">
-              <div
-                className="hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center gap-3 rounded-sm px-2 py-1.5 text-sm"
-                onClick={() => handleAssign(null)}
-                onKeyDown={(e) => e.key === "Enter" && handleAssign(null)}
-                role="button"
-                tabIndex={0}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" className="max-h-72 w-56">
+            {people.map((user) => (
+              <DropdownMenuItem
+                key={user.onshape_user_id}
+                onSelect={() => assignPerson(user.onshape_user_id)}
               >
-                <User className="text-muted-foreground size-4" />
-                <span>None (Unassigned)</span>
-              </div>
-              {sortedUsers.map((user) => (
-                <div
-                  key={user.onshape_user_id}
-                  className="hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center gap-3 rounded-sm px-2 py-1.5 text-sm"
-                  onClick={() => handleAssign(user)}
-                  onKeyDown={(e) => e.key === "Enter" && handleAssign(user)}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <User className="text-primary size-4" />
-                  {user.name}
-                </div>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+                {user.name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => assignPerson(null)}>
+              Unassigned
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        {/* Set machine */}
-        <Popover open={machinePopoverOpen} onOpenChange={setMachinePopoverOpen}>
-          <PopoverTrigger asChild>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
               size="sm"
               className="h-8 gap-1"
-              disabled={isLoading}
+              disabled={busy}
             >
-              {isSettingMachine ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Wrench className="size-3.5 opacity-50" />
-              )}
-              Machine
+              <Wrench className="size-3.5 opacity-50" aria-hidden="true" />
+              Assign machine
             </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-56 p-0" align="center" side="top">
-            <div className="max-h-60 overflow-auto p-1">
-              <div
-                className="hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center gap-3 rounded-sm px-2 py-1.5 text-sm"
-                onClick={() => handleMachineSelect(null)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && handleMachineSelect(null)
-                }
-                role="button"
-                tabIndex={0}
-              >
-                <Wrench className="text-muted-foreground size-4" />
-                <span>None (Unassigned)</span>
-              </div>
-              {sortedEquipment.map((item) => (
-                <div
-                  key={item.id}
-                  className="hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center gap-3 rounded-sm px-2 py-1.5 text-sm"
-                  onClick={() => handleMachineSelect(item.id)}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && handleMachineSelect(item.id)
-                  }
-                  role="button"
-                  tabIndex={0}
-                >
-                  <Wrench className="text-primary size-4" />
-                  <span className="flex-1">{item.name}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {queueCounts.get(item.id) ?? 0} queued
-                  </span>
-                </div>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" className="w-64">
+            {notInBacklog === cards.length ? (
+              <DropdownMenuLabel className="text-muted-foreground font-normal">
+                Only Backlog cards can take a machine.
+              </DropdownMenuLabel>
+            ) : (
+              <>
+                {notInBacklog > 0 && (
+                  <>
+                    <DropdownMenuLabel className="text-muted-foreground font-normal">
+                      {plural(notInBacklog, "card")} not in Backlog will stay as{" "}
+                      {notInBacklog === 1 ? "it is" : "they are"}.
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {machines.map((machine) => (
+                  <DropdownMenuItem
+                    key={machine.id}
+                    onSelect={() => assignMachine(machine.id)}
+                  >
+                    <span className="flex-1">{machine.name}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {queueCounts.get(machine.id) ?? 0} queued
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => assignMachine(null)}>
+                  No machine
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="w-44">
+          <ProjectPicker
+            value={null}
+            placeholder="Change project"
+            aria-label="Change project"
+            onChange={changeProject}
+            disabled={busy}
+          />
+        </div>
 
         <div className="bg-border h-4 w-px" />
 
-        {/* Clear selection */}
         <Button
           variant="ghost"
           size="sm"
-          className={cn("h-8 gap-1", isLoading && "opacity-70")}
+          className="h-8 gap-1"
           onClick={onClearSelection}
-          disabled={isLoading}
+          disabled={busy}
         >
-          <X className="size-3.5" />
+          <X className="size-3.5" aria-hidden="true" />
           Clear
         </Button>
       </div>
