@@ -2,6 +2,7 @@
 import type { KanbanCardWithProcesses } from "~/lib/api/kanban";
 import { cardMachineName, unlinkedMachineText } from "~/lib/cardMachine";
 import { MATERIAL_UNKNOWN } from "~/lib/cardSnapshot";
+import { plural } from "~/lib/plural";
 import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 import type { UserRow } from "~/server/db/types";
 
@@ -45,9 +46,6 @@ export function cardMetaLine(
     .filter(Boolean)
     .join(" · ");
 }
-
-const plural = (count: number, word: string) =>
-  `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /**
  * Problems worth a flag: release warnings, a send-back in the last week, or

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -29,7 +29,6 @@ import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanColumnCardContainer } from "./KanbanColumnCardContainer";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
 import type { CardSelectHandler } from "~/lib/cardSelection";
-import { splitDoneToday } from "~/lib/doneToday";
 
 interface KanbanColumnProps {
   column: KanbanColumnType;
@@ -41,6 +40,9 @@ interface KanbanColumnProps {
   density?: BoardDensity;
   usersMap: Map<string, UserRow>;
   isLastColumn?: boolean;
+  /** For Done: parts finished before today, which only the link reaches. */
+  olderCardsCount?: number;
+  now: number;
   selectedCardIds?: ReadonlySet<string>;
   selectedColumnId?: string | null;
   onCardSelect?: CardSelectHandler;
@@ -56,19 +58,14 @@ export function KanbanColumn({
   density = "compact",
   usersMap,
   isLastColumn = false,
+  olderCardsCount = 0,
+  now,
   selectedCardIds = new Set(),
   selectedColumnId = null,
   onCardSelect,
 }: KanbanColumnProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-
-  // Done shows today's parts; the older ones are behind a link.
-  const { filteredCards, olderCardsCount } = useMemo(() => {
-    if (!isLastColumn) return { filteredCards: cards, olderCardsCount: 0 };
-    const { today, olderCount } = splitDoneToday(cards);
-    return { filteredCards: today, olderCardsCount: olderCount };
-  }, [cards, isLastColumn]);
 
   const {
     attributes,
@@ -145,10 +142,10 @@ export function KanbanColumn({
             />
             <Badge
               variant="secondary"
-              className="text-xs tabular-nums"
+              className="brand-figures text-xs"
               aria-label="Matching cards"
             >
-              {isLastColumn ? filteredCards.length : cards.length}
+              {cards.length}
             </Badge>
           </div>
 
@@ -193,11 +190,12 @@ export function KanbanColumn({
         {/* Cards Container */}
         <KanbanColumnCardContainer
           columnName={column.title}
-          cards={filteredCards}
+          cards={cards}
           isDraggingCard={isDraggingCard}
           density={density}
           usersMap={usersMap}
-          olderCardsCount={isLastColumn ? olderCardsCount : 0}
+          now={now}
+          olderCardsCount={olderCardsCount}
           columnId={column.id}
           selectedCardIds={selectedCardIds}
           selectedColumnId={selectedColumnId}

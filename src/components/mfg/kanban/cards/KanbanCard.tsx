@@ -25,6 +25,8 @@ interface KanbanCardProps {
   card: KanbanCardWithProcesses;
   density?: BoardDensity;
   usersMap: Map<string, UserRow>;
+  /** The page's clock (`useMinuteClock`), for time in status and flags. */
+  now: number;
   isSelected?: boolean;
   columnId?: string;
   /** Checkbox, shift- and cmd/ctrl-clicks select; a plain click opens details. */
@@ -35,6 +37,7 @@ export const KanbanCard = memo(function KanbanCard({
   card,
   density = "compact",
   usersMap,
+  now,
   isSelected = false,
   columnId = "",
   onSelect,
@@ -97,7 +100,6 @@ export const KanbanCard = memo(function KanbanCard({
     deleteCardMutation.mutate(card.id);
   };
 
-  const now = Date.now();
   const meta = cardMetaLine(card, usersMap, now);
   const flags = cardFlags(card, now);
   const showImage = Boolean(imageUrl) && !imageError;

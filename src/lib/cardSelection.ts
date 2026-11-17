@@ -4,7 +4,7 @@
  * in React state.
  *
  * Ranges are by card id over the column's cards in the order the board shows
- * them, so they work whatever rows or lanes split the column.
+ * them, so they work whatever rows split the column.
  */
 
 export interface CardSelection {

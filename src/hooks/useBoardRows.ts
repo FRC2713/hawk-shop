@@ -1,40 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import type { BoardRowsBy } from "~/lib/boardRows";
+import { useBrowserPreference } from "./useBrowserPreference";
 
-const STORAGE_KEY = "hawk-shop:board-rows";
-
-function readRows(): BoardRowsBy {
+function readRows(stored: string | null): BoardRowsBy {
   // Old shared links still open project rows.
   if (new URL(window.location.href).searchParams.get("group") === "project")
     return "project";
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored === "process" || stored === "project" ? stored : "none";
-  } catch {
-    return "none";
-  }
+  return stored === "process" || stored === "project" ? stored : "none";
 }
 
-/**
- * Rows by process, project or none, remembered per browser. The board renders
- * on the server too, so the stored choice is read after hydration.
- */
+/** Rows by process, project or none, remembered per browser. */
 export function useBoardRows() {
-  const [rowsBy, setRowsByState] = useState<BoardRowsBy>("none");
-  useEffect(() => setRowsByState(readRows()), []);
-  const setRowsBy = useCallback((next: BoardRowsBy) => {
-    setRowsByState(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Private windows may refuse storage; the choice still holds for this visit.
-    }
-    // The browser remembers grouping now; drop the old link parameter.
-    const url = new URL(window.location.href);
-    if (url.searchParams.has("group")) {
-      url.searchParams.delete("group");
-      window.history.replaceState(window.history.state, "", url);
-    }
-  }, []);
+  const [rowsBy, setStored] = useBrowserPreference<BoardRowsBy>(
+    "hawk-shop:board-rows",
+    "none",
+    readRows
+  );
+  const setRowsBy = useCallback(
+    (next: BoardRowsBy) => {
+      setStored(next);
+      // The browser remembers grouping now; drop the old link parameter.
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("group")) {
+        url.searchParams.delete("group");
+        window.history.replaceState(window.history.state, "", url);
+      }
+    },
+    [setStored]
+  );
   return { rowsBy, setRowsBy };
 }

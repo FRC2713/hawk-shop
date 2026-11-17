@@ -6,6 +6,7 @@ import type { UserRow } from "~/server/db/types";
 import type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
 import { cn } from "~/lib/utils";
 import { KanbanCard } from "../cards/KanbanCard";
+import { OlderDoneLink } from "../columns/OlderDoneLink";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
 import { DONE_TODAY_TITLE } from "~/lib/doneToday";
 import type { CardSelectHandler } from "~/lib/cardSelection";
@@ -16,7 +17,7 @@ import type { BoardRow } from "~/lib/boardRows";
  * process or project.
  */
 const CELL_PREFIX = "row|";
-export function laneCellId(rowId: string, columnId: string) {
+export function rowCellId(rowId: string, columnId: string) {
   return `${CELL_PREFIX}${rowId}|${columnId}`;
 }
 /** The column a drop target stands for, whether a column or a row cell. */
@@ -26,32 +27,32 @@ export function dropTargetColumnId(overId: string) {
   return rest.slice(rest.indexOf("|") + 1);
 }
 
-export type Lane = BoardRow;
-
 const COLUMN_WIDTH = "w-[280px] sm:w-[320px]";
 const ROW_HEADER_WIDTH = "w-40";
 
-function LaneCell({
-  laneId,
+function RowCell({
+  rowId,
   column,
   cards,
   density,
   usersMap,
+  now,
   isDraggingCard,
   selectedCardIds,
   onCardSelect,
 }: {
-  laneId: string;
+  rowId: string;
   column: KanbanColumn;
   cards: KanbanCardWithProcesses[];
   density: BoardDensity;
   usersMap: Map<string, UserRow>;
+  now: number;
   isDraggingCard: boolean;
   selectedCardIds: ReadonlySet<string>;
   onCardSelect?: CardSelectHandler;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id: laneCellId(laneId, column.id),
+    id: rowCellId(rowId, column.id),
   });
   return (
     <div
@@ -71,6 +72,7 @@ function LaneCell({
           card={card}
           density={density}
           usersMap={usersMap}
+          now={now}
           isSelected={selectedCardIds.has(card.id)}
           columnId={column.id}
           onSelect={onCardSelect}
@@ -85,16 +87,19 @@ function LaneCell({
  * column under a header with its name (and, for processes, its machines).
  * Rows come in the order given; `rowOf` names the one row each card is in.
  * Empty cells stay drop targets. The board owns which rows are collapsed, so
- * shift-click ranges skip the cards a collapsed row hides.
+ * shift-click ranges skip the cards a collapsed row hides. Done holds today's
+ * parts; its header links to the older ones.
  */
-export function KanbanSwimlanes({
+export function KanbanRows({
   columns,
   rowKind,
-  lanes,
+  rows,
   rowOf,
   cardsByColumn,
+  olderDoneCount,
   density,
   usersMap,
+  now,
   isDraggingCard,
   selectedCardIds,
   onCardSelect,
@@ -103,19 +108,21 @@ export function KanbanSwimlanes({
 }: {
   columns: KanbanColumn[];
   rowKind: "Process" | "Project";
-  lanes: Lane[];
+  rows: BoardRow[];
   rowOf: (card: KanbanCardWithProcesses) => string;
   cardsByColumn: Record<string, KanbanCardWithProcesses[]>;
+  olderDoneCount: number;
   density: BoardDensity;
   usersMap: Map<string, UserRow>;
+  now: number;
   isDraggingCard: boolean;
   selectedCardIds: ReadonlySet<string>;
   onCardSelect?: CardSelectHandler;
   collapsedRows: ReadonlySet<string>;
   onToggleRow: (rowId: string) => void;
 }) {
-  const inLane = (laneId: string, columnId: string) =>
-    (cardsByColumn[columnId] ?? []).filter((card) => rowOf(card) === laneId);
+  const inRow = (rowId: string, columnId: string) =>
+    (cardsByColumn[columnId] ?? []).filter((card) => rowOf(card) === rowId);
   const RowIcon = rowKind === "Process" ? Cog : FolderKanban;
 
   return (
@@ -128,37 +135,46 @@ export function KanbanSwimlanes({
               ROW_HEADER_WIDTH
             )}
           />
-          {columns.map((column, index) => (
-            <div
-              key={column.id}
-              className={cn(
-                "bg-muted/30 flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2",
-                COLUMN_WIDTH
-              )}
-            >
-              <span className="font-heading font-semibold">
-                {index === columns.length - 1 ? DONE_TODAY_TITLE : column.title}
-              </span>
-              <Badge
-                variant="secondary"
-                className="text-xs tabular-nums"
-                aria-label="Matching cards"
+          {columns.map((column, index) => {
+            const isDone = index === columns.length - 1;
+            return (
+              <div
+                key={column.id}
+                className={cn(
+                  "bg-muted/30 flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2",
+                  COLUMN_WIDTH
+                )}
               >
-                {cardsByColumn[column.id]?.length ?? 0}
-              </Badge>
-            </div>
-          ))}
+                <span className="font-heading font-semibold">
+                  {isDone ? DONE_TODAY_TITLE : column.title}
+                </span>
+                <Badge
+                  variant="secondary"
+                  className="brand-figures text-xs"
+                  aria-label="Matching cards"
+                >
+                  {cardsByColumn[column.id]?.length ?? 0}
+                </Badge>
+                {isDone && (
+                  <OlderDoneLink
+                    count={olderDoneCount}
+                    className="ml-auto h-7 px-2"
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
-        {lanes.map((lane) => {
-          const isCollapsed = collapsedRows.has(lane.id);
+        {rows.map((row) => {
+          const isCollapsed = collapsedRows.has(row.id);
           const count = columns.reduce(
-            (sum, column) => sum + inLane(lane.id, column.id).length,
+            (sum, column) => sum + inRow(row.id, column.id).length,
             0
           );
           return (
             <section
-              key={lane.id}
-              aria-label={`${rowKind} ${lane.name}`}
+              key={row.id}
+              aria-label={`${rowKind} ${row.name}`}
               className="flex gap-3 sm:gap-4"
             >
               <div
@@ -169,7 +185,7 @@ export function KanbanSwimlanes({
               >
                 <button
                   type="button"
-                  onClick={() => onToggleRow(lane.id)}
+                  onClick={() => onToggleRow(row.id)}
                   aria-expanded={!isCollapsed}
                   className="hover:bg-muted flex w-full items-start gap-1.5 rounded-md px-1 py-1 text-left"
                 >
@@ -189,21 +205,21 @@ export function KanbanSwimlanes({
                     aria-hidden="true"
                   />
                   <span className="font-heading min-w-0 leading-tight font-semibold break-words">
-                    {lane.name}
+                    {row.name}
                   </span>
                   <Badge
                     variant="secondary"
-                    className="ml-auto text-xs tabular-nums"
+                    className="brand-figures ml-auto text-xs"
                   >
                     {count}
                   </Badge>
                 </button>
-                {lane.meta && (
+                {row.meta && (
                   <span className="text-muted-foreground px-1 text-xs">
-                    {lane.meta}
+                    {row.meta}
                   </span>
                 )}
-                {lane.archived && (
+                {row.archived && (
                   <span className="text-muted-foreground px-1 text-xs">
                     Archived
                   </span>
@@ -212,17 +228,18 @@ export function KanbanSwimlanes({
               {!isCollapsed && (
                 <div className="flex gap-3 sm:gap-4">
                   {columns.map((column, index) => (
-                    <LaneCell
+                    <RowCell
                       key={column.id}
-                      laneId={lane.id}
+                      rowId={row.id}
                       column={
                         index === columns.length - 1
                           ? { ...column, title: DONE_TODAY_TITLE }
                           : column
                       }
-                      cards={inLane(lane.id, column.id)}
+                      cards={inRow(row.id, column.id)}
                       density={density}
                       usersMap={usersMap}
+                      now={now}
                       isDraggingCard={isDraggingCard}
                       selectedCardIds={selectedCardIds}
                       onCardSelect={onCardSelect}
