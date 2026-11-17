@@ -32,6 +32,8 @@ export type Json =
 
 export type StatusHistoryRow = typeof schema.statusHistory.$inferSelect;
 
+export type ReviewNoteRow = typeof schema.reviewNotes.$inferSelect;
+
 export type KanbanCardRow = typeof kanbanCards.$inferSelect;
 export type KanbanCardInsert = typeof kanbanCards.$inferInsert;
 export type KanbanCardUpdate = Partial<KanbanCardInsert>;
@@ -77,14 +79,15 @@ export type CardProject = Pick<ProjectRow, "id" | "name" | "archived_at">;
 export type CardMachine = Pick<EquipmentRow, "id" | "name" | "status">;
 
 /**
- * A card as returned by the cards API — processes, project and linked machine
- * are joined in. `machine` is legacy text, meaningful only while
- * `linked_machine` is null.
+ * A card as returned by the cards API — processes, project, linked machine and
+ * review notes (oldest first) are joined in. `machine` is legacy text,
+ * meaningful only while `linked_machine` is null.
  */
 export type KanbanCardWithProcesses = KanbanCardRow & {
   processes: ProcessRow[];
   project: CardProject | null;
   linked_machine: CardMachine | null;
+  review_notes: ReviewNoteRow[];
 };
 
 /** Equipment as returned by the equipment API — processes are joined in. */

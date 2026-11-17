@@ -46,6 +46,7 @@ import type {
   KanbanCardRow,
   UserRow,
   ProcessRow,
+  ReviewNoteRow,
 } from "~/server/db/types";
 import { Badge } from "~/components/ui/badge";
 import type { UseMutationResult } from "@tanstack/react-query";
@@ -141,6 +142,7 @@ interface KanbanCardDetailsProps {
   card: KanbanCardRow & {
     processes?: ProcessRow[];
     linked_machine?: CardMachine | null;
+    review_notes?: ReviewNoteRow[];
   };
   imageUrl?: string;
   deleteCardMutation: UseMutationResult<unknown, Error, string, unknown>;
@@ -335,6 +337,32 @@ export function KanbanCardDetails({
               />
             </div>
           </div>
+        )}
+
+        {!!card.review_notes?.length && (
+          <section aria-label="Sent back" className="space-y-2">
+            <h4 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
+              Sent back
+            </h4>
+            <ol className="divide-y rounded-lg border">
+              {card.review_notes.map((note) => (
+                <li key={note.id} className="space-y-1 px-4 py-3 text-sm">
+                  <p className="leading-relaxed break-words whitespace-pre-wrap">
+                    {note.text}
+                  </p>
+                  <p className="text-muted-foreground break-words">
+                    {note.author_name}
+                  </p>
+                  <time
+                    dateTime={note.created_at}
+                    className="brand-figures text-muted-foreground block text-xs"
+                  >
+                    {new Date(note.created_at).toLocaleString()}
+                  </time>
+                </li>
+              ))}
+            </ol>
+          </section>
         )}
 
         <SubmitterNotes

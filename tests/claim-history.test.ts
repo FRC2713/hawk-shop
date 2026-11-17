@@ -158,3 +158,64 @@ test("claim and unclaim record status history, notify Slack and update open scre
   ]);
   assert.equal(card.assignee, null);
 });
+
+const doneRoute = await import("../src/pages/api/kanban/cards/[id]/done");
+const approveRoute = await import("../src/pages/api/kanban/cards/[id]/approve");
+const sendBackRoute =
+  await import("../src/pages/api/kanban/cards/[id]/send-back");
+
+test("done, send back and approve record status history, notify Slack and update open screens like a column move", async () => {
+  const release = await endpoint(
+    cardList,
+    "POST"
+  )(
+    jsonRequest("/api/kanban/cards", "POST", alice, {
+      id: "reviewed-part",
+      title: "Reviewed part",
+    })
+  );
+  assert.equal(release.status, 201);
+  const url = (action: string) => `/api/kanban/cards/reviewed-part/${action}`;
+  await post(claimRoute, url("claim"), "reviewed-part", {});
+
+  const events: unknown[] = [];
+  const unsubscribe = subscribeToKanbanEvents((event) => events.push(event));
+  try {
+    await post(doneRoute, url("done"), "reviewed-part", {});
+    await post(sendBackRoute, url("send-back"), "reviewed-part", {
+      reason: "Chamfer the edges",
+    });
+    await post(doneRoute, url("done"), "reviewed-part", {});
+    await post(approveRoute, url("approve"), "reviewed-part", {});
+  } finally {
+    unsubscribe();
+  }
+
+  const card = await read("reviewed-part");
+  const moves = card.status_history
+    .slice(2)
+    .map(
+      (entry: any) =>
+        `${entry.from_status} → ${entry.to_status} by ${entry.actor_id}`
+    );
+  assert.deepEqual(moves, [
+    `In Progress → Review by ${ALICE}`,
+    `Review → In Progress by ${ALICE}`,
+    `In Progress → Review by ${ALICE}`,
+    `Review → Done by ${ALICE}`,
+  ]);
+  assert.deepEqual(await statusNotifications("reviewed-part"), [
+    "Backlog → In Progress",
+    "In Progress → Review",
+    "Review → In Progress",
+    "In Progress → Review",
+    "Review → Done",
+  ]);
+  const update = {
+    table: "kanban_cards",
+    action: "update",
+    id: "reviewed-part",
+  };
+  assert.deepEqual(events, [update, update, update, update]);
+  assert.equal(card.column_id, "done");
+});

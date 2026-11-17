@@ -4,6 +4,7 @@ import type {
   CardProject,
   KanbanCardRow,
   ProcessRow,
+  ReviewNoteRow,
   StatusHistoryRow,
 } from "~/server/db/types";
 import type {
@@ -18,11 +19,15 @@ import {
 import { apiFetch } from "./client";
 import { queryKeys } from "./keys";
 
-/** `/api/kanban/cards` joins each card to its processes, project and machine. */
+/**
+ * `/api/kanban/cards` joins each card to its processes, project, machine and
+ * review notes (why it was sent back, oldest first).
+ */
 export type KanbanCardWithProcesses = KanbanCardRow & {
   processes?: ProcessRow[];
   project?: CardProject | null;
   linked_machine?: CardMachine | null;
+  review_notes?: ReviewNoteRow[];
 };
 
 /** Fields `/api/kanban/cards/:id` accepts on PATCH. */
