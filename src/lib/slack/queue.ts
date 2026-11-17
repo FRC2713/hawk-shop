@@ -3,6 +3,7 @@ import { and, asc, eq, lte, ne, notExists, or } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import {
   DEFAULT_KANBAN_COLUMNS,
+  equipment,
   kanbanCards,
   kanbanConfig,
   slackPending,
@@ -23,6 +24,20 @@ type Snapshot = Pick<
   KanbanCardRow,
   "id" | "title" | "quantity_to_make" | "column_id" | "created_by"
 >;
+/** The linked machine's name, or a legacy card's unlinked text. */
+export function slackMachineLabel(
+  tx: Transaction | typeof db,
+  card: Pick<KanbanCardRow, "machine" | "machine_id">
+) {
+  if (!card.machine_id) return card.machine;
+  return (
+    tx
+      .select({ name: equipment.name })
+      .from(equipment)
+      .where(eq(equipment.id, card.machine_id))
+      .get()?.name ?? null
+  );
+}
 function columnTitle(tx: Transaction, id: string) {
   const columns =
     tx.select().from(kanbanConfig).where(eq(kanbanConfig.id, "default")).get()
@@ -100,7 +115,7 @@ export function captureSlackRelease(
     kind: "release",
     old_column_id: card.column_id,
     payload: {
-      machine: card.machine,
+      machine: slackMachineLabel(tx, card),
       due_date: card.due_date,
       processes: processNames,
       issues: (card.release_issues ?? []).map((issue) => ({

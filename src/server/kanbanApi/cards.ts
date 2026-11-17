@@ -12,6 +12,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import {
   DEFAULT_KANBAN_COLUMNS,
+  equipment as equipmentTable,
   kanbanCardProcesses,
   kanbanCards,
   kanbanConfig,
@@ -36,6 +37,23 @@ export class UnknownProjectError extends Error {
   constructor() {
     super("Unknown project");
   }
+}
+
+/** Thrown when a card names a machine that isn't an equipment record. */
+export class UnknownMachineError extends Error {
+  constructor() {
+    super("Unknown machine");
+  }
+}
+
+function requireMachine(tx: Transaction, id: string | null) {
+  if (id === null) return;
+  const machine = tx
+    .select({ id: equipmentTable.id })
+    .from(equipmentTable)
+    .where(eq(equipmentTable.id, id))
+    .get();
+  if (!machine) throw new UnknownMachineError();
 }
 
 export class InvalidNotesError extends Error {
@@ -171,11 +189,26 @@ export async function getCards(): Promise<GetCardsResult> {
         .map((project) => [project.id, project])
     );
 
+    const machineById = new Map(
+      db
+        .select({
+          id: equipmentTable.id,
+          name: equipmentTable.name,
+          status: equipmentTable.status,
+        })
+        .from(equipmentTable)
+        .all()
+        .map((machine) => [machine.id, machine])
+    );
+
     return {
       cards: cards.map((card) => ({
         ...card,
         processes: byCard.get(card.id) ?? [],
         project: projectById.get(card.project_id) ?? null,
+        linked_machine: card.machine_id
+          ? (machineById.get(card.machine_id) ?? null)
+          : null,
       })),
     };
   } catch (error) {
@@ -210,7 +243,8 @@ export interface CreateCardInput {
   title: string;
   imageUrl?: string;
   assignee?: string;
-  machine?: string;
+  /** Equipment id. Cards no longer take machine text. */
+  machineId?: string | null;
   dueDate?: string;
   content?: string;
   processIds?: string[];
@@ -257,6 +291,7 @@ export async function createCard(
         tx,
         cardData.projectId || MISCELLANEOUS_PROJECT_ID
       );
+      requireMachine(tx, cardData.machineId ?? null);
       const inserted = tx
         .insert(kanbanCards)
         .values({
@@ -267,7 +302,7 @@ export async function createCard(
           assignee: cardData.assignee ?? null,
           date_created: now,
           date_updated: now,
-          machine: cardData.machine ?? null,
+          machine_id: cardData.machineId ?? null,
           due_date: cardData.dueDate ?? null,
           content: cardData.content ?? null,
           release_issues: cardData.releaseIssues?.length
@@ -301,7 +336,11 @@ export async function createCard(
       return inserted;
     });
   } catch (error) {
-    if (error instanceof UnknownProjectError) throw error;
+    if (
+      error instanceof UnknownProjectError ||
+      error instanceof UnknownMachineError
+    )
+      throw error;
     console.error("[KANBAN CARDS] Error creating card:", error);
     const message = error instanceof Error ? error.message : "unknown error";
     throw new Error(`Failed to create card: ${message}`);
@@ -333,7 +372,7 @@ export async function updateCard(
     "title",
     "image_url",
     "assignee",
-    "machine",
+    "machine_id",
     "due_date",
     "content",
     "quantity_to_make",
@@ -359,6 +398,11 @@ export async function updateCard(
     if (Object.keys(finalUpdates).length === 0) return previous;
     if (finalUpdates.project_id !== undefined)
       requireProject(tx, finalUpdates.project_id);
+    if (finalUpdates.machine_id !== undefined) {
+      requireMachine(tx, finalUpdates.machine_id);
+      // Picking or clearing a machine settles any legacy text.
+      finalUpdates.machine = null;
+    }
     const changed =
       finalUpdates.column_id !== undefined &&
       finalUpdates.column_id !== previous.column_id;

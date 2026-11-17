@@ -113,8 +113,10 @@ export function KanbanBulkEditBar({
   });
 
   const machineMutation = useMutation({
-    mutationFn: async (machine: string | null) => {
-      await runForEachCard((card) => updateKanbanCard(card.id, { machine }));
+    mutationFn: async (machineId: string | null) => {
+      await runForEachCard((card) =>
+        updateKanbanCard(card.id, { machine_id: machineId })
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
@@ -146,8 +148,8 @@ export function KanbanBulkEditBar({
     assignMutation.mutate(user?.onshape_user_id ?? null);
   };
 
-  const handleMachineSelect = (machine: string | null) => {
-    machineMutation.mutate(machine);
+  const handleMachineSelect = (machineId: string | null) => {
+    machineMutation.mutate(machineId);
   };
 
   const isAssigning = assignMutation.isPending;
@@ -264,9 +266,9 @@ export function KanbanBulkEditBar({
                 <div
                   key={item.id}
                   className="hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center gap-3 rounded-sm px-2 py-1.5 text-sm"
-                  onClick={() => handleMachineSelect(item.name)}
+                  onClick={() => handleMachineSelect(item.id)}
                   onKeyDown={(e) =>
-                    e.key === "Enter" && handleMachineSelect(item.name)
+                    e.key === "Enter" && handleMachineSelect(item.id)
                   }
                   role="button"
                   tabIndex={0}

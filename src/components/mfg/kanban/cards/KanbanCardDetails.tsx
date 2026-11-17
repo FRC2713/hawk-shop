@@ -41,7 +41,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
-import type { KanbanCardRow, UserRow, ProcessRow } from "~/server/db/types";
+import type {
+  CardMachine,
+  KanbanCardRow,
+  UserRow,
+  ProcessRow,
+} from "~/server/db/types";
 import { Badge } from "~/components/ui/badge";
 import type { UseMutationResult } from "@tanstack/react-query";
 import {
@@ -133,7 +138,10 @@ function buildOnshapeDocumentUrl(
 }
 
 interface KanbanCardDetailsProps {
-  card: KanbanCardRow & { processes?: ProcessRow[] };
+  card: KanbanCardRow & {
+    processes?: ProcessRow[];
+    linked_machine?: CardMachine | null;
+  };
   imageUrl?: string;
   deleteCardMutation: UseMutationResult<unknown, Error, string, unknown>;
   onDelete: () => void;
@@ -220,6 +228,7 @@ export function KanbanCardDetails({
       !!(
         card.column_id ||
         card.assignee ||
+        card.machine_id ||
         card.machine ||
         card.due_date ||
         card.quantity_to_make ||
@@ -228,6 +237,7 @@ export function KanbanCardDetails({
     [
       card.column_id,
       card.assignee,
+      card.machine_id,
       card.machine,
       card.due_date,
       card.quantity_to_make,

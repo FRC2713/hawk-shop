@@ -371,11 +371,12 @@ test("equipment maintenance flags and renames and deletes keep assigned cards in
   const card = (
     await json("/api/kanban/cards", "POST", {
       title: "Fixture router part",
-      machine: "Fixture router",
+      machineId: equipment.id,
     })
   ).card;
   const machineOf = async () =>
-    (await (await call(`/api/kanban/cards/${card.id}`)).json()).card.machine;
+    (await (await call(`/api/kanban/cards/${card.id}`)).json()).card
+      .linked_machine?.name ?? null;
 
   assert.equal(
     (
@@ -981,8 +982,11 @@ test(
         processIds: ["process-3d-printing"],
       })
     ).card;
+    const router = (
+      await json("/api/equipment", "POST", { name: "Search router" })
+    ).equipment;
     await json(`/api/kanban/cards/${first.id}`, "PATCH", {
-      machine: "Search router",
+      machine_id: router.id,
     });
     await json(`/api/kanban/cards/${first.id}/assign`, "POST", {
       assignee: identity["x-token-subject"],
@@ -1204,10 +1208,13 @@ test(
         title: "2713-24-165 Finished plate",
       })
     ).card;
+    const router = (
+      await json("/api/equipment", "POST", { name: "Finished router" })
+    ).equipment;
     for (const card of [first, second]) {
       await json(`/api/kanban/cards/${card.id}`, "PATCH", {
         column_id: config.columns.at(-1).id,
-        machine: "Finished router",
+        machine_id: router.id,
       });
     }
     const browser = await chromium.launch({ headless: true });

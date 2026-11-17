@@ -7,6 +7,7 @@ import {
   getCards,
   getCardStatusHistory,
   InvalidNotesError,
+  UnknownMachineError,
   UnknownProjectError,
   updateCard,
   setCardProcesses,
@@ -69,6 +70,7 @@ export const PATCH: APIRoute = async ({ request, params }) => {
   } catch (error) {
     if (
       error instanceof UnknownProjectError ||
+      error instanceof UnknownMachineError ||
       error instanceof InvalidNotesError
     )
       return Response.json({ error: error.message }, { status: 400 });

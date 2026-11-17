@@ -1,7 +1,7 @@
 import "virtual:hawk-shop/server-only";
 import { logServerError } from "~/server/errors";
 
-import { desc, eq, inArray } from "drizzle-orm";
+import { count, desc, eq, inArray } from "drizzle-orm";
 import { db } from "~/server/db/client";
 import {
   equipment as equipmentTable,
@@ -16,6 +16,8 @@ import type {
   ProcessRow,
 } from "~/server/db/types";
 import { deleteEquipmentImage } from "./images";
+
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Result type for getEquipment to distinguish errors from empty results
@@ -170,11 +172,21 @@ export async function createEquipment(
   return created;
 }
 
+function linkedCardCount(tx: Transaction, equipmentId: string) {
+  return (
+    tx
+      .select({ n: count() })
+      .from(kanbanCards)
+      .where(eq(kanbanCards.machine_id, equipmentId))
+      .get()?.n ?? 0
+  );
+}
+
 /**
  * Update an existing equipment item.
  *
- * Cards name their equipment by text in `kanban_cards.machine`, so a rename
- * moves those cards to the new name in the same transaction.
+ * Cards link to equipment by id, so a rename needs no card writes; linked
+ * cards are announced so open boards show the new name.
  */
 export async function updateEquipment(
   equipmentId: string,
@@ -197,11 +209,7 @@ export async function updateEquipment(
         .returning()
         .get();
       if (updates.name !== undefined && updates.name !== previous.name) {
-        renamedCards = tx
-          .update(kanbanCards)
-          .set({ machine: updates.name })
-          .where(eq(kanbanCards.machine, previous.name))
-          .run().changes;
+        renamedCards = linkedCardCount(tx, equipmentId);
       }
     });
   } catch (error) {
@@ -257,17 +265,13 @@ export async function deleteEquipment(
   let clearedCards = 0;
   try {
     db.transaction((tx) => {
+      // The foreign key clears machine_id on linked cards.
+      clearedCards = linkedCardCount(tx, equipmentId);
       deleted = tx
         .delete(equipmentTable)
         .where(eq(equipmentTable.id, equipmentId))
         .returning()
         .get();
-      if (!deleted) return;
-      clearedCards = tx
-        .update(kanbanCards)
-        .set({ machine: null })
-        .where(eq(kanbanCards.machine, deleted.name))
-        .run().changes;
     });
   } catch (error) {
     console.error("[EQUIPMENT] Error deleting equipment:", error);

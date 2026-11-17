@@ -8,11 +8,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui/dialog";
-import type { KanbanCardRow } from "~/server/db/types";
+import type { CardMachine, KanbanCardRow } from "~/server/db/types";
 import { equipmentQuery, queryKeys, updateKanbanCard } from "~/lib/api";
+import { cardMachineName, unlinkedMachineText } from "~/lib/cardMachine";
 
 type MachineSelectDialogProps = {
-  card: KanbanCardRow;
+  card: KanbanCardRow & { linked_machine?: CardMachine | null };
 };
 
 export function MachineSelectDialog({ card }: MachineSelectDialogProps) {
@@ -28,24 +29,37 @@ export function MachineSelectDialog({ card }: MachineSelectDialogProps) {
   }, [equipment]);
 
   const assignMachine = useMutation({
-    mutationFn: (machine: string | null) =>
-      updateKanbanCard(card.id, { machine }),
+    mutationFn: (machineId: string | null) =>
+      updateKanbanCard(card.id, { machine_id: machineId }),
     onSuccess: () => {
       setOpen(false);
       queryClient.invalidateQueries({ queryKey: queryKeys.kanban.cards() });
     },
   });
 
-  const handleSelect = (machine: string | null) => {
+  const handleSelect = (machineId: string | null) => {
     if (assignMachine.isPending) return;
-    assignMachine.mutate(machine);
+    assignMachine.mutate(machineId);
   };
+  const machineName = cardMachineName(card);
+  const unlinked = unlinkedMachineText(card);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button className="group hover:bg-accent hover:text-accent-foreground flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-medium transition-colors">
-          <span>{card.machine || "Unassigned"}</span>
+          {machineName ? (
+            <span>{machineName}</span>
+          ) : unlinked ? (
+            <span title="This text matches no equipment. Pick a machine to link it.">
+              {unlinked}{" "}
+              <span className="text-muted-foreground font-normal">
+                (unlinked)
+              </span>
+            </span>
+          ) : (
+            <span>Unassigned</span>
+          )}
           <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-50" />
         </button>
       </DialogTrigger>
@@ -68,8 +82,9 @@ export function MachineSelectDialog({ card }: MachineSelectDialogProps) {
             <div
               className="hover:bg-primary/10 flex cursor-pointer items-center gap-3 rounded-md border p-2"
               key={item.id}
-              onClick={() => handleSelect(item.name)}
-              onKeyDown={(e) => e.key === "Enter" && handleSelect(item.name)}
+              aria-current={item.id === card.machine_id || undefined}
+              onClick={() => handleSelect(item.id)}
+              onKeyDown={(e) => e.key === "Enter" && handleSelect(item.id)}
               role="button"
               tabIndex={0}
             >
