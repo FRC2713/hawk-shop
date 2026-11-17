@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type {
+  CardMachine,
   CardProject,
   KanbanCardRow,
   ProcessRow,
@@ -17,16 +18,18 @@ import {
 import { apiFetch } from "./client";
 import { queryKeys } from "./keys";
 
-/** `/api/kanban/cards` joins each card to its processes and project. */
+/** `/api/kanban/cards` joins each card to its processes, project and machine. */
 export type KanbanCardWithProcesses = KanbanCardRow & {
   processes?: ProcessRow[];
   project?: CardProject | null;
+  linked_machine?: CardMachine | null;
 };
 
 /** Fields `/api/kanban/cards/:id` accepts on PATCH. */
 export interface KanbanCardUpdate {
   column_id?: string;
-  machine?: string | null;
+  /** Equipment id; null clears the machine. */
+  machine_id?: string | null;
   due_date?: string | null;
   quantity_to_make?: number;
   project_id?: string;

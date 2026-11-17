@@ -104,7 +104,14 @@ export const kanbanCards = sqliteTable(
     assignee: text("assignee"),
     date_created: text("date_created").notNull().$defaultFn(now),
     date_updated: text("date_updated").notNull().$defaultFn(now),
+    // Legacy free text from before cards linked to equipment. No longer
+    // written; kept so unmatched values stay visible until a mentor picks a
+    // machine. Ignored while machine_id is set.
     machine: text("machine"),
+    // The equipment this card is assigned to; null waits in its process queue.
+    machine_id: text("machine_id").references(() => equipment.id, {
+      onDelete: "set null",
+    }),
     due_date: text("due_date"),
     content: text("content"),
     release_issues: text("release_issues", { mode: "json" }).$type<
@@ -137,6 +144,7 @@ export const kanbanCards = sqliteTable(
     index("idx_kanban_cards_column_id").on(table.column_id),
     index("idx_kanban_cards_project_id").on(table.project_id),
     index("idx_kanban_cards_date_created").on(table.date_created),
+    index("idx_kanban_cards_machine_id").on(table.machine_id),
   ]
 );
 

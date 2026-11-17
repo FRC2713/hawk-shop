@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/requireAuth";
 import {
   createCard,
   getCards,
+  UnknownMachineError,
   UnknownProjectError,
 } from "~/server/kanbanApi/cards";
 
@@ -62,7 +63,7 @@ export const POST: APIRoute = async ({ request }) => {
         title: body.title,
         imageUrl: body.imageUrl,
         assignee: body.assignee,
-        machine: body.machine,
+        machineId: body.machineId,
         dueDate: body.dueDate,
         content: body.content,
         processIds: body.processIds || [],
@@ -73,7 +74,10 @@ export const POST: APIRoute = async ({ request }) => {
 
     return Response.json({ card: newCard }, { status: 201 });
   } catch (error) {
-    if (error instanceof UnknownProjectError)
+    if (
+      error instanceof UnknownProjectError ||
+      error instanceof UnknownMachineError
+    )
       return Response.json({ error: error.message }, { status: 400 });
     const errorId = logServerError("KANBAN CARDS", error);
     const errorMessage =

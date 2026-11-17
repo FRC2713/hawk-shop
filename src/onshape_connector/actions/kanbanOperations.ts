@@ -250,7 +250,6 @@ export async function handleAddKanbanCard(
         title: data.partNumber,
         releaseIssues,
         imageUrl,
-        machine: "TBD",
         processIds: data.processIds,
         projectId: data.projectId,
         quantityToMake: data.quantityToMake,

@@ -18,6 +18,7 @@ import { KanbanCardHeader } from "./KanbanCardHeader";
 import { KanbanCardDetails } from "./KanbanCardDetails";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 import { cardThumbnailUrl } from "~/lib/api/onshape";
+import { cardMachineName } from "~/lib/cardMachine";
 
 /**
  * Format a date string for display
@@ -160,10 +161,11 @@ export const KanbanCard = memo(function KanbanCard({
     deleteCardMutation.mutate(card.id);
   };
 
+  const machineName = cardMachineName(card);
   const hasMeta =
     card.project ||
     card.assignee ||
-    card.machine ||
+    machineName ||
     card.due_date ||
     card.quantity_to_make ||
     (card.processes && card.processes.length > 0);
@@ -239,13 +241,13 @@ export const KanbanCard = memo(function KanbanCard({
                     {assignedUser?.name || "Unassigned"}
                   </Badge>
                 )}
-                {card.machine && (
+                {machineName && (
                   <Badge
                     variant="secondary"
                     className="bg-muted text-foreground gap-1 text-xs font-normal"
                   >
                     <Wrench className="size-3" />
-                    {card.machine}
+                    {machineName}
                   </Badge>
                 )}
                 {card.quantity_to_make && (
