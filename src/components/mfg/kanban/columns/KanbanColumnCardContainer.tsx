@@ -3,6 +3,7 @@ import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanCard } from "../cards/KanbanCard";
 import { Button } from "~/components/ui/button";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
+import type { CardSelectHandler } from "~/lib/cardSelection";
 
 interface KanbanColumnCardContainerProps {
   columnName: string;
@@ -12,14 +13,9 @@ interface KanbanColumnCardContainerProps {
   usersMap: Map<string, UserRow>;
   olderCardsCount?: number;
   columnId?: string;
-  selectedCardIds?: Set<string>;
+  selectedCardIds?: ReadonlySet<string>;
   selectedColumnId?: string | null;
-  onCardSelect?: (
-    cardId: string,
-    columnId: string,
-    cardIndex: number,
-    event: React.MouseEvent
-  ) => void;
+  onCardSelect?: CardSelectHandler;
 }
 
 export function KanbanColumnCardContainer({
@@ -53,7 +49,7 @@ export function KanbanColumnCardContainer({
 
   return (
     <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-      {cards.map((card, index) => (
+      {cards.map((card) => (
         <KanbanCard
           key={card.id}
           card={card}
@@ -61,7 +57,6 @@ export function KanbanColumnCardContainer({
           usersMap={usersMap}
           isSelected={selectedCardIds.has(card.id)}
           columnId={columnId}
-          cardIndex={index}
           onSelect={onCardSelect}
         />
       ))}

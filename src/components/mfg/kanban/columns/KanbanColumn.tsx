@@ -28,6 +28,7 @@ import {
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanColumnCardContainer } from "./KanbanColumnCardContainer";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
+import type { CardSelectHandler } from "~/lib/cardSelection";
 import { splitDoneToday } from "~/lib/doneToday";
 
 interface KanbanColumnProps {
@@ -40,14 +41,9 @@ interface KanbanColumnProps {
   density?: BoardDensity;
   usersMap: Map<string, UserRow>;
   isLastColumn?: boolean;
-  selectedCardIds?: Set<string>;
+  selectedCardIds?: ReadonlySet<string>;
   selectedColumnId?: string | null;
-  onCardSelect?: (
-    cardId: string,
-    columnId: string,
-    cardIndex: number,
-    event: React.MouseEvent
-  ) => void;
+  onCardSelect?: CardSelectHandler;
 }
 
 export function KanbanColumn({

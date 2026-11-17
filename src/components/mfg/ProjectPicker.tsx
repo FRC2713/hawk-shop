@@ -30,6 +30,8 @@ export function ProjectPicker({
   disabled,
   invalid,
   describedBy,
+  placeholder = "Choose a project…",
+  "aria-label": ariaLabel,
 }: {
   id?: string;
   value: string | null;
@@ -37,6 +39,10 @@ export function ProjectPicker({
   disabled?: boolean;
   invalid?: boolean;
   describedBy?: string;
+  /** Trigger text while no project is chosen. */
+  placeholder?: string;
+  /** For a picker with no visible label. */
+  "aria-label"?: string;
 }) {
   const listId = useId();
   const queryClient = useQueryClient();
@@ -91,6 +97,7 @@ export function ProjectPicker({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-label={ariaLabel}
           aria-controls={listId}
           aria-invalid={invalid || undefined}
           aria-describedby={describedBy}
@@ -101,7 +108,7 @@ export function ProjectPicker({
           )}
         >
           <span className="truncate">
-            {selected ? selected.name : "Choose a project…"}
+            {selected ? selected.name : placeholder}
           </span>
           <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>

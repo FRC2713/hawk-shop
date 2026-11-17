@@ -19,6 +19,7 @@ import { cardThumbnailUrl } from "~/lib/api/onshape";
 import { cardFlags, cardMetaLine } from "~/lib/cardFace";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
 import { cn } from "~/lib/utils";
+import type { CardSelectHandler } from "~/lib/cardSelection";
 
 interface KanbanCardProps {
   card: KanbanCardWithProcesses;
@@ -26,13 +27,8 @@ interface KanbanCardProps {
   usersMap: Map<string, UserRow>;
   isSelected?: boolean;
   columnId?: string;
-  cardIndex?: number;
-  onSelect?: (
-    cardId: string,
-    columnId: string,
-    cardIndex: number,
-    event: React.MouseEvent
-  ) => void;
+  /** Checkbox, shift- and cmd/ctrl-clicks select; a plain click opens details. */
+  onSelect?: CardSelectHandler;
 }
 
 export const KanbanCard = memo(function KanbanCard({
@@ -41,7 +37,6 @@ export const KanbanCard = memo(function KanbanCard({
   usersMap,
   isSelected = false,
   columnId = "",
-  cardIndex = 0,
   onSelect,
 }: KanbanCardProps) {
   const [imageError, setImageError] = useState(false);
@@ -117,6 +112,16 @@ export const KanbanCard = memo(function KanbanCard({
           {...attributes}
           {...listeners}
           aria-label={card.title}
+          onMouseDown={(e) => {
+            // Shift-click selects cards, not text.
+            if (onSelect && e.shiftKey) e.preventDefault();
+          }}
+          onClick={(e) => {
+            if (!onSelect || !(e.shiftKey || e.metaKey || e.ctrlKey)) return;
+            // Prevented, so the sheet trigger doesn't open details.
+            e.preventDefault();
+            onSelect(card.id, columnId, e);
+          }}
           className={cn(
             "cursor-grab rounded-md shadow-none transition-all duration-200 active:cursor-grabbing",
             isDragging
@@ -136,21 +141,26 @@ export const KanbanCard = memo(function KanbanCard({
           >
             {onSelect && (
               <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  onSelect(card.id, columnId, cardIndex, e);
-                }}
                 onPointerDown={(e) => {
                   // Keep a click on the checkbox from starting a drag.
                   e.stopPropagation();
                 }}
-                className="row-span-2 flex cursor-pointer items-center"
+                onKeyDown={(e) => {
+                  // Space toggles the checkbox, not the card's drag or sheet.
+                  e.stopPropagation();
+                }}
+                className="row-span-2 flex items-center"
               >
                 <Checkbox
                   checked={isSelected}
                   aria-label={`Select ${card.title}`}
-                  className="border-foreground/40 dark:border-foreground/60 pointer-events-none"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // The board owns the checked state.
+                    e.preventDefault();
+                    onSelect(card.id, columnId, e);
+                  }}
+                  className="border-foreground/40 dark:border-foreground/60"
                 />
               </div>
             )}

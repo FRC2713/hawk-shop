@@ -51,6 +51,7 @@ import {
   type Lane,
 } from "./KanbanSwimlanes";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
+import { useCardSelection } from "./useCardSelection";
 
 type KanbanCardRow = KanbanCardWithProcesses;
 
@@ -81,16 +82,6 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const [activeCard, setActiveCard] = useState<KanbanCardRow | null>(null);
   const [draggingCards, setDraggingCards] = useState<KanbanCardRow[]>([]);
-  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(
-    new Set()
-  );
-  const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
-  const [lastClickedCardIndex, setLastClickedCardIndex] = useState<
-    number | null
-  >(null);
-  const [lastClickedColumnId, setLastClickedColumnId] = useState<string | null>(
-    null
-  );
   const queryClient = useQueryClient();
   const searchQuery = filters.q;
   const sortByUser = filters.sort === "user";
@@ -245,6 +236,22 @@ export function KanbanBoard({
     searchScores,
   ]);
 
+  // Shift-click ranges over a column's cards in the order shown.
+  const columnOrder = useCallback(
+    (columnId: string) =>
+      (cardsByColumn[columnId] ?? []).map((card) => card.id),
+    [cardsByColumn]
+  );
+  const {
+    selection,
+    selectedCards,
+    onCardSelect: handleCardSelect,
+    clear: clearSelection,
+    keepOnly: keepSelected,
+  } = useCardSelection(cards, columnOrder);
+  const selectedCardIds = selection.ids;
+  const selectedColumnId = selection.columnId;
+
   // Swimlanes show Done like its column does: today's parts only.
   const laneCardsByColumn = useMemo(() => {
     if (!groupByProject || columns.length === 0) return cardsByColumn;
@@ -347,12 +354,7 @@ export function KanbanBoard({
       });
 
       // Clear selection after moving
-      if (cardsToMoveToNewColumn.length > 0) {
-        setSelectedCardIds(new Set());
-        setSelectedColumnId(null);
-        setLastClickedCardIndex(null);
-        setLastClickedColumnId(null);
-      }
+      if (cardsToMoveToNewColumn.length > 0) clearSelection();
     } else if (isColumn) {
       // Handle column drag (reordering columns) - only in edit mode
       if (isEditMode && active.id !== over.id && onReorderColumns) {
@@ -387,101 +389,6 @@ export function KanbanBoard({
     },
     [onDeleteColumn]
   );
-
-  // Selection handlers
-  const handleCardSelect = useCallback(
-    (
-      cardId: string,
-      columnId: string,
-      cardIndex: number,
-      event: React.MouseEvent
-    ) => {
-      event.stopPropagation();
-
-      // If selecting from a different column, clear previous selection
-      if (selectedColumnId !== null && selectedColumnId !== columnId) {
-        setSelectedCardIds(new Set([cardId]));
-        setSelectedColumnId(columnId);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-        return;
-      }
-
-      const isShiftPressed = event.shiftKey;
-      const isModifierPressed = event.metaKey || event.ctrlKey;
-
-      if (
-        isShiftPressed &&
-        lastClickedCardIndex !== null &&
-        lastClickedColumnId === columnId
-      ) {
-        // Range selection: select all cards between last clicked and current
-        const columnCards = cardsByColumn[columnId] || [];
-        const startIndex = Math.min(lastClickedCardIndex, cardIndex);
-        const endIndex = Math.max(lastClickedCardIndex, cardIndex);
-
-        const newSelectedIds = new Set(selectedCardIds);
-        for (let i = startIndex; i <= endIndex; i++) {
-          if (columnCards[i]) {
-            newSelectedIds.add(columnCards[i].id);
-          }
-        }
-
-        setSelectedCardIds(newSelectedIds);
-        setSelectedColumnId(columnId);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-      } else if (isModifierPressed) {
-        // Toggle selection
-        const newSelectedIds = new Set(selectedCardIds);
-        if (newSelectedIds.has(cardId)) {
-          newSelectedIds.delete(cardId);
-          if (newSelectedIds.size === 0) {
-            setSelectedColumnId(null);
-            setLastClickedCardIndex(null);
-            setLastClickedColumnId(null);
-          }
-        } else {
-          newSelectedIds.add(cardId);
-          setSelectedColumnId(columnId);
-        }
-        setSelectedCardIds(newSelectedIds);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-      } else {
-        // Normal click: toggle this card individually
-        const newSelectedIds = new Set(selectedCardIds);
-        if (newSelectedIds.has(cardId)) {
-          newSelectedIds.delete(cardId);
-          if (newSelectedIds.size === 0) {
-            setSelectedColumnId(null);
-            setLastClickedCardIndex(null);
-            setLastClickedColumnId(null);
-          }
-        } else {
-          newSelectedIds.add(cardId);
-          setSelectedColumnId(columnId);
-        }
-        setSelectedCardIds(newSelectedIds);
-        setLastClickedCardIndex(cardIndex);
-        setLastClickedColumnId(columnId);
-      }
-    },
-    [
-      selectedCardIds,
-      selectedColumnId,
-      lastClickedCardIndex,
-      lastClickedColumnId,
-      cardsByColumn,
-    ]
-  );
-
-  const clearSelection = useCallback(() => {
-    setSelectedCardIds(new Set());
-    setSelectedColumnId(null);
-    setLastClickedCardIndex(null);
-    setLastClickedColumnId(null);
-  }, []);
 
   // Empty state - show when no columns
   if (columns.length === 0) {
@@ -598,15 +505,10 @@ export function KanbanBoard({
       {/* Floating bulk edit bar - shown when cards are selected */}
       {selectedCardIds.size > 0 && (
         <KanbanBulkEditBar
-          selectedCardIds={selectedCardIds}
-          cards={cards}
+          cards={selectedCards}
           columns={columns}
-          users={users}
-          onMoveCard={(cardId, columnId) =>
-            moveCardMutation.mutate({ cardId, columnId })
-          }
           onClearSelection={clearSelection}
-          isMoving={moveCardMutation.isPending}
+          onKeepSelected={keepSelected}
         />
       )}
 

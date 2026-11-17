@@ -9,6 +9,7 @@ import { cn } from "~/lib/utils";
 import { KanbanCard } from "../cards/KanbanCard";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
 import { DONE_TODAY_TITLE } from "~/lib/doneToday";
+import type { CardSelectHandler } from "~/lib/cardSelection";
 
 /** Droppable ids for lane cells; a drop moves the card's column only. */
 const CELL_PREFIX = "lane|";
@@ -34,7 +35,6 @@ function LaneCell({
   usersMap,
   isDraggingCard,
   selectedCardIds,
-  columnIndexOf,
   onCardSelect,
 }: {
   laneId: string;
@@ -43,14 +43,8 @@ function LaneCell({
   density: BoardDensity;
   usersMap: Map<string, UserRow>;
   isDraggingCard: boolean;
-  selectedCardIds: Set<string>;
-  columnIndexOf: (card: KanbanCardWithProcesses) => number;
-  onCardSelect?: (
-    cardId: string,
-    columnId: string,
-    cardIndex: number,
-    event: React.MouseEvent
-  ) => void;
+  selectedCardIds: ReadonlySet<string>;
+  onCardSelect?: CardSelectHandler;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: laneCellId(laneId, column.id),
@@ -75,7 +69,6 @@ function LaneCell({
           usersMap={usersMap}
           isSelected={selectedCardIds.has(card.id)}
           columnId={column.id}
-          cardIndex={columnIndexOf(card)}
           onSelect={onCardSelect}
         />
       ))}
@@ -104,13 +97,8 @@ export function KanbanSwimlanes({
   density: BoardDensity;
   usersMap: Map<string, UserRow>;
   isDraggingCard: boolean;
-  selectedCardIds: Set<string>;
-  onCardSelect?: (
-    cardId: string,
-    columnId: string,
-    cardIndex: number,
-    event: React.MouseEvent
-  ) => void;
+  selectedCardIds: ReadonlySet<string>;
+  onCardSelect?: CardSelectHandler;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggle = (id: string) =>
@@ -199,9 +187,6 @@ export function KanbanSwimlanes({
                       usersMap={usersMap}
                       isDraggingCard={isDraggingCard}
                       selectedCardIds={selectedCardIds}
-                      columnIndexOf={(card) =>
-                        (cardsByColumn[column.id] ?? []).indexOf(card)
-                      }
                       onCardSelect={onCardSelect}
                     />
                   ))}

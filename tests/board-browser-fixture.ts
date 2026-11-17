@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { globSync, readFileSync } from "node:fs";
 import { build } from "esbuild";
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Page, Request } from "@playwright/test";
 
 /**
  * Shared harness for desktop board browser tests: the real Board island
@@ -184,6 +184,14 @@ export interface OpenBoardOptions {
   projects?: Record<string, unknown>[];
   processes?: Record<string, unknown>[];
   equipment?: Record<string, unknown>[];
+  /**
+   * Answers a write (any non-GET request) before the defaults. Return
+   * undefined to fall through to them.
+   */
+  answer?: (
+    request: Request,
+    path: string
+  ) => { status?: number; json: unknown } | undefined;
 }
 
 /**
@@ -214,6 +222,15 @@ export async function openBoard(
         body: '<div id="root"></div>',
       });
     stub.requests.push(`${route.request().method()} ${path}`);
+    const answered =
+      route.request().method() === "GET"
+        ? undefined
+        : options.answer?.(route.request(), path);
+    if (answered)
+      return route.fulfill({
+        status: answered.status ?? 200,
+        json: answered.json,
+      });
     if (path === "/api/kanban/events")
       return route.fulfill({ contentType: "text/event-stream", body: "" });
     if (path === "/api/kanban/config")
