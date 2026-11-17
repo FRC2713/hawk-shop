@@ -25,7 +25,7 @@ A message in the team's designated Slack channel reporting a status change and m
 The permanent record of a card's status changes; unlike status notifications, it is never deleted.
 
 **Machine queue**:
-The parts a machine could make next: Backlog parts assigned to that machine, then Backlog parts in the process queue of any of its processes. Derived, never stored. Oldest release first, then due date.
+The parts a machine could make next: Backlog parts assigned to that machine, then Backlog parts in the process queue of any of its processes. Derived, never stored. Within each group, parts a mentor reordered come first in that order, then the rest oldest release first, then due date. A part's place is dropped when its machine changes.
 _Avoid_: Machine backlog, job list
 
 **Process queue**:

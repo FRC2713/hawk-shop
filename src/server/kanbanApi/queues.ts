@@ -10,11 +10,13 @@ import { getCards } from "~/server/kanbanApi/cards";
 export const BACKLOG_COLUMN_ID = "backlog";
 
 /**
- * Queues are derived from Backlog cards, never stored. Default order is
- * oldest release first, then due date (none last).
+ * Queues are derived from Backlog cards, never stored. Cards a mentor
+ * positioned come first, lowest position first; the rest follow oldest
+ * release first, then due date (none last).
  */
 function byQueueOrder(a: KanbanCardWithProcesses, b: KanbanCardWithProcesses) {
   return (
+    (a.queue_position ?? Infinity) - (b.queue_position ?? Infinity) ||
     a.date_created.localeCompare(b.date_created) ||
     (a.due_date ?? "￿").localeCompare(b.due_date ?? "￿") ||
     a.id.localeCompare(b.id)

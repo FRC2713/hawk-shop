@@ -402,6 +402,10 @@ export async function updateCard(
       requireMachine(tx, finalUpdates.machine_id);
       // Picking or clearing a machine settles any legacy text.
       finalUpdates.machine = null;
+      // A queue position was set in the old machine's queue; it doesn't
+      // follow the part to another one.
+      if (finalUpdates.machine_id !== previous.machine_id)
+        finalUpdates.queue_position = null;
     }
     const changed =
       finalUpdates.column_id !== undefined &&
