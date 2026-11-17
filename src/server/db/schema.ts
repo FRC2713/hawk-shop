@@ -175,6 +175,27 @@ export const statusHistory = sqliteTable(
   ]
 );
 
+// Why a reviewer sent a part back. Belongs to the card and goes with it.
+export const reviewNotes = sqliteTable(
+  "review_notes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    card_id: text("card_id")
+      .notNull()
+      .references(() => kanbanCards.id, { onDelete: "cascade" }),
+    author_id: text("author_id").notNull(),
+    author_name: text("author_name").notNull(),
+    text: text("text").notNull(),
+    created_at: text("created_at").notNull().$defaultFn(now),
+  },
+  (table) => [
+    index("idx_review_notes_card_created_at").on(
+      table.card_id,
+      table.created_at
+    ),
+  ]
+);
+
 export const kanbanConfig = sqliteTable("kanban_config", {
   id: text("id").primaryKey(),
   columns: text("columns", { mode: "json" })

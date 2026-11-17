@@ -18,6 +18,7 @@ import {
   kanbanConfig,
   MISCELLANEOUS_PROJECT_ID,
   projects as projectsTable,
+  reviewNotes,
   statusHistory,
   users,
   processes as processesTable,
@@ -28,6 +29,7 @@ import type {
   KanbanCardRow,
   KanbanCardWithProcesses,
   ProcessRow,
+  ReviewNoteRow,
 } from "~/server/db/types";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -201,6 +203,17 @@ export async function getCards(): Promise<GetCardsResult> {
         .map((machine) => [machine.id, machine])
     );
 
+    const notesByCard = new Map<string, ReviewNoteRow[]>();
+    for (const note of db
+      .select()
+      .from(reviewNotes)
+      .orderBy(asc(reviewNotes.created_at), asc(reviewNotes.id))
+      .all())
+      notesByCard.set(note.card_id, [
+        ...(notesByCard.get(note.card_id) ?? []),
+        note,
+      ]);
+
     return {
       cards: cards.map((card) => ({
         ...card,
@@ -209,6 +222,7 @@ export async function getCards(): Promise<GetCardsResult> {
         linked_machine: card.machine_id
           ? (machineById.get(card.machine_id) ?? null)
           : null,
+        review_notes: notesByCard.get(card.id) ?? [],
       })),
     };
   } catch (error) {

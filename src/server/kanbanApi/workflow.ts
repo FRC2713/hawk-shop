@@ -8,6 +8,7 @@ import {
   equipmentProcesses,
   kanbanCardProcesses,
   kanbanCards,
+  reviewNotes,
   users,
 } from "~/server/db/schema";
 import type { KanbanCardWithProcesses } from "~/server/db/types";
@@ -358,5 +359,88 @@ export async function unclaim(
     { assignee: null, column_id: WORKFLOW_COLUMN_IDS.backlog },
     actor
   );
+  return readCard(card.id);
+}
+
+/** Done: an In Progress part goes to Review. */
+export async function done(
+  cardId: string,
+  actor: SessionActor
+): Promise<KanbanCardWithProcesses> {
+  const card = await requireCardIn(
+    cardId,
+    [WORKFLOW_COLUMN_IDS.inProgress],
+    "marked done"
+  );
+  await updateCard(card.id, { column_id: WORKFLOW_COLUMN_IDS.review }, actor);
+  return readCard(card.id);
+}
+
+/** Approve: a Review part goes to Done. */
+export async function approve(
+  cardId: string,
+  actor: SessionActor
+): Promise<KanbanCardWithProcesses> {
+  const card = await requireCardIn(
+    cardId,
+    [WORKFLOW_COLUMN_IDS.review],
+    "approved"
+  );
+  await updateCard(card.id, { column_id: WORKFLOW_COLUMN_IDS.done }, actor);
+  return readCard(card.id);
+}
+
+/**
+ * Send back: a Review part returns to In Progress when it still has an
+ * assignee, otherwise to Backlog. The required `reason` is kept as a review
+ * note on the card for the assignee and submitter.
+ */
+export async function sendBack(
+  cardId: string,
+  actor: SessionActor,
+  { reason }: { reason?: unknown } = {}
+): Promise<KanbanCardWithProcesses> {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  if (!text)
+    throw new InvalidWorkflowInputError("Say why this part is going back");
+  const card = await requireCardIn(
+    cardId,
+    [WORKFLOW_COLUMN_IDS.review],
+    "sent back"
+  );
+  const authorName =
+    actor.name ||
+    db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.onshape_user_id, actor.onshape_user_id))
+      .get()?.name ||
+    "Unknown member";
+  // Written before the move so the live update already carries the note, and
+  // removed again if the move fails.
+  const note = db
+    .insert(reviewNotes)
+    .values({
+      card_id: card.id,
+      author_id: actor.onshape_user_id,
+      author_name: authorName,
+      text,
+    })
+    .returning({ id: reviewNotes.id })
+    .get();
+  try {
+    await updateCard(
+      card.id,
+      {
+        column_id: card.assignee
+          ? WORKFLOW_COLUMN_IDS.inProgress
+          : WORKFLOW_COLUMN_IDS.backlog,
+      },
+      actor
+    );
+  } catch (error) {
+    db.delete(reviewNotes).where(eq(reviewNotes.id, note.id)).run();
+    throw error;
+  }
   return readCard(card.id);
 }

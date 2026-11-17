@@ -283,6 +283,24 @@ export const migrationFixtures: SeedFixture = {
       moved_at: updated,
     },
   ],
+  review_notes: [
+    {
+      id: 1,
+      card_id: "card-a",
+      author_id: "member-a",
+      author_name: "Alex",
+      text: "Holes are undersized",
+      created_at: created,
+    },
+    {
+      id: 2,
+      card_id: "card-a",
+      author_id: "member-b",
+      author_name: "Sam",
+      text: "Deburr the edges",
+      created_at: updated,
+    },
+  ],
   slack_post_gate: [{ id: "default", next_post_at: updated }],
   projects: [
     {
