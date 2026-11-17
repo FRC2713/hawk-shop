@@ -301,3 +301,153 @@ test("a machine can't take a part whose process it lacks, and a bulk assign chan
 
   assert.equal((await assign(["lp-cut"], laser.id)).status, 200);
 });
+
+const reorderRoute = await import("../src/pages/api/kanban/cards/reorder");
+
+async function reorder(machineId: unknown, cardIds: unknown) {
+  const response = await endpoint(
+    reorderRoute,
+    "POST"
+  )(
+    jsonRequest("/api/kanban/cards/reorder", "POST", cookie, {
+      machineId,
+      cardIds,
+    })
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+test("a mentor moves urgent parts to the front of a machine's queue; the rest follow in default order", async () => {
+  const printer = await addMachine("Voron", [PRINTING]);
+  for (const [id, day] of [
+    ["ro-a", "01"],
+    ["ro-b", "02"],
+    ["ro-c", "03"],
+    ["ro-d", "04"],
+  ])
+    await release(id, `2026-07-${day}T00:00:00.000Z`, {
+      processIds: [PRINTING],
+      machineId: printer.id,
+    });
+  const queueOf = async () =>
+    (await readMachineQueue(printer.id)).filter((id) => id.startsWith("ro-"));
+  assert.deepEqual(await queueOf(), ["ro-a", "ro-b", "ro-c", "ro-d"]);
+
+  const live = await watchLiveUpdates();
+  const reordered = await reorder(printer.id, ["ro-d", "ro-b"]);
+  assert.equal(reordered.status, 200, JSON.stringify(reordered.body));
+  assert.deepEqual(
+    reordered.body.cards
+      .map((card: { id: string }) => card.id)
+      .filter((id: string) => id.startsWith("ro-")),
+    ["ro-d", "ro-b", "ro-a", "ro-c"]
+  );
+  assert.deepEqual((await live.changedIds(2)).sort(), ["ro-b", "ro-d"]);
+  assert.deepEqual(await queueOf(), ["ro-d", "ro-b", "ro-a", "ro-c"]);
+  assert.equal((await read("ro-d")).queue_position, 0);
+  assert.equal((await read("ro-b")).queue_position, 1);
+  assert.equal((await read("ro-a")).queue_position, null);
+
+  // A new order replaces the old one: cards left out return to default order.
+  assert.equal((await reorder(printer.id, ["ro-c"])).status, 200);
+  assert.deepEqual(await queueOf(), ["ro-c", "ro-a", "ro-b", "ro-d"]);
+  assert.equal((await read("ro-d")).queue_position, null);
+});
+
+test("positioned and unpositioned parts mix: a machine's own parts stay ahead of waiting ones, each group positioned first", async () => {
+  const mill = await addMachine("Bridgeport", [MILLING]);
+  await release("mx-mine-old", "2026-08-01T00:00:00.000Z", {
+    processIds: [MILLING],
+    machineId: mill.id,
+  });
+  await release("mx-mine-new", "2026-08-02T00:00:00.000Z", {
+    processIds: [MILLING],
+    machineId: mill.id,
+  });
+  await release("mx-wait-old", "2026-08-01T00:00:00.000Z", {
+    processIds: [MILLING],
+  });
+  await release("mx-wait-new", "2026-08-02T00:00:00.000Z", {
+    processIds: [MILLING],
+  });
+
+  const reordered = await reorder(mill.id, ["mx-wait-new", "mx-mine-new"]);
+  assert.equal(reordered.status, 200);
+  assert.deepEqual(
+    (await readMachineQueue(mill.id)).filter((id) => id.startsWith("mx-")),
+    ["mx-mine-new", "mx-mine-old", "mx-wait-new", "mx-wait-old"]
+  );
+  // The waiting part's place is its own, so it leads its process queue too.
+  assert.deepEqual(
+    (await readProcessQueue(MILLING)).filter((id) => id.startsWith("mx-")),
+    ["mx-wait-new", "mx-wait-old"]
+  );
+});
+
+test("a reorder names a known machine and only parts in its queue, and changes nothing otherwise", async () => {
+  const printer = await addMachine("Mini", [PRINTING]);
+  await release("rx-in", "2026-09-01T00:00:00.000Z", {
+    processIds: [PRINTING],
+    machineId: printer.id,
+  });
+  await release("rx-milled", "2026-09-01T00:00:00.000Z", {
+    processIds: [MILLING],
+  });
+  await release("rx-started", "2026-09-01T00:00:00.000Z", {
+    machineId: printer.id,
+  });
+  await move("rx-started", "in-progress");
+
+  const refused = await reorder(printer.id, [
+    "rx-in",
+    "rx-milled",
+    "rx-started",
+  ]);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, "card_not_in_queue");
+  assert.deepEqual(refused.body.cardIds, ["rx-milled", "rx-started"]);
+  assert.match(refused.body.error, /Mini's queue/);
+  assert.equal((await read("rx-in")).queue_position, null);
+
+  assert.equal((await reorder(printer.id, ["rx-missing"])).status, 404);
+  assert.equal((await reorder("eq-missing", [])).status, 400);
+  assert.equal((await reorder(null, ["rx-in"])).status, 400);
+  assert.equal((await reorder(printer.id, "rx-in")).status, 400);
+});
+
+test("assigning or clearing a part's machine drops its queue position; reassigning the same machine keeps it", async () => {
+  const printer = await addMachine("Prusa XL", [PRINTING]);
+  const other = await addMachine("Prusa Mini", [PRINTING]);
+  await release("rs-a", "2026-10-01T00:00:00.000Z", {
+    processIds: [PRINTING],
+    machineId: printer.id,
+  });
+  await release("rs-b", "2026-10-02T00:00:00.000Z", {
+    processIds: [PRINTING],
+    machineId: printer.id,
+  });
+  await release("rs-c", "2026-10-03T00:00:00.000Z", {
+    processIds: [PRINTING],
+    machineId: printer.id,
+  });
+  assert.equal((await reorder(printer.id, ["rs-c", "rs-b"])).status, 200);
+
+  assert.equal((await assign(["rs-b"], printer.id)).status, 200);
+  assert.equal((await read("rs-b")).queue_position, 1);
+
+  // A position was earned in another queue; it doesn't follow the part.
+  assert.equal((await assign(["rs-c"], other.id)).status, 200);
+  assert.equal((await read("rs-c")).queue_position, null);
+
+  const patched = await endpoint(cardDetail, "PATCH", { id: "rs-b" })(
+    jsonRequest("/api/kanban/cards/rs-b", "PATCH", cookie, {
+      machine_id: null,
+    })
+  );
+  assert.equal(patched.status, 200);
+  assert.equal((await read("rs-b")).queue_position, null);
+  assert.deepEqual(
+    (await readMachineQueue(printer.id)).filter((id) => id.startsWith("rs-")),
+    ["rs-a", "rs-b"]
+  );
+});

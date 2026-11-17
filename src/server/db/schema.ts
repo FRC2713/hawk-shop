@@ -112,6 +112,10 @@ export const kanbanCards = sqliteTable(
     machine_id: text("machine_id").references(() => equipment.id, {
       onDelete: "set null",
     }),
+    // A mentor's place for this card in its machine queue, lowest first. Set
+    // only by reordering; null follows the default order. Cleared when the
+    // card's machine changes.
+    queue_position: integer("queue_position"),
     due_date: text("due_date"),
     content: text("content"),
     release_issues: text("release_issues", { mode: "json" }).$type<

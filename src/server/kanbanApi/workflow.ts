@@ -15,6 +15,11 @@ import {
   UnknownMachineError,
   updateCard,
 } from "~/server/kanbanApi/cards";
+import { publishKanbanEvent } from "~/server/events/bus";
+import {
+  getMachineQueue,
+  MachineNotFoundError,
+} from "~/server/kanbanApi/queues";
 
 /**
  * Shop workflow actions: one function per action, each taking the card id(s),
@@ -154,4 +159,61 @@ export async function assignMachine(
   if (machineId !== null) requireMachineCanTake(machineId, ids);
   for (const id of ids) await updateCard(id, { machine_id: machineId }, actor);
   return readCards(ids);
+}
+
+export class CardNotInQueueError extends WorkflowConflictError {
+  readonly code = "card_not_in_queue";
+  constructor(machine: string, cardIds: string[]) {
+    super(
+      `${cardIds.length === 1 ? "A part isn't" : `${cardIds.length} parts aren't`} in ${machine}'s queue`,
+      cardIds
+    );
+  }
+}
+
+/**
+ * Put a machine's queue in a mentor's order: `cardIds` become its front, in
+ * that order, and every other card in the queue returns to the default order.
+ * An empty list resets the whole queue. Positions belong to the card, so a
+ * waiting part keeps its place in other machines' queues too, and a machine's
+ * own parts always stay ahead of waiting ones. Not a status change: no history
+ * or Slack notification, only live updates for the cards that moved.
+ */
+export async function reorderMachineQueue(
+  machineId: string,
+  _actor: SessionActor,
+  { cardIds }: { cardIds: string[] }
+): Promise<Awaited<ReturnType<typeof getMachineQueue>>> {
+  if (typeof machineId !== "string" || !machineId)
+    throw new InvalidWorkflowInputError("Choose a machine");
+  if (!Array.isArray(cardIds))
+    throw new InvalidWorkflowInputError("List the parts in order");
+  const ids = cardIds.length ? requireCards(cardIds) : [];
+  const queue = await getMachineQueue(machineId).catch((error) => {
+    throw error instanceof MachineNotFoundError
+      ? new UnknownMachineError()
+      : error;
+  });
+  const queued = new Set(queue.cards.map((card) => card.id));
+  const outside = ids.filter((id) => !queued.has(id));
+  if (outside.length)
+    throw new CardNotInQueueError(queue.machine.name, outside);
+  const positions = new Map(ids.map((id, index) => [id, index]));
+  const moved = queue.cards.filter(
+    (card) => (positions.get(card.id) ?? null) !== card.queue_position
+  );
+  db.transaction((tx) => {
+    for (const card of moved)
+      tx.update(kanbanCards)
+        .set({ queue_position: positions.get(card.id) ?? null })
+        .where(eq(kanbanCards.id, card.id))
+        .run();
+  });
+  for (const card of moved)
+    publishKanbanEvent({
+      table: "kanban_cards",
+      action: "update",
+      id: card.id,
+    });
+  return getMachineQueue(machineId);
 }
