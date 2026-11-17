@@ -1,6 +1,7 @@
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { useUrlSearch } from "~/hooks/useUrlSearch";
 import { useUrlProjectView } from "~/hooks/useUrlProjectView";
+import { useBoardDensity } from "~/hooks/useBoardDensity";
 import { CardDeepLink } from "~/components/mfg/kanban/cards/CardDeepLink";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -30,7 +31,7 @@ export function MfgKanbanClient({
 }) {
   const queryClient = useQueryClient();
   const [isEditMode, setIsEditMode] = useState(false);
-  const [hideImages, setHideImages] = useState(false);
+  const { density, setDensity } = useBoardDensity();
   const [selectedProcessIds, setSelectedProcessIds] = useState<string[]>([]);
   const [hasWarningsOnly, setHasWarningsOnly] = useState(false);
   const [sortByUser, setSortByUser] = useState(false);
@@ -118,10 +119,6 @@ export function MfgKanbanClient({
       setIsEditMode(false);
       setOriginalConfig(null);
     }
-  };
-
-  const handleHideImages = () => {
-    setHideImages(!hideImages);
   };
 
   const handleProcessFilterChange = (processIds: string[]) => {
@@ -241,8 +238,8 @@ export function MfgKanbanClient({
               onEditCancel={handleCancel}
               onEditSave={handleSave}
               isSaving={saveConfigMutation.isPending}
-              onHideImages={handleHideImages}
-              hideImages={hideImages}
+              density={density}
+              onDensityChange={setDensity}
               hasWarningsOnly={hasWarningsOnly}
               onHasWarningsOnlyChange={setHasWarningsOnly}
               selectedProcessIds={selectedProcessIds}
@@ -270,7 +267,7 @@ export function MfgKanbanClient({
               config={config}
               onConfigChange={handleConfigChange}
               isEditMode={isEditMode}
-              hideImages={hideImages}
+              density={density}
               processFilterIds={selectedProcessIds}
               sortByUser={sortByUser}
               projectFilterIds={projectView.projectIds}

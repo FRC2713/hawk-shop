@@ -7,6 +7,7 @@ import type { UserRow } from "~/server/db/types";
 import type { KanbanColumn } from "~/server/kanbanApi/columnTypes";
 import { cn } from "~/lib/utils";
 import { KanbanCard } from "../cards/KanbanCard";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
 
 /** Droppable ids for lane cells; a drop moves the card's column only. */
 const CELL_PREFIX = "lane|";
@@ -28,7 +29,7 @@ function LaneCell({
   laneId,
   column,
   cards,
-  hideImages,
+  density,
   usersMap,
   isDraggingCard,
   selectedCardIds,
@@ -38,7 +39,7 @@ function LaneCell({
   laneId: string;
   column: KanbanColumn;
   cards: KanbanCardWithProcesses[];
-  hideImages: boolean;
+  density: BoardDensity;
   usersMap: Map<string, UserRow>;
   isDraggingCard: boolean;
   selectedCardIds: Set<string>;
@@ -69,7 +70,7 @@ function LaneCell({
         <KanbanCard
           key={card.id}
           card={card}
-          hideImages={hideImages}
+          density={density}
           usersMap={usersMap}
           isSelected={selectedCardIds.has(card.id)}
           columnId={column.id}
@@ -90,7 +91,7 @@ export function KanbanSwimlanes({
   columns,
   lanes,
   cardsByColumn,
-  hideImages,
+  density,
   usersMap,
   isDraggingCard,
   selectedCardIds,
@@ -99,7 +100,7 @@ export function KanbanSwimlanes({
   columns: KanbanColumn[];
   lanes: Lane[];
   cardsByColumn: Record<string, KanbanCardWithProcesses[]>;
-  hideImages: boolean;
+  density: BoardDensity;
   usersMap: Map<string, UserRow>;
   isDraggingCard: boolean;
   selectedCardIds: Set<string>;
@@ -193,7 +194,7 @@ export function KanbanSwimlanes({
                       laneId={lane.id}
                       column={column}
                       cards={inLane(lane.id, column.id)}
-                      hideImages={hideImages}
+                      density={density}
                       usersMap={usersMap}
                       isDraggingCard={isDraggingCard}
                       selectedCardIds={selectedCardIds}

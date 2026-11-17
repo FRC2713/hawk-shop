@@ -3,10 +3,10 @@ import { useState, useEffect, useMemo, memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Calendar, FolderKanban, User, Wrench, Package } from "lucide-react";
+import { AlertTriangle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
+import { Card } from "~/components/ui/card";
+import { Checkbox } from "~/components/ui/checkbox";
 import { Sheet, SheetTrigger } from "~/components/ui/sheet";
 import type { UserRow } from "~/server/db/types";
 import {
@@ -14,72 +14,15 @@ import {
   queryKeys,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
-import { KanbanCardHeader } from "./KanbanCardHeader";
 import { KanbanCardDetails } from "./KanbanCardDetails";
-import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
 import { cardThumbnailUrl } from "~/lib/api/onshape";
-import { cardMachineName } from "~/lib/cardMachine";
-
-/**
- * Format a date string for display
- * Returns "Invalid date" for invalid date strings
- */
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) {
-    return "Invalid date";
-  }
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-/**
- * Format relative time (e.g., "2 days ago", "in 3 days")
- */
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return "";
-
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Tomorrow";
-  if (diffDays === -1) return "Yesterday";
-  if (diffDays > 0) return `In ${diffDays} days`;
-  return `${Math.abs(diffDays)} days ago`;
-}
-
-/**
- * Get due date urgency info
- */
-function getDueDateUrgency(dateString: string): {
-  variant: "destructive" | "secondary" | "outline";
-  className?: string;
-} {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return { variant: "secondary" };
-
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays < 0) return { variant: "destructive" }; // Overdue
-  if (diffDays <= 2)
-    return {
-      variant: "outline",
-      className: "border-border bg-muted text-foreground",
-    }; // Due soon
-  return { variant: "secondary" };
-}
+import { cardFlags, cardMetaLine } from "~/lib/cardFace";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
+import { cn } from "~/lib/utils";
 
 interface KanbanCardProps {
   card: KanbanCardWithProcesses;
-  hideImages?: boolean;
+  density?: BoardDensity;
   usersMap: Map<string, UserRow>;
   isSelected?: boolean;
   columnId?: string;
@@ -94,7 +37,7 @@ interface KanbanCardProps {
 
 export const KanbanCard = memo(function KanbanCard({
   card,
-  hideImages = false,
+  density = "compact",
   usersMap,
   isSelected = false,
   columnId = "",
@@ -107,14 +50,12 @@ export const KanbanCard = memo(function KanbanCard({
 
   const imageUrl = useMemo(
     () =>
-      hideImages
-        ? undefined
-        : cardThumbnailUrl({
-            id: card.id,
-            image_url: card.image_url,
-            onshape_document_id: card.onshape_document_id,
-          }),
-    [card.id, card.image_url, card.onshape_document_id, hideImages]
+      cardThumbnailUrl({
+        id: card.id,
+        image_url: card.image_url,
+        onshape_document_id: card.onshape_document_id,
+      }),
+    [card.id, card.image_url, card.onshape_document_id]
   );
 
   // Reset error state when imageUrl changes
@@ -161,17 +102,11 @@ export const KanbanCard = memo(function KanbanCard({
     deleteCardMutation.mutate(card.id);
   };
 
-  const machineName = cardMachineName(card);
-  const hasMeta =
-    card.project ||
-    card.assignee ||
-    machineName ||
-    card.due_date ||
-    card.quantity_to_make ||
-    (card.processes && card.processes.length > 0);
-
-  // Get user from map instead of individual query
-  const assignedUser = card.assignee ? usersMap.get(card.assignee) : undefined;
+  const now = Date.now();
+  const meta = cardMetaLine(card, usersMap, now);
+  const flags = cardFlags(card, now);
+  const showImage = Boolean(imageUrl) && !imageError;
+  const pictures = density === "pictures";
 
   return (
     <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -179,114 +114,92 @@ export const KanbanCard = memo(function KanbanCard({
         <Card
           ref={setNodeRef}
           style={style}
-          className={`transition-all duration-200 ${
+          {...attributes}
+          {...listeners}
+          aria-label={card.title}
+          className={cn(
+            "cursor-grab rounded-md shadow-none transition-all duration-200 active:cursor-grabbing",
             isDragging
-              ? "border-l-primary ring-primary/20 scale-105 rotate-2 shadow-2xl ring-2"
+              ? "ring-primary/20 scale-105 rotate-2 shadow-2xl ring-2"
               : isSelected
                 ? "border-l-primary ring-primary/20 bg-primary/5 border-l-4 ring-2"
                 : "hover:shadow-md"
-          }`}
+          )}
         >
-          <div className="flex flex-col items-start justify-between gap-2">
-            <KanbanCardHeader
-              title={card.title}
-              warningCount={card.release_issues?.length ?? 0}
-              attributes={attributes}
-              listeners={listeners}
-              isSelected={isSelected}
-              onCheckboxClick={
-                onSelect
-                  ? (e) => onSelect(card.id, columnId, cardIndex, e)
-                  : undefined
-              }
-            />
-            <div className="flex w-full justify-center px-2">
-              {/* Card Image - Clickable to open drawer */}
-              {imageUrl && !imageError && !hideImages && (
-                <button
-                  className="w-full px-2.5 pb-2 text-left sm:px-3"
-                  aria-label="View card details"
-                >
-                  <div className="relative w-full" style={{ height: "120px" }}>
-                    <img
-                      src={imageUrl}
-                      alt={card.title}
-                      className="pointer-events-none absolute inset-0 size-full object-contain"
-                      onError={() => setImageError(true)}
-                    />
-                  </div>
-                </button>
+          <div
+            className={cn(
+              "grid items-center gap-x-2 gap-y-0.5 px-2 py-1.5",
+              onSelect
+                ? "grid-cols-[auto_auto_minmax(0,1fr)_auto]"
+                : "grid-cols-[auto_minmax(0,1fr)_auto]"
+            )}
+          >
+            {onSelect && (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onSelect(card.id, columnId, cardIndex, e);
+                }}
+                onPointerDown={(e) => {
+                  // Keep a click on the checkbox from starting a drag.
+                  e.stopPropagation();
+                }}
+                className="row-span-2 flex cursor-pointer items-center"
+              >
+                <Checkbox
+                  checked={isSelected}
+                  aria-label={`Select ${card.title}`}
+                  className="border-foreground/40 dark:border-foreground/60 pointer-events-none"
+                />
+              </div>
+            )}
+            <div
+              aria-hidden="true"
+              className="bg-muted row-span-2 flex size-7 items-center justify-center overflow-hidden rounded"
+            >
+              {showImage && !pictures ? (
+                <img
+                  src={imageUrl}
+                  alt=""
+                  className="pointer-events-none size-full object-contain"
+                  onError={() => setImageError(true)}
+                />
+              ) : (
+                <Package className="text-muted-foreground size-4" />
               )}
             </div>
-
-            {/* Card Meta */}
-            {hasMeta && (
-              <CardContent className="flex flex-wrap gap-1.5 px-2.5 pt-0 pb-2.5 sm:px-3 sm:pb-3">
-                {card.project && (
-                  <Badge
-                    variant="outline"
-                    className="max-w-full gap-1 border-[var(--hawk-teal)] text-xs font-semibold"
-                    title={`Project: ${card.project.name}`}
-                  >
-                    <FolderKanban className="size-3 shrink-0" />
-                    <span className="truncate">{card.project.name}</span>
-                  </Badge>
-                )}
-                {card.assignee && (
-                  <Badge
-                    variant="secondary"
-                    className="bg-primary/5 gap-1 text-xs font-normal"
-                  >
-                    <User className="size-3" />
-                    {assignedUser?.name || "Unassigned"}
-                  </Badge>
-                )}
-                {machineName && (
-                  <Badge
-                    variant="secondary"
-                    className="bg-muted text-foreground gap-1 text-xs font-normal"
-                  >
-                    <Wrench className="size-3" />
-                    {machineName}
-                  </Badge>
-                )}
-                {card.quantity_to_make && (
-                  <Badge
-                    variant="secondary"
-                    className="bg-muted text-foreground gap-1 text-xs font-normal"
-                  >
-                    <Package className="size-3" />
-                    Qty: {card.quantity_to_make}
-                  </Badge>
-                )}
-                {card.due_date &&
-                  (() => {
-                    const urgency = getDueDateUrgency(card.due_date);
-                    return (
-                      <Badge
-                        variant={urgency.variant}
-                        className={`gap-1 text-xs font-normal ${urgency.className || ""}`}
-                      >
-                        <Calendar className="size-3" />
-                        {formatRelativeTime(card.due_date)}
-                      </Badge>
-                    );
-                  })()}
-                {card.processes &&
-                  card.processes.length > 0 &&
-                  card.processes.map((process) => (
-                    <Badge
-                      key={process.id}
-                      variant="secondary"
-                      className="bg-muted text-foreground gap-1 text-xs font-normal"
-                    >
-                      <ProcessIcon process={process} className="size-3.5" />
-                      {process.name}
-                    </Badge>
-                  ))}
-              </CardContent>
-            )}
+            <h3 className="truncate text-[13px] leading-tight font-semibold">
+              {card.title}
+            </h3>
+            <span className="brand-figures justify-self-end text-xs font-bold">
+              {card.quantity_to_make != null && `×${card.quantity_to_make}`}
+            </span>
+            <p className="text-muted-foreground truncate text-xs" title={meta}>
+              {meta}
+            </p>
+            <span className="justify-self-end text-xs whitespace-nowrap text-[var(--emphasis)]">
+              {flags.length > 0 && (
+                <>
+                  <AlertTriangle
+                    className="mr-1 inline size-3 align-[-2px]"
+                    aria-hidden="true"
+                  />
+                  {flags.join(" · ")}
+                </>
+              )}
+            </span>
           </div>
+          {pictures && showImage && (
+            <div className="relative mx-2 mb-2 h-[120px]">
+              <img
+                src={imageUrl}
+                alt={card.title}
+                className="pointer-events-none absolute inset-0 size-full object-contain"
+                onError={() => setImageError(true)}
+              />
+            </div>
+          )}
         </Card>
       </SheetTrigger>
 

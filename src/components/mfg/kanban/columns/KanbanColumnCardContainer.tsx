@@ -2,12 +2,13 @@ import { PlusCircle, SquareDashedKanban, ArrowRight } from "lucide-react";
 import type { KanbanCardRow, UserRow } from "~/server/db/types";
 import { KanbanCard } from "../cards/KanbanCard";
 import { Button } from "~/components/ui/button";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
 
 interface KanbanColumnCardContainerProps {
   columnName: string;
   cards: KanbanCardRow[];
   isDraggingCard?: boolean;
-  hideImages?: boolean;
+  density?: BoardDensity;
   usersMap: Map<string, UserRow>;
   olderCardsCount?: number;
   columnId?: string;
@@ -25,7 +26,7 @@ export function KanbanColumnCardContainer({
   columnName,
   cards,
   isDraggingCard = false,
-  hideImages = false,
+  density = "compact",
   usersMap,
   olderCardsCount = 0,
   columnId = "",
@@ -56,7 +57,7 @@ export function KanbanColumnCardContainer({
         <KanbanCard
           key={card.id}
           card={card}
-          hideImages={hideImages}
+          density={density}
           usersMap={usersMap}
           isSelected={selectedCardIds.has(card.id)}
           columnId={columnId}

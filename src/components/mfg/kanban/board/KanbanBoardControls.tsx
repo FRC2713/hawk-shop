@@ -5,7 +5,6 @@ import {
   Save,
   Settings2,
   X,
-  Image,
   ChevronDown,
   User,
   FolderKanban,
@@ -26,6 +25,8 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { processesQuery } from "~/lib/api";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
+import type { BoardDensity } from "~/hooks/useBoardDensity";
+import { BoardDensityToggle } from "./BoardDensityToggle";
 
 interface KanbanBoardControlsProps {
   isEditMode: boolean;
@@ -33,8 +34,8 @@ interface KanbanBoardControlsProps {
   config: KanbanConfig | undefined;
   onEditCancel: () => void;
   onEditSave: () => void;
-  onHideImages: () => void;
-  hideImages: boolean;
+  density: BoardDensity;
+  onDensityChange: (density: BoardDensity) => void;
   isSaving: boolean;
   hasWarningsOnly: boolean;
   onHasWarningsOnlyChange: (value: boolean) => void;
@@ -57,8 +58,8 @@ export function KanbanBoardControls({
   onEditCancel,
   onEditSave,
   isSaving,
-  onHideImages,
-  hideImages,
+  density,
+  onDensityChange,
   hasWarningsOnly,
   onHasWarningsOnlyChange,
   selectedProcessIds,
@@ -76,7 +77,6 @@ export function KanbanBoardControls({
 
   const toggleValues = (() => {
     const values: string[] = [];
-    if (!hideImages) values.push("images");
     if (sortByUser) values.push("sortByUser");
     if (sortByProject) values.push("sortByProject");
     if (groupByProject) values.push("groupByProject");
@@ -84,12 +84,8 @@ export function KanbanBoardControls({
   })();
 
   const handleValueChange = (values: string[]) => {
-    const hasImages = values.includes("images");
     const hasSortByUser = values.includes("sortByUser");
 
-    if (hasImages !== !hideImages) {
-      onHideImages();
-    }
     if (hasSortByUser !== sortByUser) {
       onSortByUserChange(hasSortByUser);
     }
@@ -170,12 +166,6 @@ export function KanbanBoardControls({
         value={toggleValues}
         onValueChange={handleValueChange}
       >
-        <ToggleGroupItem value="images" aria-label="Toggle images">
-          <Image className="size-4" />
-          <span className="hidden sm:inline">
-            {hideImages ? "Show Images" : "Hide Images"}
-          </span>
-        </ToggleGroupItem>
         <ToggleGroupItem value="sortByUser" aria-label="Sort by user">
           <User className="size-4" />
           <span className="hidden sm:inline">Sort by User</span>
@@ -193,6 +183,8 @@ export function KanbanBoardControls({
           <span className="hidden sm:inline">Group by Project</span>
         </ToggleGroupItem>
       </ToggleGroup>
+
+      <BoardDensityToggle density={density} onChange={onDensityChange} />
 
       {/* Edit Mode Controls */}
       <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
