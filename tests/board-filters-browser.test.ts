@@ -78,7 +78,7 @@ test("board filters sit in one labelled row, each narrows the board and is kept 
       bar.getByRole("button", { name: "Project: All" }),
       bar.getByRole("button", { name: "Process: All" }),
       bar.getByRole("button", { name: "Machine: All" }),
-      bar.getByRole("button", { name: "Released by: All" }),
+      bar.getByRole("button", { name: "Submitter: All" }),
       bar.getByRole("button", { name: "Has warnings", exact: true }),
       bar.getByRole("combobox", { name: "Sort" }),
     ];
@@ -132,10 +132,10 @@ test("board filters sit in one labelled row, each narrows the board and is kept 
     await clearMenu(page, /^Machine:/);
 
     // Submitter
-    await pick(page, /^Released by:/, "Bob Ruiz");
+    await pick(page, /^Submitter:/, "Bob Ruiz");
     await expectShown(page, ["Plate", "Spacer"]);
     assert.deepEqual(params(page).getAll("submitter"), ["bob"]);
-    await clearMenu(page, /^Released by:/);
+    await clearMenu(page, /^Submitter:/);
 
     // Has warnings
     const warnings = bar.getByRole("button", {
@@ -153,6 +153,9 @@ test("board filters sit in one labelled row, each narrows the board and is kept 
     await bar.getByRole("combobox", { name: "Sort" }).click();
     await page.getByRole("option", { name: "Project" }).click();
     assert.equal(params(page).get("sort"), "project");
+    await bar.getByRole("combobox", { name: "Sort" }).click();
+    await page.getByRole("option", { name: "Assignee" }).click();
+    assert.equal(params(page).get("sort"), "assignee");
 
     // Unrelated parameters survive every write.
     assert.equal(params(page).get("keep"), "yes");
@@ -169,6 +172,7 @@ test("a filtered board URL restores every filter, survives reload and clears in 
       port: PORT,
       script,
       cards,
+      // `sort=user` is the old spelling of `sort=assignee`.
       search:
         "?q=p&project=drivetrain&project=intake&process=printing&machine=none&machine=printer&submitter=bob&sort=user",
     });
@@ -187,7 +191,7 @@ test("a filtered board URL restores every filter, survives reload and clears in 
         bar.getByRole("button", { name: "Machine: 2 selected" })
       ).toBeVisible();
       await expect(
-        bar.getByRole("button", { name: "Released by: Bob Ruiz" })
+        bar.getByRole("button", { name: "Submitter: Bob Ruiz" })
       ).toBeVisible();
       await expect(bar.getByRole("combobox", { name: "Sort" })).toHaveText(
         /Assignee/

@@ -29,12 +29,12 @@ import {
 const SORT_LABELS: Record<BoardSort, string> = {
   relevance: "Default",
   project: "Project",
-  user: "Assignee",
+  assignee: "Assignee",
 };
 
 /**
- * The board's one filter row: search, Project, Process, Machine, Released
- * by, Has warnings and Sort, labelled and wrapping. `children` is the view
+ * The board's one filter row: search, Project, Process, Machine, Submitter,
+ * Has warnings and Sort, labelled and wrapping. `children` is the view
  * slot on the right (density, rows), which changes layout, not which cards
  * match.
  */
@@ -142,7 +142,7 @@ export function BoardFilterBar({
           ]}
         />
         <FilterMenu
-          label="Released by"
+          label="Submitter"
           emptyText="No one has released a part"
           selectedIds={filters.submitterIds}
           onChange={(submitterIds) => onChange({ submitterIds })}

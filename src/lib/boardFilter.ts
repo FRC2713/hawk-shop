@@ -1,7 +1,7 @@
 import type { KanbanCardWithProcesses } from "~/lib/api";
 
 /** Card order within a column; `relevance` is search score, then load order. */
-export type BoardSort = "relevance" | "project" | "user";
+export type BoardSort = "relevance" | "project" | "assignee";
 
 /**
  * Everything that narrows or orders the board. It lives in the URL so a view
@@ -43,6 +43,7 @@ export function readBoardFilters(params: URLSearchParams): BoardFilters {
   const list = (name: string) =>
     [...new Set(params.getAll(name))].filter(Boolean);
   const sort = params.get("sort");
+  // `sort=user` is the old spelling, still in shared links.
   return {
     q: params.get("q") || "",
     projectIds: list(LIST_PARAMS.projectIds),
@@ -50,7 +51,12 @@ export function readBoardFilters(params: URLSearchParams): BoardFilters {
     machineIds: list(LIST_PARAMS.machineIds),
     submitterIds: list(LIST_PARAMS.submitterIds),
     warnings: params.get("warnings") === "1",
-    sort: sort === "project" || sort === "user" ? sort : "relevance",
+    sort:
+      sort === "project" || sort === "assignee"
+        ? sort
+        : sort === "user"
+          ? "assignee"
+          : "relevance",
   };
 }
 
