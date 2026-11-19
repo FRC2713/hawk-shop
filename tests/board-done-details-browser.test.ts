@@ -181,7 +181,7 @@ test("Done shows today's parts and links to the older ones", async () => {
     await expect(done.getByText("Finished last night")).toHaveCount(0);
     await expect(done.getByText("Finished last week")).toHaveCount(0);
     await expect(
-      done.getByRole("link", { name: "View 2 older cards" })
+      done.getByRole("link", { name: "View 2 older parts" })
     ).toHaveAttribute("href", "/kanban/done");
   } finally {
     await page.close();

@@ -1,5 +1,17 @@
-import { machineStatusLabels, type EquipmentListItem } from "~/lib/equipment";
+import { ExternalLink } from "lucide-react";
+import type { EquipmentListItem } from "~/lib/equipment";
 import { groupEquipment, type EquipmentGroupBy } from "./EquipmentList";
+import { MachineStatusPill } from "./MachineStatusPill";
+
+/* One colgroup for every group's table, so columns line up across groups. */
+const columns = [
+  { heading: "Machine", width: "24%" },
+  { heading: "Status", width: "16%" },
+  { heading: "Current part", width: "28%" },
+  { heading: "Queued", width: "9%", numeric: true },
+  { heading: "Done this week", width: "11%", numeric: true },
+  { heading: "SOP", width: "12%" },
+];
 
 export function EquipmentTable({
   equipment,
@@ -29,27 +41,29 @@ export function EquipmentTable({
             tabIndex={0}
             className="focus-visible:ring-ring/50 overflow-x-auto outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
           >
-            <table className="w-full min-w-[960px] text-left text-sm">
+            <table className="w-full min-w-[960px] table-fixed text-left text-sm">
               <caption className="sr-only">
                 {group.name} machines. Done this week counts parts since Monday,
                 UTC.
               </caption>
+              <colgroup>
+                {columns.map((column) => (
+                  <col key={column.heading} style={{ width: column.width }} />
+                ))}
+              </colgroup>
               <thead className="bg-muted text-xs">
                 <tr>
-                  {[
-                    "Machine",
-                    "Status",
-                    "Current part",
-                    "Queued",
-                    "Done this week",
-                    "SOP",
-                  ].map((heading) => (
+                  {columns.map((column) => (
                     <th
-                      key={heading}
+                      key={column.heading}
                       scope="col"
-                      className="px-4 py-3 font-semibold"
+                      className={
+                        column.numeric
+                          ? "px-4 py-3 text-right font-semibold"
+                          : "px-4 py-3 font-semibold"
+                      }
                     >
-                      {heading}
+                      {column.heading}
                     </th>
                   ))}
                 </tr>
@@ -69,7 +83,10 @@ export function EquipmentTable({
                         );
                     }}
                   >
-                    <th scope="row" className="px-4 py-3 font-semibold">
+                    <th
+                      scope="row"
+                      className="px-4 py-3 font-semibold break-words"
+                    >
                       <a
                         className="text-[var(--link)] underline-offset-4 hover:underline focus-visible:outline-2"
                         href={`/equipment/${encodeURIComponent(item.id)}`}
@@ -82,34 +99,45 @@ export function EquipmentTable({
                         </div>
                       )}
                     </th>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {machineStatusLabels[item.machine_status]}
-                    </td>
                     <td className="px-4 py-3">
-                      {item.current_parts?.length
-                        ? item.current_parts
-                            .map((part) => part.title)
-                            .join(", ")
-                        : "None"}
+                      <MachineStatusPill status={item.machine_status} />
                     </td>
-                    <td className="brand-figures px-4 py-3">
+                    <td className="px-4 py-3 break-words">
+                      {item.current_parts?.length ? (
+                        item.current_parts.map((part) => part.title).join(", ")
+                      ) : (
+                        <span className="text-muted-foreground">None</span>
+                      )}
+                    </td>
+                    <td className="brand-figures px-4 py-3 text-right">
                       {item.queue_size}
                     </td>
-                    <td className="brand-figures px-4 py-3">
+                    <td className="brand-figures px-4 py-3 text-right">
                       {item.weekly_stats?.done ?? 0}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <a
-                        className="text-[var(--link)] underline underline-offset-4 focus-visible:outline-2"
-                        href={
-                          item.documentation_url ||
-                          `/equipment/${encodeURIComponent(item.id)}/edit`
-                        }
-                        target={item.documentation_url ? "_blank" : undefined}
-                        rel={item.documentation_url ? "noreferrer" : undefined}
-                      >
-                        {item.documentation_url ? "Open SOP" : "Add SOP link"}
-                      </a>
+                      {item.documentation_url ? (
+                        <a
+                          className="inline-flex items-center gap-1 font-semibold text-[var(--link)] underline underline-offset-4 focus-visible:outline-2"
+                          href={item.documentation_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open SOP
+                          <ExternalLink
+                            className="size-3.5"
+                            aria-hidden="true"
+                          />
+                        </a>
+                      ) : (
+                        <a
+                          className="text-muted-foreground text-xs underline-offset-4 hover:text-[var(--link)] hover:underline focus-visible:outline-2"
+                          href={`/equipment/${encodeURIComponent(item.id)}/edit`}
+                          aria-label={`Add SOP link for ${item.name}`}
+                        >
+                          Add SOP
+                        </a>
+                      )}
                     </td>
                   </tr>
                 ))}

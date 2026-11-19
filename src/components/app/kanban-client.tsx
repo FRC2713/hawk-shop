@@ -233,6 +233,7 @@ export function MfgKanbanClient({
               filters={filters}
               // Column editing needs whole columns to drag.
               rowsBy={isEditMode ? "none" : rowsBy}
+              onClearFilters={clearFilters}
               onAddColumn={isEditMode ? handleAddColumn : undefined}
               onRenameColumn={isEditMode ? handleRenameColumn : undefined}
               onDeleteColumn={isEditMode ? handleDeleteColumn : undefined}

@@ -3,6 +3,8 @@ import AppLayout from "../layouts/AppLayout.astro";
 import SlackSettings from "../components/islands/SlackSettings";
 ---
 
-<AppLayout title="Slack settings"
-  ><main><SlackSettings client:load /></main></AppLayout
+<AppLayout title="Slack notifications"
+  ><main class="bg-card max-w-2xl rounded-lg border p-4 sm:p-6">
+    <SlackSettings client:load />
+  </main></AppLayout
 >

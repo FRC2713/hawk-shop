@@ -3,7 +3,13 @@ import { useState, useEffect, useMemo, memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Package } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock,
+  Package,
+  RotateCcw,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -16,10 +22,17 @@ import {
 } from "~/lib/api";
 import { KanbanCardDetails } from "./KanbanCardDetails";
 import { cardThumbnailUrl } from "~/lib/api/onshape";
-import { cardFlags, cardMetaLine } from "~/lib/cardFace";
+import { cardFlags, cardMetaLine, type CardFlagKind } from "~/lib/cardFace";
 import type { BoardDensity } from "~/hooks/useBoardDensity";
 import { cn } from "~/lib/utils";
 import type { CardSelectHandler } from "~/lib/cardSelection";
+
+/** Release warnings, send-backs and review waits each read differently. */
+const FLAG_ICONS: Record<CardFlagKind, LucideIcon> = {
+  warning: AlertTriangle,
+  "sent-back": RotateCcw,
+  "review-wait": Clock,
+};
 
 interface KanbanCardProps {
   card: KanbanCardWithProcesses;
@@ -187,20 +200,33 @@ export const KanbanCard = memo(function KanbanCard({
             <span className="brand-figures justify-self-end text-xs font-bold">
               {card.quantity_to_make != null && `×${card.quantity_to_make}`}
             </span>
-            <p className="text-muted-foreground truncate text-xs" title={meta}>
+            <p
+              className="text-muted-foreground col-span-2 truncate text-xs"
+              title={meta}
+            >
               {meta}
             </p>
-            <span className="justify-self-end text-xs whitespace-nowrap text-[var(--emphasis)]">
-              {flags.length > 0 && (
-                <>
-                  <AlertTriangle
-                    className="mr-1 inline size-3 align-[-2px]"
-                    aria-hidden="true"
-                  />
-                  {flags.join(" · ")}
-                </>
-              )}
-            </span>
+            {flags.length > 0 && (
+              <ul
+                className={cn(
+                  "text-emphasis col-span-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs",
+                  onSelect ? "col-start-3" : "col-start-2"
+                )}
+              >
+                {flags.map(({ label, kind }) => {
+                  const Icon = FLAG_ICONS[kind];
+                  return (
+                    <li
+                      key={kind}
+                      className="flex items-center gap-1 whitespace-nowrap"
+                    >
+                      <Icon className="size-3 shrink-0" aria-hidden="true" />
+                      {label}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
           {pictures && showImage && (
             <div className="relative mx-2 mb-2 h-[120px]">

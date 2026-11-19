@@ -1,8 +1,13 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { format, parseISO } from "date-fns";
+import { format, isToday, parseISO, startOfToday } from "date-fns";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, EllipsisVertical } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  EllipsisVertical,
+  TriangleAlert,
+} from "lucide-react";
 import {
   deleteKanbanCard,
   equipmentQuery,
@@ -18,6 +23,8 @@ import { cardMachineName, unlinkedMachineText } from "~/lib/cardMachine";
 import { cardOnshapeUrl } from "~/lib/onshapeLinks";
 import { PHONE_HOME } from "~/lib/phone";
 import { memberName } from "~/lib/phoneParts";
+import { cn } from "~/lib/utils";
+import { WORKFLOW_COLUMN_IDS } from "~/server/kanbanApi/columnTypes";
 import { loadState } from "./LoadState";
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { Button } from "~/components/ui/button";
@@ -43,7 +50,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { StatusBar } from "./StatusBar";
+import { StatusBar, stepLabel } from "./StatusBar";
 import { PartActionBar } from "./PartActionBar";
 
 type PartPageProps = {
@@ -120,12 +127,21 @@ function PartDetails({
   const picture = pictureFailed ? undefined : cardThumbnailUrl(card);
   const history = card.status_history;
 
-  const byline = [
-    card.project?.name,
-    versionName,
+  const released =
     submitter &&
-      `released by ${submitter}, ${format(parseISO(card.date_created), "MMM d")}`,
-  ].filter(Boolean);
+    `Released by ${submitter}, ${format(parseISO(card.date_created), "MMM d")}`;
+  const due = card.due_date ? parseISO(card.due_date) : null;
+  const dueState =
+    !due || card.column_id === WORKFLOW_COLUMN_IDS.done
+      ? null
+      : due < startOfToday()
+        ? "overdue"
+        : isToday(due)
+          ? "today"
+          : null;
+  const reviewNotes = card.review_notes ?? [];
+  const sentBackBy = new Set(reviewNotes.map((note) => note.author_name));
+  const oneAuthor = sentBackBy.size === 1 ? reviewNotes[0].author_name : null;
 
   return (
     <PartShell
@@ -163,10 +179,14 @@ function PartDetails({
       <main data-report-card-id={card.id} className="flex flex-col gap-4 p-4">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
+            {card.project?.name && (
+              <p className="eyebrow mb-1 break-words">{card.project.name}</p>
+            )}
             <h1 className="text-2xl leading-tight break-words">{card.title}</h1>
-            {byline.length > 0 && (
-              <p className="text-muted-foreground text-sm">
-                {byline.join(" · ")}
+            {(versionName || released) && (
+              <p className="text-muted-foreground mt-1 text-sm">
+                {versionName && <span className="block">{versionName}</span>}
+                {released && <span className="block">{released}</span>}
               </p>
             )}
           </div>
@@ -191,7 +211,7 @@ function PartDetails({
 
         <StatusBar columnId={card.column_id} />
 
-        <dl className="bg-border grid grid-cols-2 gap-px overflow-hidden rounded-xl border">
+        <dl className="bg-border grid grid-cols-2 gap-px overflow-hidden rounded-xl border lg:grid-cols-3">
           <Fact name="Quantity" figure={card.quantity_to_make != null}>
             {card.quantity_to_make ?? "Not set"}
           </Fact>
@@ -212,21 +232,55 @@ function PartDetails({
           <Fact name="Made by">
             {memberName(users, card.assignee, viewerId) ?? "Nobody yet"}
           </Fact>
-          <Fact name="Due">
-            {card.due_date
-              ? format(parseISO(card.due_date), "EEE, MMM d")
-              : "No due date"}
+          <Fact
+            name="Due"
+            className={
+              dueState === "overdue"
+                ? "bg-[color-mix(in_srgb,var(--primary)_8%,var(--card))] dark:bg-[color-mix(in_srgb,var(--primary)_15%,var(--card))]"
+                : undefined
+            }
+          >
+            {dueState && (
+              <>
+                <span className="text-emphasis flex items-center gap-1 text-xs font-bold tracking-wide uppercase">
+                  {dueState === "overdue" && (
+                    <TriangleAlert
+                      aria-hidden="true"
+                      className="size-3.5 flex-none"
+                    />
+                  )}
+                  {dueState === "overdue" ? "Overdue" : "Today"}
+                </span>{" "}
+              </>
+            )}
+            <span
+              className={cn(
+                "whitespace-nowrap",
+                dueState && "text-emphasis font-bold"
+              )}
+            >
+              {due ? format(due, "EEE, MMM d") : "No due date"}
+            </span>
           </Fact>
         </dl>
 
-        {!!card.review_notes?.length && (
+        {reviewNotes.length > 0 && (
           <Callout
-            label="Sent back"
+            label={oneAuthor ? `Sent back by ${oneAuthor}` : "Sent back"}
             rail="red"
-            items={card.review_notes.map((note) => ({
+            emphasis
+            items={reviewNotes.map((note) => ({
               key: note.id,
               text: note.text,
-              detail: note.author_name,
+              detail:
+                [
+                  !oneAuthor && note.author_name,
+                  note.created_at &&
+                    format(parseISO(note.created_at), "EEE, MMM d"),
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || null,
+              smallDetail: true,
             }))}
           />
         )}
@@ -251,7 +305,7 @@ function PartDetails({
           />
         )}
 
-        <div className="flex flex-col">
+        <div className="flex flex-col divide-y border-y">
           {sop && machine && (
             <LinkRow href={sop} hint="Procedure" external>
               {machine} SOP
@@ -268,7 +322,7 @@ function PartDetails({
             onClick={() => setHistoryOpen((open) => !open)}
             className="flex min-h-11 items-center justify-between gap-3 text-left"
           >
-            History
+            <span className="font-heading font-semibold">History</span>
             <span className="text-muted-foreground flex items-center gap-1 text-xs">
               {history.length === 1 ? "1 change" : `${history.length} changes`}
               <ChevronRight
@@ -277,31 +331,35 @@ function PartDetails({
               />
             </span>
           </button>
-          {historyOpen && (
-            <section aria-label="Status history">
-              <ol className="divide-y rounded-lg border">
-                {history.map((entry) => (
-                  <li key={entry.id} className="space-y-1 px-4 py-3 text-sm">
-                    <p className="font-semibold break-words">
-                      {entry.from_status === null
-                        ? `Released into ${entry.to_status}`
-                        : `${entry.from_status} → ${entry.to_status}`}
-                    </p>
-                    <p className="text-muted-foreground break-words">
-                      {entry.actor_name}
-                    </p>
-                    <time
-                      dateTime={entry.moved_at}
-                      className="brand-figures text-muted-foreground block text-xs"
-                    >
-                      {new Date(entry.moved_at).toLocaleString()}
-                    </time>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
         </div>
+        {historyOpen && (
+          <section aria-label="Status history">
+            <ol className="divide-y rounded-lg border">
+              {history.map((entry) => {
+                const to = stepLabel(entry.to_column_id, entry.to_status);
+                return (
+                  <li key={entry.id} className="space-y-0.5 px-4 py-3">
+                    <p className="text-sm font-semibold break-words">
+                      {entry.from_status === null
+                        ? `Released into ${to}`
+                        : `${stepLabel(entry.from_column_id, entry.from_status)} → ${to}`}
+                    </p>
+                    <p className="text-muted-foreground text-xs break-words">
+                      {entry.actor_name} ·{" "}
+                      <time dateTime={entry.moved_at}>
+                        {format(parseISO(entry.moved_at), "EEE, MMM d · ")}
+                        <span className="brand-figures">
+                          {format(parseISO(entry.moved_at), "h:mm")}
+                        </span>
+                        {format(parseISO(entry.moved_at), " a")}
+                      </time>
+                    </p>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        )}
       </main>
 
       <Dialog open={pictureOpen} onOpenChange={setPictureOpen}>
@@ -356,8 +414,8 @@ function PartShell({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-xl flex-col lg:min-h-0">
-      <header className="bg-card sticky top-0 z-30 flex items-center justify-between border-b px-2 py-1">
+    <div className="lg:bg-card mx-auto flex min-h-dvh w-full max-w-xl flex-col lg:my-8 lg:min-h-0 lg:max-w-2xl lg:overflow-hidden lg:rounded-xl lg:border lg:shadow-sm">
+      <header className="bg-card sticky top-0 z-30 flex items-center justify-between border-b px-2 py-1 lg:static">
         <a
           href={PHONE_HOME}
           onClick={goBack}
@@ -371,7 +429,7 @@ function PartShell({
       <div className="flex-1">{children}</div>
       <footer
         aria-label="Part actions"
-        className="bg-card sticky bottom-0 z-30 flex gap-2 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] empty:hidden"
+        className="bg-card sticky bottom-0 z-30 flex gap-2 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] empty:hidden lg:static lg:pb-4"
       >
         {footer}
       </footer>
@@ -394,15 +452,17 @@ function goBack(event: MouseEvent<HTMLAnchorElement>) {
 function Fact({
   name,
   figure,
+  className,
   children,
 }: {
   name: string;
   figure?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className="bg-card px-3 py-2.5">
-      <dt className="text-muted-foreground font-sans text-xs">{name}</dt>
+    <div className={cn("bg-card px-3 py-2.5", className)}>
+      <dt className="eyebrow mb-0.5">{name}</dt>
       <dd
         data-fact={name}
         className={
@@ -417,30 +477,54 @@ function Fact({
   );
 }
 
+/** A BRANDING callout: red rail for a correction, teal for context. */
 function Callout({
   label,
   rail,
+  emphasis,
   items,
 }: {
   label: string;
   rail: "red" | "teal";
-  items: { key: string | number; text: string; detail?: string | null }[];
+  /** Set the heading in `text-emphasis`, for the instruction to act on. */
+  emphasis?: boolean;
+  items: {
+    key: string | number;
+    text: string;
+    detail?: string | null;
+    /** A byline-sized detail (who, when) instead of a second instruction. */
+    smallDetail?: boolean;
+  }[];
 }) {
   return (
     <section
       aria-label={label}
-      className={
-        "bg-muted rounded-lg border-l-4 px-3.5 py-3 " +
-        (rail === "red" ? "border-l-primary" : "border-l-status-active")
-      }
+      className={cn(
+        "callout lg:bg-background",
+        rail === "red" ? "callout-red" : "callout-teal"
+      )}
     >
-      <h2 className="font-semibold">{label}</h2>
+      <h2
+        className={cn(
+          "font-heading font-semibold",
+          emphasis && "text-emphasis"
+        )}
+      >
+        {label}
+      </h2>
       <ul className="mt-1 space-y-2 text-sm">
         {items.map((item) => (
           <li key={item.key}>
             <p className="break-words whitespace-pre-wrap">{item.text}</p>
             {item.detail && (
-              <p className="text-muted-foreground">{item.detail}</p>
+              <p
+                className={cn(
+                  "text-muted-foreground",
+                  item.smallDetail && "mt-0.5 text-xs"
+                )}
+              >
+                {item.detail}
+              </p>
             )}
           </li>
         ))}
@@ -464,7 +548,7 @@ function LinkRow({
     <a
       href={href}
       {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-      className="text-foreground flex min-h-11 items-center justify-between gap-3 border-b no-underline"
+      className="text-foreground flex min-h-11 items-center justify-between gap-3 no-underline"
     >
       <span className="min-w-0 break-words">{children}</span>
       {hint && (

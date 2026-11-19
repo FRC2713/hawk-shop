@@ -90,7 +90,7 @@ export function EditProcessDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Process</DialogTitle>
+          <DialogTitle>Edit process</DialogTitle>
           <DialogDescription>
             Update the process name and description.
           </DialogDescription>

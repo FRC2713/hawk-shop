@@ -69,7 +69,7 @@ Disabled means new status changes are not captured. A current channel problem ca
 
 ## Problem reports
 
-On the Slack settings page, a workspace administrator can enable **Problem reports** and choose a report channel. Invite the bot to that channel first. Leaving it blank uses the status notification channel. Reports are independent of status notifications and disabled by default.
+On the Slack notifications page, a workspace administrator can enable **Problem reports** and choose a report channel. Invite the bot to that channel first. Leaving it blank uses the status notification channel. Reports are independent of status notifications and disabled by default.
 
 Members use **Report a problem** in their account menu, the action in card details, or **Report this** beside an error. Reports attach the current page, selected card when available, member identity, app revision, browser, viewport, and error reference. Query strings, fragments, headers, and cookies are excluded. Each member can submit five reports per ten minutes. A confirmation means the report is saved durably for delivery; submission failures keep the text in the dialog.
 

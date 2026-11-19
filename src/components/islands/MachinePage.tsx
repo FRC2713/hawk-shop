@@ -1,7 +1,19 @@
 import { latestStatusEntry } from "~/lib/statusHistory";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  ExternalLink,
+  Link2,
+  MapPin,
+  Pencil,
+  Trash2,
+  TriangleAlert,
+  User,
+} from "lucide-react";
 import { Workflow } from "./Workflow";
 import { Button } from "~/components/ui/button";
 import { ErrorDisplay } from "~/components/mfg/ErrorDisplay";
@@ -16,7 +28,7 @@ import { DeleteEquipmentDialog } from "~/components/mfg/equipment/DeleteEquipmen
 import { kanbanCardsQuery, kanbanCardDetailsQuery } from "~/lib/api/kanban";
 import { userQuery } from "~/lib/api/users";
 import { queryKeys } from "~/lib/api/keys";
-import { machineStatusLabels } from "~/lib/equipment";
+import { MachineStatusPill } from "~/components/mfg/equipment/MachineStatusPill";
 
 function CurrentPart({ id, title }: { id: string; title: string }) {
   const details = useQuery(kanbanCardDetailsQuery(id));
@@ -31,22 +43,25 @@ function CurrentPart({ id, title }: { id: string; title: string }) {
     "in-progress"
   );
   return (
-    <li className="space-y-1 rounded-md border p-4 break-words">
-      <h3 className="font-semibold">{title}</h3>
-      <p>
-        {details.data?.assignee
-          ? user.data?.name || "Assigned member"
-          : "Unassigned"}
-      </p>
-      <p className="text-muted-foreground text-sm">
-        In Progress ·{" "}
-        {entered ? (
-          <time dateTime={entered}>
-            {formatDistanceToNow(new Date(entered))} in status
-          </time>
-        ) : (
-          "Time in status unknown"
-        )}
+    <li className="bg-card space-y-1 rounded-lg border p-4 break-words shadow-xs">
+      <h3 className="text-base font-semibold">{title}</h3>
+      <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <span className="inline-flex items-center gap-1">
+          <User className="size-3.5" aria-hidden="true" />
+          {details.data?.assignee
+            ? user.data?.name || "Assigned member"
+            : "Unassigned"}
+        </span>
+        <span>
+          In Progress ·{" "}
+          {entered ? (
+            <time dateTime={entered}>
+              {formatDistanceToNow(new Date(entered))} in status
+            </time>
+          ) : (
+            "Time in status unknown"
+          )}
+        </span>
       </p>
       {details.error && <ErrorDisplay error={details.error} />}
       {user.error && <ErrorDisplay error={user.error} />}
@@ -91,9 +106,13 @@ export function MachinePageContent({ id }: { id: string }) {
   };
   const edit = `/equipment/${encodeURIComponent(id)}/edit`;
   return (
-    <main className="h-full overflow-y-auto px-4 py-6 sm:px-6">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <a href="/equipment" className="text-link underline">
+    <main className="h-full overflow-y-auto pt-4 pb-10">
+      <div className="mx-auto w-full max-w-6xl space-y-6 px-5">
+        <a
+          href="/equipment"
+          className="text-muted-foreground focus-visible:ring-ring/50 -ml-1 inline-flex min-h-11 items-center gap-1 rounded-md pr-2 text-sm font-semibold outline-none hover:text-[var(--link)] focus-visible:ring-[3px]"
+        >
+          <ChevronLeft className="size-4" aria-hidden="true" />
           Back to equipment
         </a>
         {equipment.error ? (
@@ -101,23 +120,26 @@ export function MachinePageContent({ id }: { id: string }) {
         ) : equipment.isPending ? (
           <p role="status">Loading machine…</p>
         ) : !machine ? (
-          <h1>Equipment not found</h1>
+          <h1 className="text-3xl">Equipment not found</h1>
         ) : (
           <>
-            <header className="space-y-2">
-              <h1 className="text-3xl font-bold break-words uppercase italic">
-                {machine.name}
-              </h1>
-              <p>{machine.location || "No location set"}</p>
-              <p>
-                {machine.processes.map((process) => process.name).join(", ") ||
-                  "No process"}
-              </p>
-              <p className="font-semibold">
-                {machineStatusLabels[machine.machine_status]}
+            <header className="-mt-2 space-y-3">
+              <h1 className="text-3xl break-words">{machine.name}</h1>
+              <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="size-4" aria-hidden="true" />
+                  {machine.location || "No location set"}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {machine.processes
+                    .map((process) => process.name)
+                    .join(", ") || "No process"}
+                </span>
+                <MachineStatusPill status={machine.machine_status} />
               </p>
               {machine.description && (
-                <p className="break-words">{machine.description}</p>
+                <p className="max-w-prose break-words">{machine.description}</p>
               )}
             </header>
             {!!machine.image_urls?.length && (
@@ -130,32 +152,53 @@ export function MachinePageContent({ id }: { id: string }) {
                     key={url}
                     src={url}
                     alt={`${machine.name} photo ${index + 1}`}
-                    className="h-48 w-64 shrink-0 rounded-md border object-contain"
+                    className="bg-card h-48 w-64 shrink-0 rounded-lg border object-contain"
                   />
                 ))}
               </div>
             )}
-            <div className="flex flex-wrap gap-3">
-              <Button asChild>
-                <a
-                  href={machine.documentation_url || edit}
-                  {...(machine.documentation_url
-                    ? { target: "_blank", rel: "noopener noreferrer" }
-                    : {})}
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              {machine.documentation_url ? (
+                <Button asChild className="col-span-2 min-h-11 sm:min-h-9">
+                  <a
+                    href={machine.documentation_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink aria-hidden="true" />
+                    Open SOP
+                  </a>
+                </Button>
+              ) : (
+                <Button
+                  asChild
+                  variant="outline"
+                  className="col-span-2 min-h-11 sm:min-h-9"
                 >
-                  {machine.documentation_url ? "Open SOP" : "Add SOP link"}
-                </a>
-              </Button>
-              <Button variant="outline" onClick={() => setReporting(true)}>
+                  <a href={edit}>
+                    <Link2 aria-hidden="true" />
+                    Add SOP link
+                  </a>
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="min-h-11 sm:min-h-9"
+                onClick={() => setReporting(true)}
+              >
+                <TriangleAlert aria-hidden="true" />
                 Report a problem
               </Button>
-              <Button asChild variant="outline">
-                <a href={edit}>Edit equipment</a>
+              <Button asChild variant="outline" className="min-h-11 sm:min-h-9">
+                <a href={edit}>
+                  <Pencil aria-hidden="true" />
+                  Edit equipment
+                </a>
               </Button>
             </div>
             {reporting && (
               <form
-                className="space-y-3 rounded-md border p-4"
+                className="bg-card space-y-3 rounded-lg border p-4"
                 onSubmit={(event) => {
                   event.preventDefault();
                   report.mutate();
@@ -194,14 +237,15 @@ export function MachinePageContent({ id }: { id: string }) {
               </form>
             )}
             {machine.maintenance_note && (
-              <aside className="border-destructive bg-muted space-y-2 rounded-md border-l-4 p-4 break-words">
-                <h2 className="font-semibold">Needs maintenance</h2>
+              <aside className="callout callout-red space-y-2 pl-5 break-words">
+                <h2 className="section-title">Needs maintenance</h2>
                 <p>{machine.maintenance_note}</p>
-                <p>
+                <p className="text-muted-foreground text-sm">
                   Reported by {machine.maintenance_reported_by || "Unknown"}
                 </p>
                 <Button
                   variant="outline"
+                  className="min-h-11 sm:min-h-9"
                   disabled={fix.isPending}
                   onClick={() => fix.mutate()}
                 >
@@ -210,109 +254,168 @@ export function MachinePageContent({ id }: { id: string }) {
                 {fix.error && <ErrorDisplay error={fix.error} />}
               </aside>
             )}
-            <section aria-label="Now" className="space-y-3">
-              <h2 className="text-xl font-semibold">Now</h2>
-              {machine.current_parts.length ? (
-                <ul className="space-y-3">
-                  {machine.current_parts.map((part) => (
-                    <CurrentPart key={part.id} {...part} />
-                  ))}
-                </ul>
-              ) : (
-                <p>No part in progress.</p>
-              )}
-            </section>
-            <section aria-label="Queue" className="space-y-3">
-              <h2 className="text-xl font-semibold">Queue</h2>
-              <p className="text-muted-foreground text-sm">
-                Backlog parts on this machine, plus compatible parts waiting for
-                a machine. Use the arrows to change their order.
-              </p>
-              {queue.error ? (
-                <ErrorDisplay error={queue.error} />
-              ) : queue.isPending ? (
-                <p role="status">Loading queue…</p>
-              ) : !queue.data.length ? (
-                <p>No parts queued.</p>
-              ) : (
-                <ol
-                  aria-label="Machine queue"
-                  className="list-inside list-decimal space-y-3"
-                >
-                  {queue.data.map((card, index) => (
-                    <li
-                      key={card.id}
-                      className="rounded-md border p-3 break-words"
-                    >
-                      <span className="font-semibold">{card.title}</span>
-                      <div className="mt-2 flex gap-2">
-                        <Button
-                          variant="outline"
-                          aria-label={`Move ${card.title} up`}
-                          disabled={!index || reorder.isPending}
-                          onClick={() => move(index, -1)}
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start xl:gap-8">
+              <div className="min-w-0 space-y-6">
+                <section aria-label="Now" className="space-y-3">
+                  <h2 className="section-title">Now</h2>
+                  {machine.current_parts.length ? (
+                    <ul className="space-y-3">
+                      {machine.current_parts.map((part) => (
+                        <CurrentPart key={part.id} {...part} />
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+                      No part in progress.
+                    </p>
+                  )}
+                </section>
+                <section aria-label="Queue" className="space-y-3">
+                  <div>
+                    <h2 className="section-title flex items-baseline gap-2">
+                      Queue
+                      {!!queue.data?.length && (
+                        <span className="brand-figures text-muted-foreground text-sm font-normal">
+                          {queue.data.length}
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-muted-foreground mt-1 text-sm">
+                      Backlog parts for this machine and compatible unassigned
+                      parts. Reorder with the arrows.
+                    </p>
+                  </div>
+                  {queue.error ? (
+                    <ErrorDisplay error={queue.error} />
+                  ) : queue.isPending ? (
+                    <p role="status">Loading queue…</p>
+                  ) : !queue.data.length ? (
+                    <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+                      No parts queued.
+                    </p>
+                  ) : (
+                    <ol aria-label="Machine queue" className="space-y-1.5">
+                      {queue.data.map((card, index) => (
+                        <li
+                          key={card.id}
+                          className="bg-card flex items-center gap-3 rounded-md border py-0.5 pr-1 pl-3"
                         >
-                          ↑ Up
-                        </Button>
-                        <Button
-                          variant="outline"
-                          aria-label={`Move ${card.title} down`}
-                          disabled={
-                            index === queue.data.length - 1 || reorder.isPending
-                          }
-                          onClick={() => move(index, 1)}
-                        >
-                          ↓ Down
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              {reorder.error && <ErrorDisplay error={reorder.error} />}
-              <p role="status" className="sr-only">
-                {reorder.isPending
-                  ? "Saving queue order"
-                  : reorder.isSuccess
-                    ? "Queue order saved"
-                    : ""}
-              </p>
-            </section>
-            <section
-              aria-label="This week"
-              className="space-y-2 rounded-md border p-4"
-            >
-              <h2 className="text-xl font-semibold">This week</h2>
-              <p>
-                <span className="brand-figures">
-                  {machine.weekly_stats.done}
-                </span>{" "}
-                parts done
-              </p>
-              <p>
-                <span className="brand-figures">
-                  {machine.weekly_stats.sent_back}
-                </span>{" "}
-                sent back
-              </p>
-              <p className="text-muted-foreground text-sm">
-                Since Monday, UTC. Counts distinct parts, not quantities.
-              </p>
-            </section>
-            <section aria-label="Last maintenance" className="space-y-2">
-              <h2 className="text-xl font-semibold">Last maintenance</h2>
-              <p>
-                {machine.last_maintenance_at ? (
-                  <time dateTime={machine.last_maintenance_at}>
-                    {new Date(machine.last_maintenance_at).toLocaleString()}
-                  </time>
-                ) : (
-                  "No maintenance date recorded."
-                )}
-              </p>
-            </section>
-            <div className="border-t pt-4">
-              <Button variant="ghost" onClick={() => setDeleting(true)}>
+                          <span
+                            className="brand-figures text-muted-foreground w-6 shrink-0 text-right text-sm"
+                            aria-hidden="true"
+                          >
+                            {index + 1}
+                          </span>
+                          <span
+                            className="min-w-0 flex-1 truncate text-sm font-semibold"
+                            title={card.title}
+                          >
+                            {card.title}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 shrink-0"
+                            aria-label={`Move ${card.title} up`}
+                            disabled={!index || reorder.isPending}
+                            onClick={() => move(index, -1)}
+                          >
+                            <ChevronUp aria-hidden="true" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="-ml-3 size-11 shrink-0"
+                            aria-label={`Move ${card.title} down`}
+                            disabled={
+                              index === queue.data.length - 1 ||
+                              reorder.isPending
+                            }
+                            onClick={() => move(index, 1)}
+                          >
+                            <ChevronDown aria-hidden="true" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {reorder.error && <ErrorDisplay error={reorder.error} />}
+                  <p role="status" className="sr-only">
+                    {reorder.isPending
+                      ? "Saving queue order"
+                      : reorder.isSuccess
+                        ? "Queue order saved"
+                        : ""}
+                  </p>
+                </section>
+              </div>
+              <div className="min-w-0 space-y-6">
+                <section aria-label="This week" className="space-y-3">
+                  <h2 className="section-title">This week</h2>
+                  <div className="grid grid-cols-2 gap-3">
+                    <p className="bg-card rounded-lg border p-4 shadow-xs">
+                      <span className="brand-figures block text-3xl leading-9 font-semibold">
+                        {machine.weekly_stats.done}
+                      </span>{" "}
+                      <span className="text-muted-foreground text-xs">
+                        {machine.weekly_stats.done === 1
+                          ? "part done"
+                          : "parts done"}
+                      </span>
+                    </p>
+                    <p className="bg-card rounded-lg border p-4 shadow-xs">
+                      <span className="brand-figures block text-3xl leading-9 font-semibold">
+                        {machine.weekly_stats.sent_back}
+                      </span>{" "}
+                      <span className="text-muted-foreground text-xs">
+                        sent back
+                      </span>
+                    </p>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    Since Monday, UTC. Counts distinct parts, not quantities.
+                  </p>
+                </section>
+                <section aria-label="Last maintenance" className="space-y-3">
+                  <h2 className="section-title">Last maintenance</h2>
+                  <p className="bg-card rounded-lg border p-4 shadow-xs">
+                    {machine.last_maintenance_at ? (
+                      <time
+                        dateTime={machine.last_maintenance_at}
+                        title={new Date(
+                          machine.last_maintenance_at
+                        ).toLocaleString()}
+                        className="flex flex-col"
+                      >
+                        <span className="font-semibold">
+                          {formatDistanceToNow(
+                            new Date(machine.last_maintenance_at),
+                            { addSuffix: true }
+                          )}
+                        </span>
+                        <span className="text-muted-foreground text-xs">
+                          {format(
+                            new Date(machine.last_maintenance_at),
+                            "MMM d, yyyy"
+                          )}
+                        </span>
+                      </time>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">
+                        No maintenance date recorded.
+                      </span>
+                    )}
+                  </p>
+                </section>
+              </div>
+            </div>
+            <div className="border-t pt-3">
+              <Button
+                variant="ghost"
+                className="-ml-3 min-h-11 text-[var(--emphasis)] hover:text-[var(--emphasis)] sm:min-h-9"
+                onClick={() => setDeleting(true)}
+              >
+                <Trash2 aria-hidden="true" />
                 Delete equipment
               </Button>
               {deleting && cards.isPending && (

@@ -15,7 +15,7 @@ const users = [
   { onshape_user_id: "alex", name: "Alex" },
 ];
 
-test("compact cards show quantity, material, machine, assignee and time in status", async () => {
+test("compact cards show quantity, machine, assignee, time in status and material", async () => {
   const { browser, page } = await launchBoardBrowser(chromium);
   try {
     await openBoard(page, {
@@ -44,7 +44,7 @@ test("compact cards show quantity, material, machine, assignee and time in statu
 
     const socket = boardCardFace(page, "Socket Cap Head");
     await expect(socket).toContainText("×2");
-    await expect(socket).toContainText("PLA · Printer 2 · Sam · 5 h");
+    await expect(socket).toContainText("Printer 2 · Sam · 5 h · PLA");
     // Tags every card carried are gone from the face.
     await expect(socket).not.toContainText("Drivetrain");
     await expect(socket).not.toContainText("3D Printing");
@@ -52,7 +52,7 @@ test("compact cards show quantity, material, machine, assignee and time in statu
 
     const torx = boardCardFace(page, "Torx drive");
     await expect(torx).toContainText("×4");
-    await expect(torx).toContainText("PETG · any 3D Printing · 26 h");
+    await expect(torx).toContainText("any 3D Printing · 26 h · PETG");
 
     await expect(
       page

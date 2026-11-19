@@ -40,10 +40,7 @@ export function SubmitterNotes({
   return (
     <section aria-labelledby={headingId} className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <h4
-          id={headingId}
-          className="text-muted-foreground text-sm font-semibold tracking-wide uppercase"
-        >
+        <h4 id={headingId} className="font-heading text-base font-semibold">
           Notes from {submitterName}
         </h4>
         {draft === null && (
@@ -88,7 +85,7 @@ export function SubmitterNotes({
           </div>
         </form>
       ) : notes ? (
-        <div className="bg-muted/50 rounded-lg p-4">
+        <div className="callout callout-teal">
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{notes}</p>
         </div>
       ) : (

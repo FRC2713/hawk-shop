@@ -13,6 +13,7 @@ interface KanbanColumnCardContainerProps {
   usersMap: Map<string, UserRow>;
   now: number;
   olderCardsCount?: number;
+  isFiltered?: boolean;
   columnId?: string;
   selectedCardIds?: ReadonlySet<string>;
   selectedColumnId?: string | null;
@@ -27,6 +28,7 @@ export function KanbanColumnCardContainer({
   usersMap,
   now,
   olderCardsCount = 0,
+  isFiltered = false,
   columnId = "",
   selectedCardIds = new Set(),
   selectedColumnId = null,
@@ -44,7 +46,9 @@ export function KanbanColumnCardContainer({
     return (
       <div className="border-secondary/20 flex h-full flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors">
         <SquareDashedKanban className="text-muted-foreground/50 size-6" />
-        <p className="text-muted-foreground text-xs sm:text-sm">No cards</p>
+        <p className="text-muted-foreground text-xs sm:text-sm">
+          {isFiltered ? "No matching cards" : "No cards"}
+        </p>
       </div>
     );
   }

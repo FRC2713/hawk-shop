@@ -49,7 +49,7 @@ export function DeleteProcessDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Process</AlertDialogTitle>
+          <AlertDialogTitle>Delete process</AlertDialogTitle>
           <AlertDialogDescription>
             Are you sure you want to delete &quot;{process.name}&quot;? This
             action cannot be undone. The process will be removed from any

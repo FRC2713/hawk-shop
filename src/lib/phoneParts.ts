@@ -142,3 +142,32 @@ export function needsYouReason(card: DesignerCard): string | null {
     return `Release warning: ${issue.message}`;
   return null;
 }
+
+/**
+ * What a machine is doing, in parts for a list that shows a short status
+ * beside the machine and the detail under it: "maintenance" with its note,
+ * "busy" with who is running which part and for how long ("2 d"), or
+ * "idle".
+ */
+export function machineActivityParts(
+  machine: { status: string | null; maintenance_note?: string | null },
+  running:
+    | { title: string; assignee: string | null; date_updated: string }
+    | undefined,
+  users: readonly Member[],
+  now: number,
+  viewerId?: string
+):
+  | { state: "maintenance"; note: string | null }
+  | { state: "busy"; who: string | null; part: string; since: string }
+  | { state: "idle" } {
+  if (machine.status === "maintenance")
+    return { state: "maintenance", note: machine.maintenance_note || null };
+  if (!running) return { state: "idle" };
+  return {
+    state: "busy",
+    who: memberName(users, running.assignee, viewerId),
+    part: running.title,
+    since: elapsed(running.date_updated, now),
+  };
+}

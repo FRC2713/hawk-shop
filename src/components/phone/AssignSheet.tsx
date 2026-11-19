@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Wrench } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -116,20 +117,23 @@ export function AssignSheet({
     >
       <SheetContent
         side="bottom"
-        className="bg-card max-h-[85dvh] gap-2 overflow-y-auto rounded-t-2xl px-4 pt-2 pb-[calc(1.25rem+env(safe-area-inset-bottom))] [&>button:last-child]:hidden"
+        className="bg-card max-h-[85dvh] gap-2 overflow-y-auto rounded-t-2xl px-4 pt-2 pb-[calc(1.25rem+env(safe-area-inset-bottom))] lg:inset-x-auto lg:bottom-6 lg:left-1/2 lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:rounded-2xl lg:border lg:pt-4 lg:pb-5 [&>button:last-child]:hidden"
       >
         <span
           aria-hidden="true"
-          className="bg-border h-1 w-10 self-center rounded-full"
+          className="bg-border h-1 w-10 self-center rounded-full lg:hidden"
         />
         <div className="flex items-center justify-between">
-          <SheetTitle className="text-lg">{title}</SheetTitle>
-          <SheetClose className="text-status-active min-h-11 px-2 font-semibold">
+          <SheetTitle className="font-heading text-xl font-semibold">
+            {title}
+          </SheetTitle>
+          <SheetClose className="text-link min-h-11 px-2 font-semibold">
             Cancel
           </SheetClose>
         </div>
-        <SheetDescription className="text-xs">
-          Numbers are parts already in each queue.
+        <SheetDescription className="sr-only">
+          Send the parts back to their process queue or to one machine. Each
+          choice shows how many parts are already queued there.
         </SheetDescription>
 
         <Choice
@@ -148,21 +152,47 @@ export function AssignSheet({
                 ).length
               : undefined
           }
-          highlight
           disabled={assign.isPending}
           onSelect={() => assign.mutate(null)}
         />
-        {machines.map((machine) => (
-          <Choice
-            key={machine.id}
-            name={machine.name}
-            detail={activity(machine)}
-            warn={needsMaintenance(machine)}
-            count={machineQueue(machine, allCards).length}
-            disabled={needsMaintenance(machine) || assign.isPending}
-            onSelect={() => assign.mutate(machine.id)}
-          />
-        ))}
+        {machines.length > 0 && (
+          <p aria-hidden="true" className="eyebrow pt-2">
+            Or one machine
+          </p>
+        )}
+        {machines.map((machine) =>
+          needsMaintenance(machine) ? (
+            <Choice
+              key={machine.id}
+              name={machine.name}
+              detail={
+                <>
+                  <span className="text-emphasis flex items-center gap-1 font-semibold">
+                    <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
+                    Needs maintenance
+                  </span>
+                  {machine.maintenance_note && (
+                    <span className="text-muted-foreground line-clamp-1">
+                      {machine.maintenance_note}
+                    </span>
+                  )}
+                </>
+              }
+              down
+              disabled
+              onSelect={() => {}}
+            />
+          ) : (
+            <Choice
+              key={machine.id}
+              name={machine.name}
+              detail={activity(machine)}
+              count={machineQueue(machine, allCards).length}
+              disabled={assign.isPending}
+              onSelect={() => assign.mutate(machine.id)}
+            />
+          )
+        )}
         {machines.length === 0 && (
           <p className="text-muted-foreground text-sm">
             No machine can make all of these parts.
@@ -183,16 +213,15 @@ function Choice({
   name,
   detail,
   count,
-  highlight,
-  warn,
+  down,
   disabled,
   onSelect,
 }: {
   name: string;
   detail: ReactNode;
   count?: number;
-  highlight?: boolean;
-  warn?: boolean;
+  /** A machine under maintenance: shown with its reason, never faded. */
+  down?: boolean;
   disabled?: boolean;
   onSelect: () => void;
 }) {
@@ -203,23 +232,33 @@ function Choice({
       disabled={disabled}
       onClick={onSelect}
       className={cn(
-        "bg-muted text-foreground flex min-h-14 items-center gap-3 rounded-lg border px-3 py-2 text-left disabled:opacity-50",
-        highlight && "border-status-active"
+        "bg-muted text-foreground flex min-h-14 items-center gap-3 rounded-lg border px-3 py-2 text-left",
+        down
+          ? "disabled:cursor-not-allowed"
+          : "hover:border-foreground/40 transition-colors disabled:opacity-50"
       )}
     >
       <span className="min-w-0 flex-1">
-        <span className="block font-semibold">{name}</span>
         <span
-          className={cn(
-            "block text-xs",
-            warn ? "text-destructive" : "text-muted-foreground"
-          )}
+          className={cn("block font-semibold", down && "text-muted-foreground")}
         >
-          {detail}
+          {name}
         </span>
+        <span className="text-muted-foreground block text-xs">{detail}</span>
       </span>
-      {count !== undefined && (
-        <span className="brand-figures font-bold">{count}</span>
+      {down ? (
+        <span className="text-foreground rounded-full border px-2 py-0.5 text-xs font-semibold">
+          Down
+        </span>
+      ) : (
+        count !== undefined && (
+          <span className="shrink-0 text-right leading-tight">
+            <span className="brand-figures block font-bold">{count}</span>
+            <span className="text-muted-foreground block text-[11px]">
+              queued
+            </span>
+          </span>
+        )
       )}
     </button>
   );

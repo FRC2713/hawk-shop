@@ -242,16 +242,16 @@ test("selected parts are assigned from a sheet of the machines that can take the
   await sheet.waitFor();
   assert.deepEqual(await choices(page), [
     {
-      text: "Any 3D PrintingWhoever runs 3D Printing claims them first3",
+      text: "Any 3D PrintingWhoever runs 3D Printing claims them first3queued",
       disabled: false,
     },
     // Queue sizes count what Shop and Next up count: the machine's own parts
     // and the parts waiting for any machine of its process.
-    { text: "Printer 1Idle3", disabled: false },
-    { text: "Printer 2Sam Park · Gusset · 40 min5", disabled: false },
-    { text: "Printer 3Needs maintenance3", disabled: true },
+    { text: "Printer 1Idle3queued", disabled: false },
+    { text: "Printer 2Sam Park · Gusset · 40 min5queued", disabled: false },
+    // A machine under maintenance says why and is marked down, not counted.
+    { text: "Printer 3Needs maintenanceDown", disabled: true },
   ]);
-  await sheet.getByText("Numbers are parts already in each queue.").waitFor();
 
   await sheet.getByRole("button", { name: /Printer 1/ }).click();
   await sheet.waitFor({ state: "detached" });
@@ -312,5 +312,21 @@ test("search in the header finds any backlog part by name", async () => {
     .waitFor();
   await page.getByRole("button", { name: "Close search" }).click();
   assert.equal((await groups(page)).length, 3);
+  await page.close();
+});
+
+test("the whole left gutter of a row selects the part without opening it", async () => {
+  const { page } = await open();
+  const row = page.getByRole("listitem").filter({ hasText: "Side Plate" });
+  const gutter = row.locator("label");
+  // The test page has no stylesheet, so this checks the wiring: a click on
+  // the gutter label, not the checkbox, ticks the part.
+  await gutter.dispatchEvent("click");
+  await page.getByRole("button", { name: "Assign 1 part" }).waitFor();
+  assert.equal(
+    await row.getByRole("checkbox").getAttribute("aria-checked"),
+    "true"
+  );
+  assert.match(page.url(), /\/backlog$/);
   await page.close();
 });

@@ -16,6 +16,7 @@ export function PartRow({
   detail,
   leading,
   trailing,
+  stacked: stackedProp,
   className,
 }: {
   card: { id: string; title: string };
@@ -23,15 +24,17 @@ export function PartRow({
   detail?: ReactNode;
   leading?: ReactNode;
   trailing?: ReactNode;
+  /** Put the detail under the title even without a control beside it. */
+  stacked?: boolean;
   className?: string;
 }) {
   // A row with a control beside it has little width left, so its detail goes
   // under the title instead of beside it.
-  const stacked = !!(leading || trailing);
+  const stacked = !!(stackedProp || leading || trailing);
   return (
     <li
       className={cn(
-        "flex min-h-11 items-center gap-3 px-3 not-last:border-b",
+        "hover:bg-muted/60 flex min-h-11 items-center gap-3 px-3 transition-colors not-last:border-b",
         className
       )}
     >
@@ -57,7 +60,7 @@ export function PartRow({
         {detail && (
           <span
             className={cn(
-              "text-muted-foreground text-xs",
+              "text-muted-foreground text-xs lg:text-sm",
               !stacked && "max-w-[50%] text-right"
             )}
           >

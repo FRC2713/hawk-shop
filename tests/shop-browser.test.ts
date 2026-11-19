@@ -189,26 +189,34 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
       machines.getByRole("link").filter({ hasText: name });
     const machine = async (name: string) => ({
       status: (await row(name).locator("[data-status]").textContent())?.trim(),
+      detail:
+        (await row(name).locator("[data-detail]").count()) > 0
+          ? (await row(name).locator("[data-detail]").textContent())?.trim()
+          : null,
       queued: (await row(name).locator("[data-queued]").textContent())?.trim(),
       href: await row(name).getAttribute("href"),
     });
     assert.deepEqual(await machine("Printer 1"), {
       status: "Idle",
+      detail: "1 part waiting",
       queued: "1",
       href: "/equipment/printer-1",
     });
     assert.deepEqual(await machine("Printer 2"), {
-      status: "Sam Park · Button Head · 40 min",
+      status: "Running",
+      detail: "Sam Park · Button Head · 40 min",
       queued: "2",
       href: "/equipment/printer-2",
     });
     assert.deepEqual(await machine("Printer 3"), {
-      status: "Needs maintenance: nozzle clog",
+      status: "Maintenance",
+      detail: "nozzle clog",
       queued: "1",
       href: "/equipment/printer-3",
     });
     assert.deepEqual(await machine("Chop Saw"), {
       status: "Idle",
+      detail: "Nothing queued",
       queued: "0",
       href: "/equipment/saw",
     });
@@ -225,7 +233,7 @@ test("the Shop tab shows counts, what needs attention and every machine", async 
       .getByRole("link", { name: /Belly pan waiting for review/ })
       .waitFor();
     assert.equal(await count("Done today"), "0");
-    assert.match((await machine("Printer 2")).status ?? "", /22 h/);
+    assert.match((await machine("Printer 2")).detail ?? "", /22 h/);
 
     assert.ok(
       await page.evaluate(

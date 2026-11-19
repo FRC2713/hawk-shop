@@ -1,6 +1,7 @@
-import { Image as ImageIcon, Wrench } from "lucide-react";
+import { Image as ImageIcon } from "lucide-react";
 import type { EquipmentWithProcesses } from "~/lib/api";
-import { machineStatusLabels, type EquipmentListItem } from "~/lib/equipment";
+import type { EquipmentListItem } from "~/lib/equipment";
+import { MachineStatusPill } from "./MachineStatusPill";
 
 export type EquipmentGroupBy = "process" | "location" | "none";
 
@@ -115,17 +116,13 @@ export function EquipmentList({ equipment, groupBy }: EquipmentListProps) {
                             {detail}
                           </span>
                         )}
+                        <MachineStatusPill
+                          status={item.machine_status}
+                          className="mt-1.5 self-start"
+                        />
                       </span>
-                      <span className="flex shrink-0 flex-col items-end gap-1 text-xs">
-                        <span className="flex items-center gap-1 font-semibold">
-                          {item.machine_status === "needs-maintenance" && (
-                            <Wrench className="size-4" aria-hidden="true" />
-                          )}
-                          {machineStatusLabels[item.machine_status]}
-                        </span>
-                        <span>
-                          <span className="brand-figures">{count}</span> queued
-                        </span>
+                      <span className="shrink-0 text-xs whitespace-nowrap">
+                        <span className="brand-figures">{count}</span> queued
                       </span>
                     </a>
                   </li>

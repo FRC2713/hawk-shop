@@ -34,6 +34,9 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--primary-foreground);
   --color-border: var(--border);
+  --color-link: var(--link);
+  --color-emphasis: var(--emphasis);
+  --color-icon-accent: var(--icon-accent);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
@@ -68,8 +71,9 @@
   --primary-foreground: #ffffff;
   --secondary: #f2f2f2;
   --secondary-foreground: #333333;
-  --muted: #f2f2f2;
-  --muted-foreground: #333333;
+  --muted: #e8e8e8;
+  /* A Charcoal tint so secondary text steps down yet stays AA on white and Light Grey. */
+  --muted-foreground: #5c5c5c;
   --accent: #f2f2f2;
   --accent-foreground: #ba0c2f;
   --destructive: #ba0c2f;
@@ -79,6 +83,8 @@
   /* Text-only roles: link text and red emphasis such as "Happening now". */
   --link: var(--primary);
   --emphasis: var(--primary);
+  /* Decorative icons: True Red on light, Light Teal on dark surfaces. */
+  --icon-accent: var(--primary);
   --radius: 0.5rem;
 }
 
@@ -205,6 +211,7 @@ h2 {
     --input: #4a4a4a;
     --link: var(--hawk-teal);
     --emphasis: color-mix(in srgb, var(--hawk-red) 45%, var(--hawk-white));
+    --icon-accent: var(--hawk-teal);
     color-scheme: dark;
   }
   /* Active navigation reads as white text over the red underline. */
@@ -254,6 +261,9 @@ h2 {
 }
 .account-trigger::-webkit-details-marker {
   display: none;
+}
+.account-trigger-name {
+  color: var(--foreground);
 }
 .account-trigger:hover,
 .account-menu[open] .account-trigger {
@@ -314,6 +324,11 @@ h2 {
   font-weight: 600;
   color: var(--foreground);
   text-decoration: none;
+}
+.account-sign-out[aria-current="page"] {
+  color: var(--link);
+  box-shadow: inset 3px 0 var(--primary);
+  padding-inline-start: 0.75rem;
 }
 .account-sign-out:hover {
   color: var(--link, var(--primary));
@@ -417,5 +432,107 @@ h2 {
   }
   .phone-page-layout .shop-content {
     padding: 0;
+  }
+}
+
+/*
+ * Shared page vocabulary, so every page steps the same way:
+ * `.section-title` heads a section, `.eyebrow` is a small capitals label over
+ * a group or figure, `.text-link` is an inline link and `.section-link` a
+ * "see all" link beside a section title.
+ */
+@layer components {
+  .section-title {
+    font-family: var(--hawk-heading-font);
+    font-size: 1.125rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+  }
+  .eyebrow {
+    font-family: var(--hawk-heading-font);
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .text-link {
+    color: var(--link);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .text-link:hover {
+    text-decoration: none;
+  }
+  .section-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 2.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--link);
+    text-decoration: none;
+  }
+  /* BRANDING.md callout: Light Grey panel, 4px rail, 12/14px padding. Red
+     rails flag a problem or a rule, teal rails give context or an OK. */
+  .callout {
+    background: var(--muted);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 0.875rem;
+    box-shadow: inset 4px 0 0 var(--hawk-grey);
+  }
+  .callout-red {
+    box-shadow: inset 4px 0 0 var(--primary);
+  }
+  .callout-teal {
+    box-shadow: inset 4px 0 0 var(--hawk-teal);
+  }
+  /* "Back to …" above a page title; pair with a ChevronLeft icon. */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 2.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    text-decoration: none;
+  }
+  .back-link:hover {
+    color: var(--link);
+  }
+  .section-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+/* Nine top links share the header with the account menu at the desktop
+   breakpoint; the name returns once there is room. */
+@media (min-width: 64rem) and (max-width: 79.999rem) {
+  .app-navigation {
+    gap: 0.85rem;
+  }
+  .account-trigger-name {
+    display: none;
+  }
+}
+
+/* The mark keeps its 12px clear space, but the space hangs into the header
+   gutter so the numerals line up with the content and footer edge. */
+.app-header .brand-mark {
+  margin-inline-start: -12px;
+}
+@media (max-width: 600px) {
+  /* Small phones inset page content by 36px; the mark's clear space starts
+     at the same edge as the page title. */
+  .app-header .shop-header {
+    padding-inline: 1.5rem 1rem;
+  }
+  .app-header .brand-mark {
+    margin-inline-start: 0;
   }
 }

@@ -172,7 +172,7 @@ test("station columns show running work, ordered next parts and maintenance inst
       "Wheel plate",
       "Alice",
       "2 hours",
-      "Quantity: 6",
+      "Qty 6",
       "Spare bracket",
     ])
       await expect(alpha).toContainText(text);

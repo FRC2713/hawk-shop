@@ -627,7 +627,7 @@ test(
         );
         await page.goto(origin + "/kanban/done");
         await expect(
-          page.getByRole("heading", { name: "Done Cards" })
+          page.getByRole("heading", { name: "Done parts" })
         ).toBeVisible();
         await page.goto(
           origin +
@@ -1339,7 +1339,7 @@ test(
       });
       await page.goto(origin + "/kanban/done?q=24-164&keep=yes#finished");
       const search = page.getByRole("textbox", {
-        name: "Search completed cards",
+        name: "Search done parts",
       });
       const bracket = page.getByRole("heading", {
         name: first.title,
@@ -1363,7 +1363,7 @@ test(
       await expect(bracket).toBeVisible();
       await search.fill("no-such-finished-part");
       await expect(bracket).toHaveCount(0);
-      await expect(page.getByText("No matching completed cards")).toBeVisible();
+      await expect(page.getByText("No matching done parts")).toBeVisible();
       await page.getByRole("button", { name: "Clear search" }).click();
       await expect(bracket).toBeVisible();
       await expect(plate).toBeVisible();

@@ -314,7 +314,7 @@ export function EquipmentEditor({
 
   return (
     <section
-      className="bg-card mx-auto w-full max-w-3xl rounded-xl border"
+      className="bg-card w-full max-w-3xl rounded-xl border"
       onPaste={(event) => {
         const files = imagesFrom(
           [...event.clipboardData.items]
@@ -362,6 +362,7 @@ export function EquipmentEditor({
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
+                variant="outline"
                 onClick={() => cameraInput.current?.click()}
                 className="min-h-11"
               >
@@ -647,7 +648,7 @@ export function EquipmentEditor({
           {equipment && (
             <section
               aria-label="Maintenance"
-              className="bg-muted flex flex-col gap-3 rounded-lg border p-4"
+              className="bg-card flex flex-col gap-3 rounded-lg border p-4"
             >
               <h2 className="text-lg">Maintenance</h2>
               {maintenance ? (
@@ -667,9 +668,20 @@ export function EquipmentEditor({
               ) : (
                 <>
                   <p>No maintenance reported.</p>
-                  <Label htmlFor={`${ids}-maintenance`}>Maintenance note</Label>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor={`${ids}-maintenance`}>
+                      Maintenance note
+                    </Label>
+                    <p
+                      id={`${ids}-maintenance-hint`}
+                      className="text-muted-foreground text-xs"
+                    >
+                      Describe the problem to flag this machine.
+                    </p>
+                  </div>
                   <Textarea
                     id={`${ids}-maintenance`}
+                    aria-describedby={`${ids}-maintenance-hint`}
                     value={maintenanceNote}
                     maxLength={1000}
                     onChange={(event) => setMaintenanceNote(event.target.value)}
@@ -690,7 +702,7 @@ export function EquipmentEditor({
           )}
         </fieldset>
 
-        <footer className="bg-muted flex flex-row flex-wrap items-center justify-between gap-3 border-t px-6 py-4 sm:justify-between">
+        <footer className="bg-muted flex flex-row flex-wrap items-center justify-between gap-3 rounded-b-xl border-t px-6 py-4 sm:justify-between">
           {!editing ? (
             <div className="flex min-h-9 items-center gap-2">
               <Checkbox

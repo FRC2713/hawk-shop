@@ -66,7 +66,7 @@ export function AddProcessDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Process</DialogTitle>
+          <DialogTitle>Add process</DialogTitle>
           <DialogDescription>
             Add a new manufacturing process. Processes can be assigned to
             equipment and kanban cards.
@@ -115,7 +115,7 @@ export function AddProcessDialog({
               {createProcess.isPending && (
                 <Loader2 className="mr-2 size-4 animate-spin" />
               )}
-              Add Process
+              Add process
             </Button>
           </DialogFooter>
         </form>

@@ -42,6 +42,8 @@ interface KanbanColumnProps {
   isLastColumn?: boolean;
   /** For Done: parts finished before today, which only the link reaches. */
   olderCardsCount?: number;
+  /** Filters are on, so an empty column says no card matched. */
+  isFiltered?: boolean;
   now: number;
   selectedCardIds?: ReadonlySet<string>;
   selectedColumnId?: string | null;
@@ -59,6 +61,7 @@ export function KanbanColumn({
   usersMap,
   isLastColumn = false,
   olderCardsCount = 0,
+  isFiltered = false,
   now,
   selectedCardIds = new Set(),
   selectedColumnId = null,
@@ -110,7 +113,7 @@ export function KanbanColumn({
         aria-label={column.title}
         ref={combinedRef}
         style={style}
-        className={`group/column bg-card flex h-full w-[280px] shrink-0 flex-col rounded-xl border transition-all duration-200 sm:w-[320px] ${
+        className={`group/column bg-card flex h-full max-w-[420px] min-w-[280px] flex-1 basis-0 flex-col rounded-xl border transition-all duration-200 ${
           isDragging
             ? "ring-primary/20 scale-[1.02] rotate-1 shadow-2xl ring-2"
             : ""
@@ -138,7 +141,8 @@ export function KanbanColumn({
               isEditing={isEditing && !isLastColumn}
               onEditStart={() => !isLastColumn && setIsEditing(true)}
               onEditEnd={() => setIsEditing(false)}
-              isReadOnly={isLastColumn}
+              // Renaming is part of Edit Columns; a stray click must not start it.
+              isReadOnly={isLastColumn || !isEditMode}
             />
             <Badge
               variant="secondary"
@@ -196,6 +200,7 @@ export function KanbanColumn({
           usersMap={usersMap}
           now={now}
           olderCardsCount={olderCardsCount}
+          isFiltered={isFiltered}
           columnId={column.id}
           selectedCardIds={selectedCardIds}
           selectedColumnId={selectedColumnId}

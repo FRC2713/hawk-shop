@@ -1,5 +1,5 @@
 ---
-import { OctagonX, TriangleAlert } from "lucide-react";
+import { CircleCheck, OctagonX, TriangleAlert } from "lucide-react";
 import AppLayout from "../layouts/AppLayout.astro";
 import { isOnshapeConfigured, onshapeOrigin } from "../lib/onshapeApi/auth";
 import { summarizeOnshapeUsage } from "../lib/onshapeApi/cache";
@@ -17,137 +17,223 @@ const { totals, byDay } = summarizeOnshapeUsage();
 const budget = onshapeBudgetStatus();
 const refreshMinutes = minRefreshMs() / 60_000;
 const { rows, latest, warnAt, exhausted, low } = onshapeRemainingStatus();
-// Brand callout: Light Grey panel, 4px red rail, 12/14px padding.
-const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
+// Shared classes so both integration pages read the same way.
+const code = "bg-muted rounded px-1 text-[0.85em] [overflow-wrap:anywhere]";
+// Inside a callout the panel is already muted, so code sits on the card.
+const calloutCode =
+  "bg-card rounded px-1 text-[0.85em] [overflow-wrap:anywhere]";
+// Labels may wrap; justify-between pins every figure to the tile bottom.
+const tile = "bg-muted flex flex-col justify-between gap-2 rounded-md p-3";
+const tileLabel = "text-muted-foreground text-xs font-semibold uppercase";
+const tileFigure = "brand-figures text-2xl font-semibold";
+const th = "font-heading py-2 font-semibold";
 ---
 
 <AppLayout title="Onshape API status"
-  ><main class="bg-card max-w-xl space-y-4 rounded-lg border p-6">
+  ><main class="bg-card max-w-2xl space-y-6 rounded-lg border p-4 sm:p-6">
     <h1 class="text-2xl">Onshape API status</h1>
-    <p>
-      {
-        configured
-          ? "The server has an Onshape API key pair configured."
-          : "Onshape API access is not configured. Ask the deployment operator to set the server API key pair."
-      }
-    </p>
+    {
+      configured ? (
+        <div class="callout callout-teal flex gap-3">
+          <CircleCheck
+            aria-hidden="true"
+            className="text-icon-accent mt-0.5 size-5 shrink-0"
+          />
+          <div class="min-w-0 space-y-1">
+            <p class="font-heading font-semibold">Connected</p>
+            <p>The server has an Onshape API key pair configured.</p>
+            <p class="text-muted-foreground text-sm">
+              Onshape stack:{" "}
+              <span class="brand-figures break-all">{onshapeOrigin()}</span>
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div class="callout callout-red flex gap-3">
+          <OctagonX aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+          <div class="min-w-0 space-y-1">
+            <p class="font-heading font-semibold">Not configured</p>
+            <p>
+              Onshape API access is not configured. Ask the deployment operator
+              to set the server API key pair,{" "}
+              <code class={calloutCode}>ONSHAPE_ACCESS_KEY</code> and{" "}
+              <code class={calloutCode}>ONSHAPE_SECRET_KEY</code>.
+            </p>
+          </div>
+        </div>
+      )
+    }
     {
       exhausted.length > 0 && (
-        <div role="alert" class={callout}>
-          <h2 class="flex items-center gap-2 text-base">
-            <OctagonX aria-hidden="true" className="size-5 shrink-0" />
-            Onshape API allocation used up
-          </h2>
-          <p>
-            Onshape answered 402 for{" "}
-            {exhausted.map((row) => row.label).join(", ")} on{" "}
-            {when(exhausted[0].observedAt)}.
-          </p>
+        <div role="alert" class="callout callout-red flex gap-3">
+          <OctagonX aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+          <div class="min-w-0 space-y-1">
+            <h2 class="font-heading text-base font-semibold">
+              Onshape API allocation used up
+            </h2>
+            <p>
+              Onshape answered 402 for{" "}
+              {exhausted.map((row) => row.label).join(", ")} on{" "}
+              {when(exhausted[0].observedAt)}.
+            </p>
+          </div>
         </div>
       )
     }
 
     {
       budget.reached && (
-        <div role="alert" class={callout}>
-          <h2 class="flex items-center gap-2 text-base">
-            <OctagonX aria-hidden="true" className="size-5 shrink-0" />
-            Daily Onshape budget reached
-          </h2>
-          <p>
-            Hawk Shop has sent{" "}
-            <span class="brand-figures">{count(budget.today)}</span> calls today
-            (UTC), the daily limit. CAD data is served from cache, even if it is
-            stale, and anything not cached is unavailable until tomorrow.
-          </p>
+        <div role="alert" class="callout callout-red flex gap-3">
+          <OctagonX aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+          <div class="min-w-0 space-y-1">
+            <h2 class="font-heading text-base font-semibold">
+              Daily Onshape budget reached
+            </h2>
+            <p>
+              Hawk Shop has sent{" "}
+              <span class="brand-figures">{count(budget.today)}</span> calls
+              today (UTC), the daily limit. CAD data is served from cache, even
+              if it is stale, and anything not cached is unavailable until
+              tomorrow.
+            </p>
+          </div>
         </div>
       )
     }
 
-    <section class="space-y-2" aria-labelledby="usage-heading">
+    <section class="space-y-3" aria-labelledby="usage-heading">
       <h2 id="usage-heading" class="text-xl">Hawk Shop usage</h2>
-      <p class="text-lg">
-        Calls sent to Onshape: <span class="brand-figures"
-          >{count(totals.calls)}</span
-        > · Served from cache: <span class="brand-figures"
-          >{count(totals.hits)}</span
-        > (<span class="brand-figures">{totals.hitRate}%</span>)
-      </p>
-      <p>
-        Today (UTC): <span class="brand-figures">{count(budget.today)}</span>
-        {
-          budget.limit === null ? (
-            " calls · no daily limit"
-          ) : (
-            <>
-              {" "}
-              of <span class="brand-figures">{count(budget.limit)}</span> daily
-              calls
-            </>
-          )
-        }
-      </p>
+      <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class={tile}>
+          <dt class={tileLabel}>Calls sent to Onshape</dt>
+          <dd class={tileFigure}>{count(totals.calls)}</dd>
+        </div>
+        <div class={tile}>
+          <dt class={tileLabel}>Served from cache</dt>
+          <dd class={tileFigure}>{count(totals.hits)}</dd>
+        </div>
+        <div class={tile}>
+          <dt class={tileLabel}>Cache hit rate</dt>
+          <dd class={tileFigure}>
+            {totals.hitRate}<span class="font-sans">%</span>
+          </dd>
+        </div>
+        <div class={tile}>
+          <dt class={tileLabel}>Today (UTC)</dt>
+          <dd class={tileFigure}>
+            {count(budget.today)}{" "}
+            <span class="text-muted-foreground font-sans text-xs font-normal">
+              {
+                budget.limit === null ? (
+                  "no daily limit"
+                ) : (
+                  <>
+                    of <span class="brand-figures">{count(budget.limit)}</span>
+                  </>
+                )
+              }
+            </span>
+          </dd>
+        </div>
+      </dl>
       {
         byDay.length > 0 && (
-          <ul class="text-muted-foreground text-sm">
-            {byDay.slice(0, 7).map((row) => (
-              <li>
-                <span class="brand-figures">{row.day}</span> {row.label}:{" "}
-                <span class="brand-figures">{count(row.calls)}</span> calls,{" "}
-                <span class="brand-figures">{count(row.hits)}</span> cached
-              </li>
-            ))}
-          </ul>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <caption class="sr-only">
+                Recent calls by day and endpoint
+              </caption>
+              <thead class="text-muted-foreground border-b text-left">
+                <tr>
+                  <th scope="col" class={th}>
+                    Day (UTC)
+                  </th>
+                  <th scope="col" class={th}>
+                    Endpoint
+                  </th>
+                  <th scope="col" class={`${th} text-right`}>
+                    Calls
+                  </th>
+                  <th scope="col" class={`${th} text-right`}>
+                    Cached
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y">
+                {byDay.slice(0, 7).map((row) => (
+                  <tr>
+                    <td class="brand-figures py-2 pr-3 whitespace-nowrap">
+                      {row.day}
+                    </td>
+                    <td class="py-2 pr-3 break-words">{row.label}</td>
+                    <td class="brand-figures py-2 pl-3 text-right">
+                      {count(row.calls)}
+                    </td>
+                    <td class="brand-figures py-2 pl-3 text-right">
+                      {count(row.hits)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )
       }
     </section>
 
-    <section class="space-y-2" aria-labelledby="remaining-heading">
+    <section class="space-y-3" aria-labelledby="remaining-heading">
       <h2 id="remaining-heading" class="text-xl">Onshape's reported count</h2>
       {
         latest ? (
           <>
-            <p>
-              {latest.value === null ? (
-                `Onshape has not reported a remaining count for ${latest.label}.`
-              ) : (
-                <>
-                  Onshape reports{" "}
-                  <span class="brand-figures">{count(latest.value)}</span> calls
-                  remaining
-                </>
-              )}
-              <span class="text-muted-foreground text-sm">
-                {" "}
-                ({latest.label}, observed {when(latest.observedAt)})
-              </span>
+            {latest.value === null ? (
+              <p>
+                Onshape has not reported a remaining count for {latest.label}.
+              </p>
+            ) : (
+              <div class={tile}>
+                <p class={tileLabel}>Onshape reports</p>{" "}
+                <p class={tileFigure}>{count(latest.value)}</p>{" "}
+                <p class="text-sm">calls remaining</p>
+              </div>
+            )}
+            <p class="text-muted-foreground text-sm">
+              Latest: {latest.label}, observed{" "}
+              <span class="brand-figures">{when(latest.observedAt)}</span>
             </p>
             {low.length > 0 && (
-              <div role="alert" class={callout}>
-                <h3 class="flex items-center gap-2 font-semibold">
-                  <TriangleAlert
-                    aria-hidden="true"
-                    className="size-5 shrink-0"
-                  />
-                  Onshape's reported count is low
-                </h3>
-                <p>
-                  The count for {low.map((row) => row.label).join(", ")} is
-                  below <span class="brand-figures">{count(warnAt)}</span>.
-                </p>
+              <div role="alert" class="callout flex gap-3">
+                <TriangleAlert
+                  aria-hidden="true"
+                  className="mt-0.5 size-5 shrink-0"
+                />
+                <div class="min-w-0 space-y-1">
+                  <h3 class="font-heading font-semibold">
+                    Onshape's reported count is low
+                  </h3>
+                  <p>
+                    The count for {low.map((row) => row.label).join(", ")} is
+                    below <span class="brand-figures">{count(warnAt)}</span>.
+                  </p>
+                </div>
               </div>
             )}
             {rows.length > 1 && (
-              <ul class="text-muted-foreground text-sm">
+              <ul class="divide-y border-y text-sm">
                 {rows.map((row) => (
-                  <li>
-                    {row.label}:{" "}
-                    {row.value === null ? (
-                      "unknown"
-                    ) : (
-                      <span class="brand-figures">{count(row.value)}</span>
-                    )}{" "}
-                    (observed {when(row.observedAt)})
+                  <li class="grid grid-cols-[1fr_auto] gap-x-3 py-2">
+                    <span class="font-semibold break-words">
+                      {row.label}
+                      <span class="sr-only">:</span>
+                    </span>{" "}
+                    <span class="brand-figures text-right">
+                      {row.value === null ? "unknown" : count(row.value)}
+                    </span>{" "}
+                    <span class="text-muted-foreground col-span-2 text-xs">
+                      <span class="sr-only">(</span>observed{" "}
+                      <span class="brand-figures">{when(row.observedAt)}</span>
+                      <span class="sr-only">)</span>
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -164,7 +250,7 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
       </p>
     </section>
 
-    <section class="space-y-2" aria-labelledby="webhooks-heading">
+    <section class="space-y-3" aria-labelledby="webhooks-heading">
       <h2 id="webhooks-heading" class="text-xl">Change webhooks</h2>
       {
         webhooks.enabled ? (
@@ -174,9 +260,9 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
               <span class="brand-figures">{count(webhooks.registered)}</span>{" "}
               {webhooks.registered === 1 ? "document" : "documents"}.
             </p>
-            <ul class="text-muted-foreground text-sm">
-              <li>
-                Last event:{" "}
+            <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              <dt class="text-muted-foreground">Last event</dt>
+              <dd>
                 {webhooks.lastEventAt ? (
                   <span class="brand-figures">
                     {when(webhooks.lastEventAt)}
@@ -184,9 +270,11 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
                 ) : (
                   "never"
                 )}
-              </li>
-              <li>
-                Last repair pass:{" "}
+              </dd>
+              <dt class="text-muted-foreground">
+                Last repair pass<span class="sr-only">:</span>
+              </dt>
+              <dd>
                 {webhooks.lastRepairAt ? (
                   <>
                     <span class="brand-figures">
@@ -203,8 +291,8 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
                 ) : (
                   "never"
                 )}
-              </li>
-            </ul>
+              </dd>
+            </dl>
             <p class="text-muted-foreground text-sm">
               A repair pass lists the webhooks and fixes missing or misdirected
               ones. It runs only on evidence that one stopped delivering, at
@@ -215,24 +303,34 @@ const callout = "bg-muted border-primary border-l-4 px-3.5 py-3";
               once every{" "}
               <span class="brand-figures">{count(refreshMinutes)}</span>{" "}
               {refreshMinutes === 1 ? "minute" : "minutes"}, and only when
-              someone opens it, so parts can lag Onshape by that long. Set
-              ONSHAPE_MIN_REFRESH_SECONDS to change the window.
+              someone opens it, so parts can lag Onshape by that long. Set{" "}
+              <code class={code}>ONSHAPE_MIN_REFRESH_SECONDS</code> to change
+              the window.
             </p>
           </>
         ) : (
-          <p>
-            Disabled. Workspace reads refresh when their cache expires. Set
-            ONSHAPE_WEBHOOK_SECRET and ONSHAPE_WEBHOOK_BASE_URL to enable them.
-          </p>
+          <>
+            <p>
+              <span class="font-semibold">Disabled.</span> Workspace reads
+              refresh when their cache expires.
+            </p>
+            <p class="text-muted-foreground text-sm">
+              Set <code class={code}>ONSHAPE_WEBHOOK_SECRET</code> and{" "}
+              <code class={code}>ONSHAPE_WEBHOOK_BASE_URL</code> to enable them.
+            </p>
+          </>
         )
       }
     </section>
 
-    <p>
-      CAD access uses the server's Onshape account. Shop sign-in and
-      manufacturing submitters use Hawk Suite.
-    </p>
-    {configured && <p>Onshape stack: {onshapeOrigin()}</p>}
-    <p><a href="/kanban" class="underline">Return to board</a></p>
+    <div class="space-y-2 border-t pt-4">
+      <p class="text-muted-foreground text-sm">
+        CAD access uses the server's Onshape account. Shop sign-in and
+        manufacturing submitters use Hawk Suite.
+      </p>
+      <p class="hidden lg:block">
+        <a href="/kanban" class="text-link">Return to board</a>
+      </p>
+    </div>
   </main></AppLayout
 >

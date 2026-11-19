@@ -23,12 +23,12 @@ else if (result?.error) Astro.response.status = 500;
         client:load
       />
     ) : (
-      <section class="p-6">
+      <section class="mx-auto w-full max-w-6xl space-y-3 px-5 py-6">
         <>
-          <h1>
+          <h1 class="text-3xl">
             {equipment ? "Unable to load equipment" : "Equipment not found"}
           </h1>
-          <a href="/equipment" class="underline">
+          <a href="/equipment" class="text-link text-sm">
             Back to equipment
           </a>
         </>
