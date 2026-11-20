@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import "../styles/station.css";
+import { oauthEnabled } from "../server/oauth/settings";
 import { reportsEnabled } from "../server/reports";
 import { ReportProblem } from "../components/app/report-problem";
 import { suiteUrl } from "../server/suite-identity";
@@ -138,6 +139,11 @@ const links = [
                       </nav>
                     )}
                     {reporting && <ReportProblem client:load />}
+                    {oauthEnabled() && (
+                      <a class="account-sign-out" href="/oauth/connections">
+                        Connected apps
+                      </a>
+                    )}
                     <a class="account-sign-out" href="/slack">
                       Slack settings
                     </a>

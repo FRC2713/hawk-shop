@@ -17,7 +17,8 @@
     "test": "node --import ./tests/register-server-only.mjs --import tsx --test tests/*.test.ts",
     "check:migrations": "node --import tsx --test tests/migrations.test.ts",
     "check:docs": "node --import tsx --test tests/docs-paths.test.ts",
-    "test:runtime": "HAWK_SHOP_VERIFY_BUILT_SERVER=1 node --import ./tests/register-server-only.mjs --import tsx --test tests/slack-runtime.test.ts"
+    "test:runtime": "HAWK_SHOP_VERIFY_BUILT_SERVER=1 node --import ./tests/register-server-only.mjs --import tsx --test tests/slack-runtime.test.ts tests/mcp-runtime.test.ts",
+    "oauth:revoke": "node --env-file-if-exists=.env scripts/oauth-revoke.mjs"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.9",
@@ -29,6 +30,7 @@
     "@fontsource/barlow-condensed": "^5.3.0",
     "@fontsource/open-sans": "^5.3.0",
     "@fontsource/roboto-mono": "^5.3.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@radix-ui/react-alert-dialog": "^1.2.1",
     "@radix-ui/react-checkbox": "^1.4.1",
     "@radix-ui/react-collapsible": "^1.2.1",

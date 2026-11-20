@@ -7,6 +7,127 @@ const updated = "2026-02-03T04:05:06.000Z";
 // oauth_sessions table. Later-added email/microversion columns start as null.
 // Distinct rows and populated optional/JSON fields expose swaps and lost values.
 export const migrationFixtures: SeedFixture = {
+  oauth_clients: [
+    {
+      client_id: "oauth-client-a",
+      client_name: "Planner",
+      redirect_uris: '["https://client.example/callback"]',
+      created_at: created,
+      first_granted_at: updated,
+    },
+    {
+      client_id: "oauth-client-b",
+      client_name: "Reader",
+      redirect_uris: '["http://127.0.0.1/callback"]',
+      created_at: updated,
+      first_granted_at: null,
+    },
+  ],
+  oauth_grants: [
+    {
+      id: 1,
+      client_id: "oauth-client-a",
+      subject: "user-a",
+      redirect_uri: "https://client.example/callback",
+      scope: "shop:read shop:manage",
+      created_at: created,
+      expires_at: updated,
+      last_used_at: updated,
+      revoked_at: null,
+    },
+    {
+      id: 2,
+      client_id: "oauth-client-b",
+      subject: "user-b",
+      redirect_uri: "http://127.0.0.1/callback",
+      scope: "shop:read",
+      created_at: updated,
+      expires_at: updated,
+      last_used_at: null,
+      revoked_at: updated,
+    },
+  ],
+  oauth_pending: [
+    {
+      id_hash: "pending-a",
+      client_id: "oauth-client-a",
+      subject: "user-a",
+      redirect_uri: "https://client.example/callback",
+      code_challenge: "challenge-a",
+      scope: "shop:read shop:manage",
+      state: "state-a",
+      expires_at: updated,
+    },
+    {
+      id_hash: "pending-b",
+      client_id: "oauth-client-b",
+      subject: "user-b",
+      redirect_uri: "http://127.0.0.1/callback",
+      code_challenge: "challenge-b",
+      scope: "shop:read",
+      state: null,
+      expires_at: created,
+    },
+  ],
+  oauth_codes: [
+    {
+      code_hash: "code-a",
+      grant_id: 1,
+      redirect_uri: "https://client.example/callback",
+      code_challenge: "challenge-a",
+      expires_at: updated,
+      used_at: null,
+    },
+    {
+      code_hash: "code-b",
+      grant_id: 2,
+      redirect_uri: "http://127.0.0.1/callback",
+      code_challenge: "challenge-b",
+      expires_at: created,
+      used_at: updated,
+    },
+  ],
+  oauth_tokens: [
+    {
+      token_hash: "token-a",
+      grant_id: 1,
+      kind: "access",
+      expires_at: updated,
+      used_at: null,
+    },
+    {
+      token_hash: "token-b",
+      grant_id: 2,
+      kind: "refresh",
+      expires_at: created,
+      used_at: updated,
+    },
+  ],
+  oauth_audit: [
+    {
+      id: 1,
+      at: created,
+      event: "grant_created",
+      subject: "user-a",
+      client_id: "oauth-client-a",
+      grant_id: 1,
+      detail: "shop:read",
+    },
+    {
+      id: 2,
+      at: updated,
+      event: "grant_revoked_by_member",
+      subject: "user-b",
+      client_id: "oauth-client-b",
+      grant_id: 2,
+      detail: null,
+    },
+  ],
+  oauth_rate_limits: [
+    { bucket: "register:one", tokens: 3.5, updated_at: created },
+    { bucket: "token:two", tokens: 1, updated_at: updated },
+  ],
+
   station_roster: [
     {
       user_id: "user-a",

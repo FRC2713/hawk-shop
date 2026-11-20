@@ -12,6 +12,10 @@ The app accepts Suite identity headers only when `HAWK_SUITE_TRUST_PROXY=true`. 
 
 The matching gateway and Compose changes are in [deploy/hawk-suite-auth.patch](deploy/hawk-suite-auth.patch). Apply and verify them in Hawk Suite before deploying this image. This repository does not enable or deploy that patch automatically. See [docs/architecture.md](docs/architecture.md) for the authentication contract and migration details.
 
+## MCP clients
+
+The optional `/mcp` endpoint lets authenticated clients inspect released work, assign Backlog parts to machines, prioritize queues and use the shop workflow. Clients connect through OAuth and Hawk Suite consent, with the same setup as Hawk Eye. Members manage access through Connected apps. MCP tools make no Onshape calls. See [docs/mcp.md](docs/mcp.md) for setup and gateway routing.
+
 ## Setup
 
 Use Node 24 or later and npm 11.
@@ -36,6 +40,7 @@ Onshape webhooks are optional. With `ONSHAPE_WEBHOOK_SECRET` and `ONSHAPE_WEBHOO
 | `HAWK_SUITE_TRUST_PROXY`                    | `false`                                           | Enable only behind the isolated, trusted Suite gateway                                                                         |
 | `HAWK_SUITE_TEAM_ID`                        | unset                                             | Approved Slack workspace ID, required with proxy trust                                                                         |
 | `HAWK_SUITE_ISSUER`                         | unset                                             | Suite origin ending in `/`, required with proxy trust                                                                          |
+| `MCP_OAUTH_ENABLED`                         | `false`                                           | Enable MCP OAuth connections; requires trusted Suite identity and an HTTPS public origin                                       |
 | `APP_URL`                                   | `http://localhost:3000`                           | Browser-facing origin for cookies, login return URLs, and write checks                                                         |
 | `HOST` / `PORT`                             | `127.0.0.1` / `3000`                              | Server listener; container listens on `0.0.0.0`                                                                                |
 | `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY` | unset                                             | Optional Onshape API key pair for CAD import and part-number writes                                                            |

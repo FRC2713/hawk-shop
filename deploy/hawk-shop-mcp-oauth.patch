@@ -1,0 +1,34 @@
+--- a/config/authentication/Caddyfile.template
++++ b/config/authentication/Caddyfile.template
+@@ -217,6 +217,31 @@
+ shop.__DOMAIN__ {
+   route {
+     import clear-suite-identity
++    # Shop owns MCP OAuth credentials; preserve Authorization only here.
++    @shopMcp path /mcp
++    route @shopMcp {
++        reverse_proxy hawk-shop:3000
++    }
++    @shopOauthMetadata {
++        method GET HEAD
++        path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server
++    }
++    route @shopOauthMetadata {
++        reverse_proxy hawk-shop:3000
++    }
++    @shopOauthClient {
++        method POST
++        path /oauth/register /oauth/token /oauth/revoke
++    }
++    route @shopOauthClient {
++        reverse_proxy hawk-shop:3000
++    }
++    # Consent and connections require the ordinary top-level Suite session.
++    @shopOauthBrowser path /oauth/authorize /oauth/connections
++    route @shopOauthBrowser {
++        request_header -Authorization
++        import shop-protected
++    }
+     @shopHealth {
+         method GET HEAD
+         path /api/health /health

@@ -30,6 +30,7 @@ COPY --from=builder --chown=hawkshop:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=hawkshop:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=hawkshop:nodejs /app/.hawk ./.hawk
 COPY --from=builder --chown=hawkshop:nodejs /app/scripts/deploy-check.mjs ./scripts/deploy-check.mjs
+COPY --from=builder --chown=hawkshop:nodejs /app/scripts/oauth-revoke.mjs ./scripts/oauth-revoke.mjs
 RUN mkdir -p /data/uploads && chown -R hawkshop:nodejs /data
 USER hawkshop
 VOLUME ["/data"]

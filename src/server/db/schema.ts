@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
+  real,
   index,
   integer,
   primaryKey,
@@ -533,3 +535,86 @@ export const problemReports = sqliteTable(
     ),
   ]
 );
+
+// MCP OAuth follows Eye's grants and token lifecycle. Shop persists timestamps
+// as ISO-8601 strings, including expiry values used only by the OAuth server.
+export const oauthClients = sqliteTable("oauth_clients", {
+  client_id: text("client_id").primaryKey(),
+  client_name: text("client_name").notNull(),
+  redirect_uris: text("redirect_uris").notNull(),
+  created_at: text("created_at").notNull(),
+  first_granted_at: text("first_granted_at"),
+});
+export const oauthPending = sqliteTable("oauth_pending", {
+  id_hash: text("id_hash").primaryKey(),
+  client_id: text("client_id")
+    .notNull()
+    .references(() => oauthClients.client_id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  redirect_uri: text("redirect_uri").notNull(),
+  code_challenge: text("code_challenge").notNull(),
+  scope: text("scope").notNull(),
+  state: text("state"),
+  expires_at: text("expires_at").notNull(),
+});
+export const oauthGrants = sqliteTable(
+  "oauth_grants",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    client_id: text("client_id")
+      .notNull()
+      .references(() => oauthClients.client_id, { onDelete: "cascade" }),
+    subject: text("subject").notNull(),
+    redirect_uri: text("redirect_uri").notNull(),
+    scope: text("scope").notNull(),
+    created_at: text("created_at").notNull(),
+    expires_at: text("expires_at").notNull(),
+    last_used_at: text("last_used_at"),
+    revoked_at: text("revoked_at"),
+  },
+  (table) => [index("oauth_grants_subject").on(table.subject, table.expires_at)]
+);
+export const oauthCodes = sqliteTable("oauth_codes", {
+  code_hash: text("code_hash").primaryKey(),
+  grant_id: integer("grant_id")
+    .notNull()
+    .references(() => oauthGrants.id, { onDelete: "cascade" }),
+  redirect_uri: text("redirect_uri").notNull(),
+  code_challenge: text("code_challenge").notNull(),
+  expires_at: text("expires_at").notNull(),
+  used_at: text("used_at"),
+});
+export const oauthTokens = sqliteTable(
+  "oauth_tokens",
+  {
+    token_hash: text("token_hash").primaryKey(),
+    grant_id: integer("grant_id")
+      .notNull()
+      .references(() => oauthGrants.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    expires_at: text("expires_at").notNull(),
+    used_at: text("used_at"),
+  },
+  (table) => [
+    index("oauth_tokens_grant").on(table.grant_id),
+    check("oauth_tokens_kind", sql`${table.kind} IN ('access', 'refresh')`),
+  ]
+);
+export const oauthAudit = sqliteTable(
+  "oauth_audit",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    at: text("at").notNull(),
+    event: text("event").notNull(),
+    subject: text("subject"),
+    client_id: text("client_id"),
+    grant_id: integer("grant_id"),
+    detail: text("detail"),
+  },
+  (table) => [index("oauth_audit_at").on(table.at)]
+);
+export const oauthRateLimits = sqliteTable("oauth_rate_limits", {
+  bucket: text("bucket").primaryKey(),
+  tokens: real("tokens").notNull(),
+  updated_at: text("updated_at").notNull(),
+});

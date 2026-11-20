@@ -1,0 +1,140 @@
+---
+import AppLayout from "~/layouts/AppLayout.astro";
+import { requireOAuth, scopeLabels } from "~/server/oauth/settings";
+import {
+  startAuthorization,
+  finishAuthorization,
+  type AuthorizeView,
+} from "~/server/oauth/authorize";
+import { errorResponse } from "~/server/oauth/http";
+export const prerender = false;
+try {
+  requireOAuth();
+} catch (error) {
+  return errorResponse(error);
+}
+Astro.response.headers.set("Cache-Control", "private, no-store");
+Astro.response.headers.set("Referrer-Policy", "same-origin");
+Astro.response.headers.set("X-Frame-Options", "DENY");
+Astro.response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+const identity = Astro.locals.identity;
+let view: AuthorizeView;
+if (!identity)
+  view = {
+    kind: "error",
+    status: 401,
+    message: "Sign in with Hawk Suite to connect an app.",
+  };
+else if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const request = form.get("request");
+  const decision = form.get("decision");
+  const location =
+    typeof request === "string" &&
+    ["approve", "deny"].includes(String(decision)) &&
+    form.getAll("request").length === 1 &&
+    form.getAll("decision").length === 1
+      ? finishAuthorization(request, identity.subject, decision === "approve")
+      : undefined;
+  if (location) return Astro.redirect(location, 303);
+  view = {
+    kind: "error",
+    status: 400,
+    message: "This connection request expired. Start again from the app.",
+  };
+} else view = startAuthorization(Astro.url.searchParams, identity.subject);
+if (view.kind === "redirect") return Astro.redirect(view.location, 302);
+if (view.kind === "error") Astro.response.status = view.status;
+const title =
+  view.kind === "consent" ? `Connect ${view.clientName}` : "Connect an app";
+---
+
+<AppLayout title={title} phone="plain">
+  <main class="mx-auto flex max-w-2xl flex-col gap-5">
+    <header>
+      <p class="text-muted-foreground text-sm">MCP access to Hawk Shop</p><h1
+        class="text-3xl font-bold"
+      >
+        {title}
+      </h1>
+    </header>
+    {
+      view.kind === "error" ? (
+        <section class="bg-card rounded-lg border p-5">
+          <>
+            <h2 class="text-xl font-semibold">The app can't connect</h2>
+            <p role="alert" class="mt-3">
+              {view.message}
+            </p>
+          </>
+        </section>
+      ) : (
+        <section
+          class="bg-card rounded-lg border p-5"
+          aria-label="Requested access"
+        >
+          <dl class="grid gap-3 sm:grid-cols-[8rem_1fr]">
+            <>
+              <dt class="text-muted-foreground">App</dt>
+              <dd>
+                <strong>{view.clientName}</strong>{" "}
+                <span class="text-muted-foreground text-sm">
+                  Name not verified
+                </span>
+              </dd>
+            </>
+            <>
+              <dt class="text-muted-foreground">Returns to</dt>
+              <dd class="font-semibold break-all">{view.redirectLabel}</dd>
+            </>
+            <>
+              <dt class="text-muted-foreground">Access</dt>
+              <dd>
+                <ul class="list-disc pl-5">
+                  {view.scope.map((scope) => (
+                    <li>{scopeLabels[scope]}</li>
+                  ))}
+                </ul>
+              </dd>
+            </>
+            <>
+              <dt class="text-muted-foreground">Lasts</dt>
+              <dd>7 days, or until you disconnect it</dd>
+            </>
+          </dl>
+          <p class="bg-muted border-primary mt-5 rounded border-l-4 p-4 text-sm">
+            The app and its AI provider will see the shop data it reads.
+            {view.scope.includes("shop:manage") &&
+              " It can assign machines, reorder queues, claim work and approve parts under your name."}
+            Approve only if you started this from an app you trust and recognize
+            the return address.
+          </p>
+          <form
+            method="POST"
+            action="/oauth/authorize"
+            class="mt-5 flex flex-wrap gap-3"
+          >
+            <input type="hidden" name="request" value={view.requestId} />
+            <button
+              type="submit"
+              name="decision"
+              value="approve"
+              class="bg-primary text-primary-foreground rounded-md px-5 py-2 font-semibold"
+            >
+              Approve
+            </button>
+            <button
+              type="submit"
+              name="decision"
+              value="deny"
+              class="bg-background rounded-md border px-5 py-2 font-semibold"
+            >
+              Deny
+            </button>
+          </form>
+        </section>
+      )
+    }
+    <p><a href="/oauth/connections">Manage connected apps</a></p>
+  </main>
+</AppLayout>
