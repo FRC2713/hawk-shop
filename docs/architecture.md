@@ -98,3 +98,9 @@ The image now runs Node 24 and Astro's generated server entry at dist/server/ent
 Run `npm run typecheck`, `npm run format:check`, `npm run build`, and `npm test`. Install Chromium once with `npx playwright install chromium`.
 
 The tests start the production build with a temporary SQLite database and fixture gateway identity. They exercise authentication rejection, safe login redirects, same-origin writes, card and equipment CRUD, assignment, quantities, column configuration, multipart images, SSE, cached CAD access, and browser hydration in desktop light and mobile dark themes. They do not call the live Onshape API or modify production data. The companion Suite patch was also exercised in a disposable Suite Caddy routing fixture. Re-run the Suite repository's checks when applying it to a newer Suite revision before deployment.
+
+## MCP access
+
+`src/pages/mcp.ts` mounts the stateless Streamable HTTP server in `src/server/mcp/server.ts`. It reuses the existing workflow repositories for assignments, claims, review actions and queue priority without Onshape calls. MCP requires OAuth access tokens issued by Shop after Hawk Suite member consent, following Hawk Eye's configuration, discovery, registration and connected-app flow.
+
+`MCP_OAUTH_ENABLED=true` requires trusted Suite identity and an HTTPS `APP_URL` origin. Only exact MCP and public OAuth client endpoints bypass Suite middleware; consent and connection management require the normal browser session and same-origin POSTs. The member can disconnect clients through the account menu's Connected apps page. OAuth grants, hashed tokens and audit rows live in the existing SQLite volume with generated migrations and ISO-8601 timestamps. The operator revocation CLI is included in the production image. See [mcp.md](mcp.md) for setup, gateway routing, token lifecycle and tool contracts.

@@ -1,3 +1,5 @@
+import { requireOAuth } from "./server/oauth/settings";
+import { errorResponse as oauthErrorResponse } from "./server/oauth/http";
 import { defineMiddleware } from "astro:middleware";
 import { requestContext } from "./server/request-context";
 import { suiteIdentity, suiteSettings } from "./server/suite-identity";
@@ -44,6 +46,47 @@ export const onRequest = defineMiddleware(async (context, next) => {
     context.request.method === "POST"
   ) {
     return withHeader(await next(), "Cache-Control", "no-store");
+  }
+  // MCP authenticates bearer credentials itself. Never extend this bypass to
+  // /mcp/ or subpaths, or accept these credentials on ordinary Shop routes.
+  if (context.url.pathname === "/mcp") {
+    return withHeader(await next(), "Cache-Control", "no-store");
+  }
+  const oauthMetadata = [
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
+    "/.well-known/oauth-authorization-server",
+  ];
+  const oauthClientEndpoints = [
+    "/oauth/register",
+    "/oauth/token",
+    "/oauth/revoke",
+  ];
+  const oauthBrowserPages = ["/oauth/authorize", "/oauth/connections"];
+  if (
+    [...oauthMetadata, ...oauthClientEndpoints, ...oauthBrowserPages].includes(
+      context.url.pathname
+    )
+  ) {
+    try {
+      requireOAuth();
+    } catch (error) {
+      return oauthErrorResponse(error);
+    }
+    const publicRequest =
+      (oauthMetadata.includes(context.url.pathname) &&
+        ["GET", "HEAD"].includes(context.request.method)) ||
+      (oauthClientEndpoints.includes(context.url.pathname) &&
+        context.request.method === "POST");
+    if (publicRequest) {
+      const origin = context.request.headers.get("origin");
+      if (origin && origin !== new URL(process.env.APP_URL!).origin)
+        return Response.json(
+          { error: "Request origin is not allowed." },
+          { status: 403 }
+        );
+      return withHeader(await next(), "Cache-Control", "no-store");
+    }
   }
   if (
     path.startsWith("/_astro/") ||

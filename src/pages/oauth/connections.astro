@@ -1,0 +1,143 @@
+---
+import AppLayout from "~/layouts/AppLayout.astro";
+import {
+  requireOAuth,
+  mcpResource,
+  scopeLabels,
+} from "~/server/oauth/settings";
+import { listConnections, disconnect } from "~/server/oauth/store";
+import { redirectLabel } from "~/server/oauth/redirect-uris";
+import { errorResponse } from "~/server/oauth/http";
+export const prerender = false;
+try {
+  requireOAuth();
+} catch (error) {
+  return errorResponse(error);
+}
+Astro.response.headers.set("Cache-Control", "private, no-store");
+Astro.response.headers.set("X-Frame-Options", "DENY");
+Astro.response.headers.set("Referrer-Policy", "same-origin");
+Astro.response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+const identity = Astro.locals.identity;
+let error: string | undefined;
+if (Astro.request.method === "POST" && identity) {
+  const form = await Astro.request.formData();
+  const grant = Number(form.get("grant"));
+  if (
+    form.getAll("grant").length === 1 &&
+    Number.isSafeInteger(grant) &&
+    grant > 0 &&
+    disconnect(grant, identity.subject, Date.now())
+  )
+    return Astro.redirect("/oauth/connections", 303);
+  error = "This connection has expired or was already disconnected.";
+  Astro.response.status = 400;
+}
+const connections = identity
+  ? listConnections(identity.subject, Date.now())
+  : [];
+const date = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "America/New_York",
+  timeZoneName: "short",
+});
+---
+
+<AppLayout title="Connected apps" phone="plain">
+  <main class="flex flex-col gap-5">
+    <header>
+      <h1 class="text-3xl font-bold">Connected apps</h1><p
+        class="text-muted-foreground mt-2"
+      >
+        MCP clients connected to Hawk Shop as you
+      </p>
+    </header>
+    <section class="bg-card rounded-lg border p-5">
+      <h2 class="text-lg font-semibold">Connect an app</h2>
+      <p class="mt-2">
+        Add this MCP server address in your client, then sign in with Hawk Suite
+        and approve the requested access.
+      </p>
+      <code class="mt-3 block break-all">{mcpResource()}</code>
+    </section>
+    {
+      error && (
+        <p role="alert" class="text-destructive">
+          {error}
+        </p>
+      )
+    }
+    {
+      connections.length === 0 ? (
+        <p class="bg-card rounded-lg border p-5">No connected apps.</p>
+      ) : (
+        <div
+          class="bg-card overflow-x-auto rounded-lg border"
+          tabindex="0"
+          role="region"
+          aria-label="Connected apps"
+        >
+          <table class="w-full text-left text-sm">
+            <caption class="sr-only">Connected apps</caption>
+            <thead class="bg-muted">
+              <tr>
+                {[
+                  "App",
+                  "Returns to",
+                  "Access",
+                  "Last used",
+                  "Ends",
+                  "Disconnect",
+                ].map((label) => (
+                  <th scope="col" class="px-4 py-3">
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {connections.map((connection) => (
+                <tr class="border-t">
+                  <td class="px-4 py-3">{connection.clientName}</td>
+                  <td class="px-4 py-3">
+                    {redirectLabel(connection.redirectUri)}
+                  </td>
+                  <td class="px-4 py-3">
+                    {connection.scope
+                      .map((scope) => scopeLabels[scope])
+                      .join(", ")}
+                  </td>
+                  <td class="px-4 py-3">
+                    {connection.lastUsedAt === null
+                      ? "Never"
+                      : date.format(connection.lastUsedAt)}
+                  </td>
+                  <td class="px-4 py-3">{date.format(connection.expiresAt)}</td>
+                  <td class="px-4 py-3">
+                    <form method="POST" action="/oauth/connections">
+                      <input
+                        type="hidden"
+                        name="grant"
+                        value={connection.grantId}
+                      />
+                      <button
+                        type="submit"
+                        class="bg-background rounded-md border px-3 py-2 font-semibold"
+                        aria-label={`Disconnect ${connection.clientName}`}
+                      >
+                        Disconnect
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+  </main>
+</AppLayout>
