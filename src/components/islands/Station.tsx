@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
+import { StationPicture, StationTask } from "./StationTask";
 import { StationClaim } from "./StationClaim";
 import { markCardDone } from "~/lib/api/workflow";
 import { queryKeys } from "~/lib/api/keys";
@@ -26,7 +27,15 @@ import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 // Local data only. Keep polling even if a kiosk browser loses its event stream.
 const refresh = { refetchInterval: 180_000, refetchIntervalInBackground: true };
 
-function CurrentPart({ id, title }: { id: string; title: string }) {
+function CurrentPart({
+  id,
+  title,
+  sop,
+}: {
+  id: string;
+  title: string;
+  sop?: string | null;
+}) {
   const client = useQueryClient();
   const done = useMutation({
     mutationFn: () => markCardDone(id),
@@ -43,6 +52,11 @@ function CurrentPart({ id, title }: { id: string; title: string }) {
   );
   return (
     <li className="station-part">
+      {details.data && (
+        <div className="station-current-image">
+          <StationPicture key={id} card={details.data} />
+        </div>
+      )}
       <h4>{title}</h4>
       <p className="station-part-meta">
         <span className="station-part-who">
@@ -64,6 +78,15 @@ function CurrentPart({ id, title }: { id: string; title: string }) {
           </span>
         </span>
       </p>
+      {details.data?.content && (
+        <p className="station-current-notes">{details.data.content}</p>
+      )}
+      {!!details.data?.review_notes?.length && (
+        <p className="station-task-review-flag">
+          Sent back: check feedback before continuing.
+        </p>
+      )}
+      <StationTask id={id} title={title} sop={sop} />
       <button
         className="station-control station-control--primary"
         aria-label={`Done ${title}`}
@@ -105,6 +128,7 @@ function MachineColumn({
   machine: EquipmentListItem;
   processId: string;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const [claiming, setClaiming] = useState<{
     id: string;
     title: string;
@@ -171,7 +195,11 @@ function MachineColumn({
             {machine.current_parts.length ? (
               <ul className="station-current">
                 {machine.current_parts.map((part) => (
-                  <CurrentPart key={part.id} {...part} />
+                  <CurrentPart
+                    key={part.id}
+                    {...part}
+                    sop={machine.documentation_url}
+                  />
                 ))}
               </ul>
             ) : (
@@ -187,35 +215,49 @@ function MachineColumn({
             ) : queue.data.length ? (
               <>
                 <ol aria-label="Up next" className="station-queue">
-                  {queue.data.slice(0, 3).map((card, index) => (
-                    <li key={card.id}>
-                      <span className="station-queue-position brand-figures">
-                        {index + 1}
-                      </span>
-                      <span className="station-queue-title">{card.title}</span>
-                      <span className="station-queue-qty">
-                        Qty{" "}
-                        <span className="brand-figures">
-                          {card.quantity_to_make ?? "?"}
+                  {queue.data
+                    .slice(0, showAll ? undefined : 3)
+                    .map((card, index) => (
+                      <li key={card.id}>
+                        <span className="station-queue-position brand-figures">
+                          {index + 1}
                         </span>
-                      </span>
-                      <button
-                        className="station-control station-control--secondary"
-                        aria-label={`Claim ${card.title}`}
-                        onClick={() => setClaiming(card)}
-                      >
-                        Claim
-                      </button>
-                    </li>
-                  ))}
+                        <span className="station-queue-title">
+                          {card.title}
+                        </span>
+                        <span className="station-queue-qty">
+                          Qty{" "}
+                          <span className="brand-figures">
+                            {card.quantity_to_make ?? "?"}
+                          </span>
+                        </span>
+                        <div className="station-queue-actions">
+                          <StationTask
+                            id={card.id}
+                            title={card.title}
+                            sop={machine.documentation_url}
+                          />
+                          <button
+                            className="station-control station-control--secondary"
+                            aria-label={`Claim ${card.title}`}
+                            onClick={() => setClaiming(card)}
+                          >
+                            Claim
+                          </button>
+                        </div>
+                      </li>
+                    ))}
                 </ol>
                 {queue.data.length > 3 && (
-                  <p className="station-more">
-                    <span className="brand-figures">
-                      {queue.data.length - 3}
-                    </span>{" "}
-                    more queued
-                  </p>
+                  <button
+                    className="station-control station-control--ghost station-more"
+                    aria-expanded={showAll}
+                    onClick={() => setShowAll(!showAll)}
+                  >
+                    {showAll
+                      ? "Show fewer parts"
+                      : `Show all ${queue.data.length} queued parts`}
+                  </button>
                 )}
               </>
             ) : (

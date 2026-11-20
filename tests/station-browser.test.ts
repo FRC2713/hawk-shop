@@ -435,3 +435,133 @@ test("station QR decodes to the absolute phone claim URL for this machine", asyn
     await browser.close();
   }
 });
+
+test("build references expose instructions and CAD without leaving the station", async () => {
+  const { browser, page } = await stationFixture();
+  try {
+    await page.route("**/api/kanban/cards/next-*", (route) =>
+      route.fulfill({
+        json: {
+          card: {
+            id: "next-4",
+            title: "Queued 4",
+            quantity_to_make: 4,
+            content: "Deburr all edges.\nCheck fit before assembly.",
+            created_by: "alice",
+            assignee: null,
+            due_date: "2026-12-01",
+            project: { name: "Intake" },
+            processes: [{ name: "3D Printing" }],
+            image_url: "/api/files/example.png",
+            onshape_document_id: "document",
+            onshape_instance_type: "v",
+            onshape_instance_id: "version",
+            onshape_element_id: "studio",
+            onshape_version_id: "released",
+            onshape_version_name: "Build release 2",
+            onshape_material: "Aluminum 6061",
+            review_notes: [
+              {
+                id: "review",
+                text: "Hole spacing needs correction",
+                author_name: "Mentor",
+              },
+            ],
+            release_issues: [
+              {
+                code: "test",
+                message: "Check drawing",
+                fix: "Confirm tolerances with submitter",
+              },
+            ],
+            status_history: [],
+          },
+        },
+      })
+    );
+    await page.route("**/api/onshape/thumbnail?*", (route) =>
+      route.fulfill({
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="white"/></svg>',
+      })
+    );
+    const beta = page.getByRole("region", {
+      name: "Beta printer",
+      exact: true,
+    });
+    await beta.getByRole("button", { name: "Show all 4 queued parts" }).click();
+    const trigger = beta.getByRole("button", {
+      name: "Build details for Queued 4",
+    });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Queued 4", exact: true });
+    for (const text of [
+      "Deburr all edges.",
+      "Check fit before assembly.",
+      "Aluminum 6061",
+      "Build release 2",
+      "Intake",
+      "Alice",
+      "Hole spacing needs correction",
+      "Confirm tolerances with submitter",
+    ])
+      await expect(dialog).toContainText(text);
+    await expect(
+      dialog.getByRole("link", { name: "Open in Onshape" })
+    ).toHaveAttribute(
+      "href",
+      "https://cad.onshape.com/documents/document/v/released/e/studio"
+    );
+    await expect(
+      dialog.getByRole("link", { name: "Full card & history" })
+    ).toHaveAttribute("href", "/parts/next-4");
+    await dialog.getByRole("button", { name: "Enlarge image" }).click();
+    await expect(
+      dialog.getByRole("button", { name: "Reduce image" })
+    ).toHaveAttribute("aria-expanded", "true");
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+      1280
+    );
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(page).toHaveURL("http://localhost:32198/station/printing");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("build reference handles missing images, absent notes and detail errors", async () => {
+  const { browser, page } = await stationFixture();
+  try {
+    const alpha = page.getByRole("region", {
+      name: "Alpha printer",
+      exact: true,
+    });
+    await alpha
+      .getByRole("button", { name: "Build details for Wheel plate" })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "Wheel plate",
+      exact: true,
+    });
+    await expect(dialog).toContainText("No image available");
+    await expect(dialog).toContainText("No submitter notes.");
+    await expect(dialog).toContainText("No Onshape model linked.");
+    await expect(
+      dialog.getByRole("link", { name: "Open SOP" })
+    ).toHaveAttribute("href", "https://example.com/sop");
+    await dialog.getByRole("button", { name: "Back to station" }).click();
+    await page.route("**/api/kanban/cards/next-1", (route) =>
+      route.fulfill({ status: 404, json: { error: "Part was deleted" } })
+    );
+    await alpha
+      .getByRole("button", { name: "Build details for Spare bracket" })
+      .click();
+    await expect(page.getByRole("dialog")).toContainText("Part was deleted");
+    await page.getByRole("button", { name: "Back to station" }).click();
+  } finally {
+    await browser.close();
+  }
+});
