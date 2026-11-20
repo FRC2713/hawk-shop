@@ -93,14 +93,17 @@ export function KanbanColumnHeader({
 
   if (isReadOnly) {
     return (
-      <div className="flex-1 truncate text-left font-semibold">{title}</div>
+      <h2 className="font-heading flex-1 truncate text-left text-base font-semibold">
+        {title}
+      </h2>
     );
   }
 
   return (
     <button
       onClick={handleStartEdit}
-      className="hover:text-primary flex-1 truncate text-left font-semibold transition-colors"
+      title="Rename column"
+      className="font-heading hover:bg-muted flex-1 truncate rounded px-1 text-left text-base font-semibold transition-colors"
     >
       {title}
     </button>

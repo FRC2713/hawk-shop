@@ -23,7 +23,7 @@ export function OlderDoneLink({
     >
       <a href="/kanban/done">
         <span className="text-sm font-medium">
-          View {plural(count, "older card")}
+          View {plural(count, "older part")}
         </span>
         <ArrowRight className="size-4" aria-hidden="true" />
       </a>

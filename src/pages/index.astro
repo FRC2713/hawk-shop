@@ -61,180 +61,272 @@ const dueLabel = (days: number) =>
         ? "Due tomorrow"
         : `Due in ${days} days`;
 
-const groups = [
+type Stat = {
+  value: number;
+  text: string;
+  // An alert stat or segment carries its meaning in words; color only adds
+  // emphasis.
+  alert?: boolean;
+};
+type Item = {
+  href: string;
+  icon: typeof List;
+  label: string;
+  body: string;
+  stat: Stat[];
+  desktopOnly?: boolean;
+};
+
+const groups: { title: string; grid: string; items: Item[] }[] = [
   {
     title: "Make parts",
+    grid: "sm:grid-cols-2",
     items: [
       {
         href: "/next",
         icon: List,
         label: "Next up",
         body: "Pick your machine and work through its queue.",
-        stat: `${backlogCards.length} in the backlog`,
+        stat: [{ value: backlogCards.length, text: "in the backlog" }],
       },
       {
         href: "/station",
         icon: MonitorPlay,
         label: "Station screen",
         body: "The shared shop screen. Claim parts by name or QR code.",
-        stat: plural(equipment.length, "machine"),
-      },
-    ],
-  },
-  {
-    title: "Plan and assign",
-    items: [
-      {
-        href: "/backlog",
-        icon: Inbox,
-        label: "Backlog",
-        body: "Send released parts to a machine.",
-        stat: `${backlogCards.filter((card) => !card.machine_id).length} with no machine`,
-      },
-      {
-        href: "/shop",
-        icon: ChartColumn,
-        label: "Shop",
-        body: "What every machine is doing and what needs a mentor.",
-        stat: maintenance
-          ? `${plural(maintenance, "machine")} need${maintenance === 1 ? "s" : ""} maintenance`
-          : `${inColumn(review).length} in review`,
-      },
-      {
-        href: "/kanban",
-        icon: SquareKanban,
-        label: "Board",
-        body: "Every part by stage, with filters and bulk moves.",
-        stat: `${inColumn(inProgress).length} in progress${overdue ? ` · ${overdue} overdue` : ""}`,
-        // Below the desktop breakpoint /kanban redirects to Next up.
-        desktopOnly: true,
+        stat: [
+          {
+            value: equipment.length,
+            text: equipment.length === 1 ? "machine" : "machines",
+          },
+        ],
       },
     ],
   },
   {
     title: "Design",
+    // One card, so it spans the row on tablet.
+    grid: "",
     items: [
       {
         href: "/my-parts",
         icon: UserRound,
         label: "My parts",
         body: "Parts you released from Onshape and where they are.",
-        stat: `${mine.length} active`,
+        stat: [{ value: mine.length, text: "active" }],
+      },
+    ],
+  },
+  {
+    title: "Plan and assign",
+    grid: "sm:grid-cols-2 lg:grid-cols-3",
+    items: [
+      {
+        href: "/backlog",
+        icon: Inbox,
+        label: "Backlog",
+        body: "Send released parts to a machine.",
+        stat: [
+          {
+            value: backlogCards.filter((card) => !card.machine_id).length,
+            text: "with no machine",
+          },
+        ],
+      },
+      {
+        href: "/shop",
+        icon: ChartColumn,
+        label: "Shop",
+        body: "What every machine is doing and what needs a mentor.",
+        stat: [
+          maintenance
+            ? {
+                value: maintenance,
+                text: `machine${maintenance === 1 ? " needs" : "s need"} maintenance`,
+                alert: true,
+              }
+            : { value: inColumn(review).length, text: "in review" },
+        ],
+      },
+      {
+        href: "/kanban",
+        icon: SquareKanban,
+        label: "Board",
+        body: "Every part by stage, with filters and bulk moves.",
+        stat: [
+          { value: inColumn(inProgress).length, text: "in progress" },
+          ...(overdue
+            ? [{ value: overdue, text: "overdue", alert: true }]
+            : []),
+        ],
+        // Below the desktop breakpoint /kanban redirects to Next up.
+        desktopOnly: true,
       },
     ],
   },
 ];
 
+// Equipment, Projects and Metrics are in the desktop top nav, so the hub
+// lists them only where that nav is hidden.
+// On desktop the dense grid tucks this list under My parts, beside the
+// taller Due soon list.
 const more = [
-  { href: "/equipment", label: "Equipment" },
-  { href: "/projects", label: "Projects" },
-  { href: "/metrics", label: "Metrics" },
+  { href: "/equipment", label: "Equipment", phoneOnly: true },
+  { href: "/projects", label: "Projects", phoneOnly: true },
+  { href: "/metrics", label: "Metrics", phoneOnly: true },
   { href: "/onshape", label: "Onshape API status" },
-  { href: "/slack", label: "Slack settings" },
+  { href: "/slack", label: "Slack notifications" },
 ];
 ---
 
 <AppLayout title="Home"
-  ><main class="space-y-8">
-    <header>
+  ><main class="grid gap-8 lg:grid-flow-row-dense lg:grid-cols-3 lg:gap-x-6">
+    <header class="lg:col-span-3">
       <h1 class="text-3xl">Start here</h1>
       <p class="text-muted-foreground">What are you working on today?</p>
     </header>
     {
       (cardResult.error || equipmentResult.error) && (
-        <p role="alert" class="border-primary bg-card border-l-4 p-4">
+        <p role="alert" class="callout callout-red lg:col-span-3">
           Some shop data could not be loaded. Reload this page to try again.
         </p>
       )
     }
     {
       groups.map((group) => (
-        <section aria-labelledby={`hub-${group.title}`} class="space-y-3">
-          <h2
-            id={`hub-${group.title}`}
-            class="text-muted-foreground text-sm font-semibold"
+        <>
+          <section
+            aria-labelledby={`hub-${group.title}`}
+            class:list={[
+              "min-w-0 space-y-3",
+              group.title === "Design" ? "lg:col-span-1" : "lg:col-span-3",
+            ]}
           >
-            {group.title}
-          </h2>
-          <ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {group.items.map((item) => (
-              <li class:list={[item.desktopOnly && "hidden lg:block"]}>
-                <a
-                  href={item.href}
-                  class="bg-card hover:border-primary focus-visible:border-primary text-foreground flex h-full min-h-24 items-start gap-4 rounded-xl border p-4 no-underline"
+            <h2 id={`hub-${group.title}`} class="eyebrow">
+              {group.title}
+            </h2>
+            <ul class:list={["grid gap-3", group.grid]}>
+              {group.items.map((item) => (
+                <li
+                  class:list={["h-full", item.desktopOnly && "hidden lg:block"]}
                 >
-                  <item.icon
-                    className="text-primary mt-0.5 size-6 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span class="min-w-0 flex-1">
-                    <span class="block text-lg font-semibold">
-                      {item.label}
+                  <a
+                    href={item.href}
+                    class="group bg-card text-foreground hover:border-primary hover:bg-muted/40 focus-visible:border-primary focus-visible:ring-ring flex h-full min-h-16 items-start gap-3 rounded-xl border p-3 no-underline transition-colors focus-visible:ring-2 focus-visible:outline-none sm:min-h-24 sm:gap-4 sm:p-4"
+                  >
+                    <item.icon
+                      className="text-icon-accent mt-0.5 size-6 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span class="flex min-w-0 flex-1 flex-col self-stretch">
+                      <span class="font-[family-name:var(--hawk-heading-font)] text-xl leading-tight font-semibold">
+                        {item.label}
+                      </span>
+                      <span class="text-muted-foreground mt-1 hidden text-sm sm:line-clamp-2 sm:min-h-10">
+                        {item.body}
+                      </span>
+                      <span class="mt-auto pt-1 text-sm font-semibold sm:pt-2">
+                        {item.stat.map((part, index) => (
+                          <span class:list={[part.alert && "text-emphasis"]}>
+                            {index > 0 && " · "}
+                            <span class="brand-figures">{part.value}</span>{" "}
+                            {part.text}
+                          </span>
+                        ))}
+                      </span>
                     </span>
-                    <span class="text-muted-foreground block text-sm">
-                      {item.body}
-                    </span>
-                    <span class="mt-2 block text-sm font-semibold">
-                      {item.stat}
-                    </span>
-                  </span>
-                  <ChevronRight
-                    className="text-muted-foreground mt-1 size-5 shrink-0"
-                    aria-hidden="true"
-                  />
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
+                    <ChevronRight
+                      className="text-muted-foreground size-5 shrink-0 self-center transition-transform group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+          {group.title === "Design" && (
+            <section
+              aria-labelledby="hub-due"
+              class="min-w-0 space-y-3 lg:col-span-2 lg:row-span-2"
+            >
+              <h2 id="hub-due" class="eyebrow">
+                Due soon
+              </h2>
+              {dueSoon.length ? (
+                <ul class="bg-card overflow-hidden rounded-xl border">
+                  {dueSoon.slice(0, 6).map(({ card, days }) => (
+                    <li class="not-last:border-b">
+                      <a
+                        href={partHref(card.id)}
+                        class="group text-foreground hover:bg-muted focus-visible:bg-muted flex min-h-11 items-center gap-3 px-3 py-2 no-underline transition-colors focus-visible:outline-none"
+                      >
+                        <span class="min-w-0 flex-1 font-semibold break-words">
+                          {card.title}
+                        </span>
+                        <span
+                          class:list={[
+                            "shrink-0 text-right text-sm",
+                            days < 0
+                              ? "text-emphasis font-semibold"
+                              : "text-muted-foreground",
+                          ]}
+                        >
+                          {dueLabel(days)}
+                        </span>
+                        <ChevronRight
+                          className="text-muted-foreground size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                          aria-hidden="true"
+                        />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p class="text-muted-foreground text-sm">
+                  Nothing due in the next two days.
+                </p>
+              )}
+              {dueSoon.length > 6 && (
+                <>
+                  <a
+                    href="/kanban"
+                    class="text-link hidden text-sm lg:inline-block"
+                  >
+                    {dueSoon.length - 6} more on the board
+                  </a>
+                  {/* Below lg /kanban redirects to Next up, so name it. */}
+                  <a
+                    href="/next"
+                    class="text-link inline-flex min-h-11 items-center text-sm lg:hidden"
+                  >
+                    {dueSoon.length - 6} more due soon in Next up
+                  </a>
+                </>
+              )}
+            </section>
+          )}
+        </>
       ))
     }
-    <section aria-labelledby="hub-due" class="space-y-3">
-      <h2 id="hub-due" class="text-muted-foreground text-sm font-semibold">
-        Due soon
-      </h2>
+    <nav
+      aria-label="More pages"
+      class="flex flex-wrap items-center gap-x-5 text-sm lg:flex-col lg:items-start lg:self-start"
+    >
+      <span class="text-muted-foreground lg:hidden">More:</span>
+      <span class="eyebrow hidden lg:block">More pages</span>
       {
-        dueSoon.length ? (
-          <ul class="bg-card overflow-hidden rounded-xl border">
-            {dueSoon.slice(0, 6).map(({ card, days }) => (
-              <li class="not-last:border-b">
-                <a
-                  href={partHref(card.id)}
-                  class="text-foreground flex min-h-11 items-center justify-between gap-3 px-3 py-2 no-underline"
-                >
-                  <span class="min-w-0 font-semibold break-words">
-                    {card.title}
-                  </span>
-                  <span
-                    class:list={[
-                      "shrink-0 text-xs",
-                      days < 0
-                        ? "text-destructive font-semibold"
-                        : "text-muted-foreground",
-                    ]}
-                  >
-                    {dueLabel(days)}
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p class="text-muted-foreground text-sm">
-            Nothing due in the next two days.
-          </p>
-        )
-      }
-      {
-        dueSoon.length > 6 && (
-          <a href="/kanban" class="hidden text-sm lg:block">
-            {dueSoon.length - 6} more on the board
+        more.map((link) => (
+          <a
+            href={link.href}
+            class:list={[
+              "text-link inline-flex min-h-11 items-center lg:min-h-9",
+              link.phoneOnly && "lg:hidden",
+            ]}
+          >
+            {link.label}
           </a>
-        )
+        ))
       }
-    </section>
-    <nav aria-label="More pages" class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-      {more.map((link) => <a href={link.href}>{link.label}</a>)}
     </nav>
   </main></AppLayout
 >

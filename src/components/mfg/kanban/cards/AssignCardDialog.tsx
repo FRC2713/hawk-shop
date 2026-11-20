@@ -34,9 +34,12 @@ export function AssignCardDialog({ card }: AssignCardDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button className="group hover:bg-accent hover:text-accent-foreground flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-medium transition-colors">
+        <button className="group hover:bg-muted focus-visible:ring-ring flex min-h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none">
           <span>{assignedUser.data?.name || "Unassigned"}</span>
-          <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-50" />
+          <Pencil
+            className="ml-auto size-3.5 opacity-40 transition-opacity group-hover:opacity-80"
+            aria-hidden="true"
+          />
         </button>
       </DialogTrigger>
       <DialogContent>

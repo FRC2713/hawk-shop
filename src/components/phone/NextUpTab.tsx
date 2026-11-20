@@ -2,7 +2,14 @@ import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { ChevronDown } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  Wrench,
+} from "lucide-react";
 import {
   claimCard,
   equipmentQuery,
@@ -21,7 +28,7 @@ import {
   dueLabel,
   isConflict,
   type Member,
-  machineActivity,
+  machineActivityParts,
   memberName,
   runningOn,
 } from "~/lib/phoneParts";
@@ -93,11 +100,16 @@ export function NextUpTab({ viewerId }: { viewerId: string }) {
       machineButton={
         <Button
           variant="outline"
-          className="min-h-11"
+          className="h-auto min-h-11 py-1.5"
           aria-label={`Machine: ${machine.name}. Change`}
           onClick={() => setChanging(true)}
         >
-          {machine.name}
+          <span className="flex flex-col items-start leading-tight">
+            <span className="text-muted-foreground text-xs font-normal">
+              Machine
+            </span>
+            <span>{machine.name}</span>
+          </span>
           <ChevronDown aria-hidden="true" />
         </Button>
       }
@@ -122,7 +134,7 @@ function TabShell({
   children: ReactNode;
 }) {
   return (
-    <main className="flex flex-col gap-4">
+    <main className="flex w-full max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-3xl">Next up</h1>
         {machineButton}
@@ -161,47 +173,111 @@ function MachinePicker({
       className="bg-card overflow-hidden rounded-xl border"
     >
       {[...machines].sort(byMachineName).map((machine) => {
-        const activity = machineActivity(
+        const activity = machineActivityParts(
           machine,
           runningOn(machine, cards),
           users,
           now,
           viewerId
         );
+        const isCurrent = machine.id === current;
+        // One secondary line: the maintenance note (up to two lines), or
+        // who and what, cut short so the duration always shows.
+        const detail =
+          activity.state === "maintenance" ? (
+            activity.note && (
+              <span className="line-clamp-2">{activity.note}</span>
+            )
+          ) : activity.state === "busy" ? (
+            <span className="flex min-w-0">
+              <span className="truncate">
+                {[activity.who, activity.part].filter(Boolean).join(" · ")}
+              </span>
+              <span className="shrink-0 whitespace-nowrap">
+                {"\u00a0· "}
+                {activity.since}
+              </span>
+            </span>
+          ) : null;
         return (
           <li key={machine.id} className="not-last:border-b">
             <button
               type="button"
-              aria-current={machine.id === current ? "true" : undefined}
+              aria-current={isCurrent ? "true" : undefined}
               onClick={() => onChoose(machine.id)}
-              className="hover:bg-muted aria-[current]:bg-muted flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left"
+              className="hover:bg-muted/60 aria-[current]:bg-muted focus-visible:ring-ring/50 flex min-h-11 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-inset aria-[current]:shadow-[inset_4px_0_var(--primary)]"
             >
-              <span className="min-w-0">
-                <span className="block font-semibold break-words">
+              <span className="min-w-0 flex-1">
+                <span className="block leading-snug font-semibold break-words">
                   {machine.name}
+                  {/* Wraps whole, so a long name pushes it under, not apart. No
+                      separator: a wrapped line would start with it. */}
+                  {!!machine.processes?.length && (
+                    <>
+                      {" "}
+                      <span className="text-muted-foreground text-xs font-normal whitespace-nowrap">
+                        {machine.processes
+                          .map((process) => process.name)
+                          .join(", ")}
+                      </span>
+                    </>
+                  )}
                 </span>
-                {!!machine.processes?.length && (
-                  <span className="text-muted-foreground block text-xs">
-                    {machine.processes
-                      .map((process) => process.name)
-                      .join(", ")}
+                {detail && (
+                  <span className="text-muted-foreground mt-0.5 block text-xs">
+                    {detail}
                   </span>
                 )}
               </span>
-              <span
-                className={
-                  activity.maintenance
-                    ? "text-destructive max-w-[50%] shrink-0 text-right text-xs font-semibold"
-                    : "text-muted-foreground max-w-[50%] shrink-0 text-right text-xs"
-                }
-              >
-                {activity.text}
-              </span>
+              <MachineState state={activity.state} />
+              {isCurrent ? (
+                <Check
+                  aria-label="Current"
+                  className="text-icon-accent size-5 shrink-0"
+                />
+              ) : (
+                <ChevronRight
+                  aria-hidden="true"
+                  className="text-muted-foreground size-4 shrink-0"
+                />
+              )}
             </button>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/** A machine's state as a word with an icon or dot, never color alone. */
+function MachineState({ state }: { state: "maintenance" | "busy" | "idle" }) {
+  if (state === "maintenance")
+    return (
+      <span className="text-destructive flex shrink-0 items-center gap-1 text-xs font-semibold whitespace-nowrap">
+        <Wrench aria-hidden="true" className="size-3.5 shrink-0" />
+        {/* Short on phone so it stays on one line beside the wrench. */}
+        <span className="lg:hidden">Maintenance</span>
+        <span className="hidden lg:inline">Needs maintenance</span>
+      </span>
+    );
+  if (state === "idle")
+    return (
+      <span className="text-foreground flex shrink-0 items-center gap-1.5 text-xs font-semibold">
+        <span
+          aria-hidden="true"
+          className="bg-status-active size-2 rounded-full"
+        />
+        Idle
+      </span>
+    );
+  return (
+    <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
+      <span
+        aria-hidden="true"
+        className="bg-muted-foreground size-2 rounded-full"
+      />
+      In use
+    </span>
   );
 }
 
@@ -243,20 +319,28 @@ function MachineWork({
         Number(a.machine_id === machine.id)
     );
   const waiting = queue.data ?? [];
-  const summary = [
-    machine.processes?.map((process) => process.name).join(", "),
-    queue.data && `${waiting.length} waiting`,
-  ].filter(Boolean);
+  const processes = machine.processes
+    ?.map((process) => process.name)
+    .join(", ");
 
   return (
     <>
-      {summary.length > 0 && (
-        <p className="text-muted-foreground -mt-3 text-sm">
-          {summary.join(" · ")}
+      {(processes || queue.data) && (
+        <p className="text-muted-foreground -mt-2 text-sm">
+          {processes}
+          {processes && queue.data && " · "}
+          {queue.data && (
+            <>
+              <span className="brand-figures text-foreground font-semibold">
+                {waiting.length}
+              </span>{" "}
+              waiting
+            </>
+          )}
         </p>
       )}
       {needsMaintenance(machine) && (
-        <p role="note" className="bg-muted rounded-lg p-3 text-sm">
+        <p role="note" className="callout callout-red text-sm">
           {machine.name} needs maintenance
           {machine.maintenance_note ? `: ${machine.maintenance_note}` : "."}
         </p>
@@ -273,12 +357,13 @@ function MachineWork({
               : undefined
           }
           machineName={card.linked_machine?.name ?? null}
+          here={card.machine_id === machine.id}
           actions={<PartActionBar card={card} viewerId={viewerId} />}
         />
       ))}
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-base">Waiting for {machine.name}</h2>
+        <h2 className="section-title">Waiting for {machine.name}</h2>
         {loadState([queue], "Loading queue...") ??
           (waiting.length === 0 ? (
             <p className="text-muted-foreground">
@@ -316,12 +401,15 @@ function WorkingOn({
   submitter,
   sop,
   machineName,
+  here,
   actions,
 }: {
   card: KanbanCardWithProcesses;
   submitter: string | null;
   sop: string | null | undefined;
   machineName: string | null;
+  /** Whether the part is on the machine the page shows. */
+  here: boolean;
   /** Unclaim and Done, the part page's action bar. */
   actions: ReactNode;
 }) {
@@ -334,12 +422,15 @@ function WorkingOn({
   return (
     <section
       aria-label="Working on"
-      className="bg-card border-l-primary flex flex-col gap-3 rounded-xl border border-l-4 p-3.5"
+      className={`bg-card flex flex-col gap-3 rounded-xl border border-l-4 p-3.5 ${
+        here ? "border-l-primary" : "border-l-status-active"
+      }`}
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-primary text-xs font-semibold">
-            You're making{machineName ? ` on ${machineName}` : ""}
+          <p className={`eyebrow ${here ? "text-emphasis" : ""}`}>
+            {here ? "Making now" : "Also making"}
+            {machineName ? ` · ${machineName}` : ""}
           </p>
           <h2 className="text-lg leading-snug break-words">{card.title}</h2>
           {byline.length > 0 && (
@@ -369,18 +460,23 @@ function WorkingOn({
         </p>
       )}
       {actions}
-      <div className="flex flex-wrap gap-x-4 text-sm">
-        <a href={partHref(card.id)} className="flex min-h-11 items-center">
+      <div className="-mt-1 flex flex-wrap gap-x-5 text-sm">
+        <a
+          href={partHref(card.id)}
+          className="text-link inline-flex min-h-11 items-center gap-1"
+        >
           Part details
+          <ChevronRight aria-hidden="true" className="size-4" />
         </a>
         {sop && (
           <a
             href={sop}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex min-h-11 items-center"
+            className="text-link inline-flex min-h-11 items-center gap-1"
           >
             {machineName ? `${machineName} SOP` : "SOP"}
+            <ExternalLink aria-hidden="true" className="size-3.5" />
           </a>
         )}
         {onshapeUrl && (
@@ -388,9 +484,10 @@ function WorkingOn({
             href={onshapeUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex min-h-11 items-center"
+            className="text-link inline-flex min-h-11 items-center gap-1"
           >
             Open in Onshape
+            <ExternalLink aria-hidden="true" className="size-3.5" />
           </a>
         )}
       </div>
@@ -399,7 +496,7 @@ function WorkingOn({
 }
 
 /**
- * Material, quantity and due date (overdue ones marked), and "any <process>"
+ * Material, quantity and due date (an overdue date on its own red line), and "any <process>"
  * for a part waiting in the process queue rather than assigned to this
  * machine.
  */
@@ -414,7 +511,7 @@ function QueueDetail({
   const facts = [
     card.onshape_material,
     card.quantity_to_make != null && `×${card.quantity_to_make}`,
-    due?.text,
+    due && !due.overdue && due.text,
   ].filter(Boolean);
   const process =
     card.machine_id === null
@@ -424,17 +521,17 @@ function QueueDetail({
       : undefined;
   return (
     <span className="flex flex-col">
-      {facts.length > 0 && (
+      {facts.length > 0 && <span>{facts.join(" · ")}</span>}
+      {due?.overdue && (
         <span
-          data-overdue={due?.overdue ? "" : undefined}
-          className={due?.overdue ? "text-destructive font-semibold" : ""}
+          data-overdue=""
+          className="text-destructive flex items-center gap-1 font-semibold"
         >
-          {facts.join(" · ")}
+          <Clock aria-hidden="true" className="size-3 shrink-0" />
+          {due.text}
         </span>
       )}
-      {process && (
-        <span className="text-status-active">{`any ${process.name}`}</span>
-      )}
+      {process && <span>{`any ${process.name}`}</span>}
     </span>
   );
 }

@@ -50,14 +50,18 @@ const card = {
     {
       id: 1,
       from_status: null,
+      from_column_id: null,
       to_status: "Backlog",
+      to_column_id: "backlog",
       actor_name: "Jordan",
       moved_at: "2026-11-12T15:00:00.000Z",
     },
     {
       id: 2,
       from_status: "Backlog",
+      from_column_id: "backlog",
       to_status: "In Progress",
+      to_column_id: "in-progress",
       actor_name: "Sam",
       moved_at: "2026-11-13T15:00:00.000Z",
     },
@@ -95,6 +99,8 @@ test("the part page shows a phone-sized summary, hides history and delete until 
       viewport: { width: 390, height: 844 },
     });
     page.setDefaultTimeout(3000);
+    // Due dates are flagged against today, so pin today.
+    await page.clock.setFixedTime(new Date("2026-11-18T12:00:00"));
     let requests: string[] = [];
     await page.route("**/api/**", (route) => {
       const request = route.request();
@@ -159,9 +165,9 @@ test("the part page shows a phone-sized summary, hides history and delete until 
     await page
       .getByRole("heading", { name: "Button Head 4x Size", level: 1 })
       .waitFor();
-    await page
-      .getByText("Miscellaneous · v4 · released by Jordan Lee")
-      .waitFor();
+    await page.getByText("Miscellaneous", { exact: true }).waitFor();
+    await page.getByText("v4", { exact: true }).first().waitFor();
+    await page.getByText("Released by Jordan Lee, Nov 12").waitFor();
 
     const status = page.getByRole("list", { name: "Status" });
     assert.deepEqual(await status.getByRole("listitem").allTextContents(), [
@@ -216,7 +222,9 @@ test("the part page shows a phone-sized summary, hides history and delete until 
     await history.click();
     const historyList = page.getByRole("region", { name: "Status history" });
     await historyList.getByText("Released into Backlog").waitFor();
-    await historyList.getByText("Backlog → In Progress").waitFor();
+    // Status names match the stepper, and times drop the seconds.
+    await historyList.getByText("Backlog → In progress").waitFor();
+    await historyList.getByText("Sam · Fri, Nov 13 ·").waitFor();
 
     // A small picture that opens large.
     const thumb = page.getByRole("button", { name: "Enlarge picture" });

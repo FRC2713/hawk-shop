@@ -9,7 +9,7 @@ if (result.error) Astro.response.status = 500;
 <AppLayout title="Add equipment" workspace>
   {
     result.error ? (
-      <p role="alert" class="p-6">
+      <p role="alert" class="mx-auto w-full max-w-6xl px-5 py-6">
         Unable to load equipment. Reload to try again.
       </p>
     ) : (

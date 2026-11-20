@@ -173,7 +173,7 @@ test("rows keep the link to older Done parts", async () => {
   try {
     await chooseRows(page, "Project");
     await expect(boardCardFace(page, "Finished last week")).toHaveCount(0);
-    const older = page.getByRole("link", { name: "View 1 older card" });
+    const older = page.getByRole("link", { name: "View 1 older part" });
     await expect(older).toBeVisible();
     await expect(older).toHaveAttribute("href", "/kanban/done");
   } finally {

@@ -16,13 +16,14 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Columns3, Plus } from "lucide-react";
+import { Columns3, Plus, SearchX, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { buildCardSearchIndex, buildCardUsersMap } from "~/lib/card-search";
 import {
   EMPTY_BOARD_FILTERS,
   filterCards,
+  hasActiveFilters,
   type BoardFilters,
 } from "~/lib/boardFilter";
 import type {
@@ -70,6 +71,8 @@ interface KanbanBoardProps {
   density?: BoardDensity;
   filters?: BoardFilters;
   rowsBy?: BoardRowsBy;
+  /** Clears every filter; offered when the filters hide every card. */
+  onClearFilters?: () => void;
   onAddColumn?: () => void;
   onRenameColumn?: (id: string, newTitle: string) => void;
   onDeleteColumn?: (id: string) => void;
@@ -83,6 +86,7 @@ export function KanbanBoard({
   density = "compact",
   filters = EMPTY_BOARD_FILTERS,
   rowsBy = "none",
+  onClearFilters,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -149,6 +153,8 @@ export function KanbanBoard({
     () => filterCards(cards, filters, searchScores),
     [cards, filters, searchScores]
   );
+  const isFiltered = hasActiveFilters(filters);
+  const noMatches = isFiltered && !isLoadingCards && filteredCards.length === 0;
 
   // Mutation to update card column
   const moveCardMutation = useMutation({
@@ -492,71 +498,96 @@ export function KanbanBoard({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      {rowsBy !== "none" ? (
-        <KanbanRows
-          columns={columns}
-          rowKind={rowsBy === "process" ? "Process" : "Project"}
-          rows={rows}
-          rowOf={rowOf}
-          cardsByColumn={shownByColumn}
-          olderDoneCount={olderDoneCount}
-          density={density}
-          usersMap={usersMap}
-          now={now}
-          isDraggingCard={activeCard !== null}
-          selectedCardIds={selectedCardIds}
-          onCardSelect={handleCardSelect}
-          collapsedRows={collapsedRows}
-          onToggleRow={toggleRow}
-        />
-      ) : (
-        <SortableContext
-          items={columns.map((col) => col.id)}
-          strategy={horizontalListSortingStrategy}
-        >
-          <div className="flex h-full gap-3 overflow-x-auto p-3 sm:gap-4 sm:p-6">
-            {columns.map((column, index) => {
-              const isLastColumn = index === columns.length - 1;
-              // The last column is always Done, showing today's parts
-              const displayColumn = isLastColumn
-                ? { ...column, title: DONE_TODAY_TITLE }
-                : column;
-              return (
-                <KanbanColumn
-                  key={column.id}
-                  column={displayColumn}
-                  cards={shownByColumn[column.id] || []}
-                  olderCardsCount={isLastColumn ? olderDoneCount : 0}
-                  onRename={handleRenameColumn}
-                  onDelete={handleDeleteColumn}
-                  isEditMode={isEditMode}
-                  isDraggingCard={activeCard !== null}
-                  density={density}
-                  usersMap={usersMap}
-                  now={now}
-                  isLastColumn={isLastColumn}
-                  selectedCardIds={selectedCardIds}
-                  selectedColumnId={selectedColumnId}
-                  onCardSelect={handleCardSelect}
-                />
-              );
-            })}
-
-            {/* Quick add column button at the end - only in edit mode */}
-            {isEditMode && (
-              <button
-                onClick={handleAddColumn}
-                className="border-muted-foreground/20 bg-muted/20 text-muted-foreground active:border-muted-foreground/40 active:bg-muted/40 active:text-foreground hover:border-muted-foreground/40 hover:bg-muted/40 hover:text-foreground flex h-full w-[280px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-all sm:w-[320px]"
-              >
-                <Plus className="size-5 sm:size-6" />
-                <span className="text-xs font-medium sm:text-sm">
-                  Add Column
-                </span>
-              </button>
+      <div className="flex h-full flex-col">
+        {noMatches && (
+          <div
+            role="status"
+            className="bg-muted mx-3 mt-3 flex flex-wrap items-center gap-3 rounded-lg px-4 py-3 sm:mx-6 sm:mt-6"
+          >
+            <SearchX
+              className="text-muted-foreground size-5 shrink-0"
+              aria-hidden="true"
+            />
+            <p className="flex-1 text-sm font-semibold">
+              No cards match these filters
+            </p>
+            {onClearFilters && (
+              <Button variant="outline" size="sm" onClick={onClearFilters}>
+                <X className="size-4" aria-hidden="true" />
+                Clear filters
+              </Button>
             )}
           </div>
-        </SortableContext>
-      )}
+        )}
+        <div className="min-h-0 flex-1">
+          {rowsBy !== "none" ? (
+            <KanbanRows
+              columns={columns}
+              rowKind={rowsBy === "process" ? "Process" : "Project"}
+              rows={rows}
+              rowOf={rowOf}
+              cardsByColumn={shownByColumn}
+              olderDoneCount={olderDoneCount}
+              density={density}
+              usersMap={usersMap}
+              now={now}
+              isDraggingCard={activeCard !== null}
+              selectedCardIds={selectedCardIds}
+              onCardSelect={handleCardSelect}
+              collapsedRows={collapsedRows}
+              onToggleRow={toggleRow}
+            />
+          ) : (
+            <SortableContext
+              items={columns.map((col) => col.id)}
+              strategy={horizontalListSortingStrategy}
+            >
+              <div className="flex h-full gap-3 overflow-x-auto p-3 sm:gap-4 sm:p-6">
+                {columns.map((column, index) => {
+                  const isLastColumn = index === columns.length - 1;
+                  // The last column is always Done, showing today's parts
+                  const displayColumn = isLastColumn
+                    ? { ...column, title: DONE_TODAY_TITLE }
+                    : column;
+                  return (
+                    <KanbanColumn
+                      key={column.id}
+                      column={displayColumn}
+                      cards={shownByColumn[column.id] || []}
+                      olderCardsCount={isLastColumn ? olderDoneCount : 0}
+                      isFiltered={isFiltered}
+                      onRename={handleRenameColumn}
+                      onDelete={handleDeleteColumn}
+                      isEditMode={isEditMode}
+                      isDraggingCard={activeCard !== null}
+                      density={density}
+                      usersMap={usersMap}
+                      now={now}
+                      isLastColumn={isLastColumn}
+                      selectedCardIds={selectedCardIds}
+                      selectedColumnId={selectedColumnId}
+                      onCardSelect={handleCardSelect}
+                    />
+                  );
+                })}
+
+                {/* Quick add column button at the end - only in edit mode */}
+                {isEditMode && (
+                  <button
+                    onClick={handleAddColumn}
+                    className="border-muted-foreground/20 bg-muted/20 text-muted-foreground active:border-muted-foreground/40 active:bg-muted/40 active:text-foreground hover:border-muted-foreground/40 hover:bg-muted/40 hover:text-foreground flex h-full w-[200px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-all"
+                  >
+                    <Plus className="size-5 sm:size-6" />
+                    <span className="text-xs font-medium sm:text-sm">
+                      Add Column
+                    </span>
+                  </button>
+                )}
+              </div>
+            </SortableContext>
+          )}
+        </div>
+      </div>
 
       {/* Floating bulk edit bar - shown when cards are selected */}
       {reasonDialog}
@@ -637,7 +668,7 @@ export function KanbanBoardSkeleton() {
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="bg-card flex h-full w-[280px] shrink-0 flex-col rounded-xl border sm:w-[320px]"
+            className="bg-card flex h-full max-w-[420px] min-w-[280px] flex-1 basis-0 flex-col rounded-xl border"
           >
             <div className="bg-muted/30 flex items-center gap-2 border-b px-2 py-2 sm:px-3 sm:py-3">
               <Skeleton className="h-4 w-20 sm:h-5 sm:w-24" />

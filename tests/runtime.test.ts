@@ -558,7 +558,7 @@ test("cached CAD remains private and a missing connection does not expire Suite"
   const statusPage = await status.text();
   assert.match(statusPage, /Onshape API access is not configured/);
   // Webhook upkeep has no timer: a fresh boot has never run a repair pass.
-  assert.match(statusPage, /Last repair pass:[\s\S]{0,80}?never/);
+  assert.match(statusPage, /Last repair pass(?:<[^>]+>)?:[\s\S]{0,120}?never/);
   const logout = await call("/auth/logout");
   assert.equal(
     logout.headers.get("location"),
@@ -627,7 +627,7 @@ test(
         );
         await page.goto(origin + "/kanban/done");
         await expect(
-          page.getByRole("heading", { name: "Done Cards" })
+          page.getByRole("heading", { name: "Done parts", exact: true })
         ).toBeVisible();
         await page.goto(
           origin +
@@ -837,16 +837,14 @@ test(
         await expect(
           history.getByText("Released into Backlog", { exact: true })
         ).toBeVisible();
-        await expect(
-          history.getByText("Shop Member", { exact: true }).first()
-        ).toBeVisible();
+        await expect(history.getByText(/^Shop Member\b/).first()).toBeVisible();
         if (width === 1280) {
           await json("/api/kanban/cards/history-browser", "PATCH", {
             column_id: "in-progress",
           });
         }
         await expect(
-          history.getByText("Backlog → In Progress", { exact: true })
+          history.getByText(/^Backlog → In Progress$/i)
         ).toBeVisible();
         await expect(history.locator("time")).toHaveCount(2);
         assert.ok(
@@ -1339,7 +1337,7 @@ test(
       });
       await page.goto(origin + "/kanban/done?q=24-164&keep=yes#finished");
       const search = page.getByRole("textbox", {
-        name: "Search completed cards",
+        name: "Search done parts",
       });
       const bracket = page.getByRole("heading", {
         name: first.title,
@@ -1363,7 +1361,7 @@ test(
       await expect(bracket).toBeVisible();
       await search.fill("no-such-finished-part");
       await expect(bracket).toHaveCount(0);
-      await expect(page.getByText("No matching completed cards")).toBeVisible();
+      await expect(page.getByText("No matching done parts")).toBeVisible();
       await page.getByRole("button", { name: "Clear search" }).click();
       await expect(bracket).toBeVisible();
       await expect(plate).toBeVisible();
@@ -1603,7 +1601,10 @@ test("equipment add and edit routes hydrate at phone and desktop widths and miss
       await page
         .getByRole("searchbox", { name: "Search equipment" })
         .fill("Route printer");
-      await page.getByRole("link", { name: /Route printer/ }).click();
+      await page
+        .getByRole("link", { name: /Route printer/ })
+        .first()
+        .click();
       await expect(page).toHaveURL(origin + `/equipment/${machine.id}`);
       await expect(
         page.getByRole("link", { name: "Edit equipment" })

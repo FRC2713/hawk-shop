@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { format, parseISO } from "date-fns";
+import { CircleCheck } from "lucide-react";
 import {
   equipmentQuery,
   claimCard,
   queryKeys,
   usersQuery,
+  type KanbanCardWithHistory,
   type KanbanCardWithProcesses,
 } from "~/lib/api";
 import { isConflict, memberName } from "~/lib/phoneParts";
@@ -22,6 +25,7 @@ import {
 } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
+import { cn } from "~/lib/utils";
 
 import {
   WORKFLOW_ACTIONS,
@@ -32,7 +36,8 @@ import {
 /**
  * The action for a part's current status, pinned at the bottom of the part
  * page: Claim in Backlog, Unclaim and Done in In Progress, Send back and
- * Approve in Review, nothing once Done.
+ * Approve in Review. A Done part gets a read-only line saying who approved
+ * it and when, from its status history when the card carries one.
  *
  * A conflict (409) stays in the bar with the server's reason, and every
  * outcome refetches the part, so a lost claim names whoever won it
@@ -97,7 +102,10 @@ export function PartActionBar({
     conflict = `${memberName(users, card.assignee)} already claimed this part`;
 
   const actions = workflowActionsFor(card);
-  if (actions.length === 0 && !stationIntent) return null;
+  if (actions.length === 0 && !stationIntent)
+    return card.column_id === WORKFLOW_COLUMN_IDS.done ? (
+      <DoneLine card={card} />
+    ) : null;
   const choose = (chosen: WorkflowAction) => {
     if (chosen === "sendBack") setAskingReason(true);
     else
@@ -156,16 +164,24 @@ export function PartActionBar({
         </p>
       )}
       {actions.length > 0 && (
-        <div className="flex gap-2">
+        <div className="flex gap-2 lg:justify-end">
           {actions.map((chosen) => (
             <Button
               key={chosen}
               variant={WORKFLOW_ACTIONS[chosen].primary ? "default" : "outline"}
-              className={
-                stationIntent && chosen === "claim"
-                  ? "ring-status-active h-12 flex-1 ring-2 ring-offset-2"
-                  : "h-12 flex-1"
-              }
+              className={cn(
+                "h-12",
+                // The primary action takes most of the bar; the other one
+                // (Unclaim, Send back) stays as wide as its label.
+                // On desktop the primary action sizes to its label too, so
+                // it doesn't become a banner across a wide column.
+                WORKFLOW_ACTIONS[chosen].primary
+                  ? "flex-1 lg:flex-none lg:px-6"
+                  : "flex-none px-5",
+                stationIntent &&
+                  chosen === "claim" &&
+                  "ring-status-active ring-2 ring-offset-2"
+              )}
               aria-describedby={
                 stationIntent && chosen === "claim"
                   ? "station-claim-intent"
@@ -230,5 +246,26 @@ export function PartActionBar({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** "Done · approved by Alex Chen, Nov 9", from the move into Done. */
+function DoneLine({ card }: { card: KanbanCardWithProcesses }) {
+  const history = (card as Partial<KanbanCardWithHistory>).status_history;
+  const approval = history
+    ?.filter((entry) => entry.to_column_id === WORKFLOW_COLUMN_IDS.done)
+    .at(-1);
+  return (
+    <p className="flex min-h-12 w-full items-center gap-2 text-sm font-semibold">
+      <CircleCheck
+        aria-hidden="true"
+        className="text-status-active size-5 flex-none"
+      />
+      <span>
+        Done
+        {approval &&
+          ` · approved by ${approval.actor_name}, ${format(parseISO(approval.moved_at), "MMM d")}`}
+      </span>
+    </p>
   );
 }

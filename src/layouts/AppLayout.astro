@@ -5,6 +5,7 @@ import { reportsEnabled } from "../server/reports";
 import { ReportProblem } from "../components/app/report-problem";
 import { suiteUrl } from "../server/suite-identity";
 import PhoneTabBar from "../components/phone/PhoneTabBar.astro";
+import { PHONE_TABS } from "../lib/phone";
 interface Props {
   title: string;
   workspace?: boolean;
@@ -17,12 +18,18 @@ interface Props {
    * connector, which lives in a narrow Onshape panel).
    */
   phone?: "tabs" | "page" | "plain";
+  /**
+   * The header spans the window (the board). Every other page, workspace or
+   * not, keeps its header and content in the shared max-w-6xl px-5 container.
+   */
+  fullBleed?: boolean;
 }
 const {
   title,
   workspace = false,
   phone = "tabs",
   station = false,
+  fullBleed = false,
 } = Astro.props;
 const identity = Astro.locals.identity;
 const reporting = Boolean(identity && reportsEnabled());
@@ -35,11 +42,21 @@ const initials = name
   .join("");
 const links = [
   { href: "/", label: "Home" },
+  { href: "/next", label: "Next up" },
+  { href: "/backlog", label: "Backlog" },
+  { href: "/shop", label: "Shop" },
   { href: "/kanban", label: "Board" },
+  { href: "/my-parts", label: "My parts" },
   { href: "/projects", label: "Projects" },
   { href: "/equipment", label: "Equipment" },
   { href: "/metrics", label: "Metrics" },
 ];
+// The phone account menu lists only pages the bottom tabs don't cover; the
+// board has no phone layout.
+const phoneTabHrefs = new Set<string>([
+  "/kanban",
+  ...PHONE_TABS.map((tab) => tab.href),
+]);
 ---
 
 <!doctype html>
@@ -67,7 +84,12 @@ const links = [
     {
       !station && (
         <header class="app-header bg-card border-b">
-          <div class="shop-header mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-3">
+          <div
+            class:list={[
+              "shop-header mx-auto flex w-full flex-wrap items-center justify-between gap-3 py-3",
+              fullBleed ? "px-4" : "max-w-6xl px-5",
+            ]}
+          >
             <a
               href="/"
               aria-label="Hawk Shop overview"
@@ -129,19 +151,43 @@ const links = [
                     {phone === "tabs" && (
                       <nav aria-label="More pages" class="phone-more-pages">
                         {links
-                          .filter((link) => link.href !== "/kanban")
+                          .filter((link) => !phoneTabHrefs.has(link.href))
                           .map((link) => (
-                            <a class="account-sign-out" href={link.href}>
+                            <a
+                              class="account-sign-out"
+                              href={link.href}
+                              aria-current={
+                                (
+                                  link.href === "/"
+                                    ? Astro.url.pathname === "/"
+                                    : Astro.url.pathname.startsWith(link.href)
+                                )
+                                  ? "page"
+                                  : undefined
+                              }
+                            >
                               {link.label}
                             </a>
                           ))}
                       </nav>
                     )}
                     {reporting && <ReportProblem client:load />}
-                    <a class="account-sign-out" href="/slack">
-                      Slack settings
+                    <a
+                      class="account-sign-out"
+                      href="/slack"
+                      aria-current={
+                        Astro.url.pathname === "/slack" ? "page" : undefined
+                      }
+                    >
+                      Slack notifications
                     </a>
-                    <a class="account-sign-out" href="/onshape">
+                    <a
+                      class="account-sign-out"
+                      href="/onshape"
+                      aria-current={
+                        Astro.url.pathname === "/onshape" ? "page" : undefined
+                      }
+                    >
                       Onshape API status
                     </a>
                     <a class="account-sign-out" href={suiteUrl("auth/portal")}>
@@ -165,13 +211,13 @@ const links = [
         "shop-content",
         workspace
           ? "min-h-0 flex-1"
-          : "mx-auto w-full max-w-6xl px-5 py-6 sm:py-8",
+          : "mx-auto w-full max-w-6xl px-5 pt-4 pb-6 sm:py-8",
       ]}
     >
       <slot />
     </div>
     {
-      !workspace && !station && (
+      !workspace && !station && phone !== "page" && (
         <footer class="app-footer text-muted-foreground mx-auto w-full max-w-6xl px-5 py-8 text-xs">
           Red Hawk Robotics · FRC 2713
         </footer>

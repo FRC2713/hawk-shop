@@ -11,10 +11,10 @@ if (!equipment) Astro.response.status = 404;
     equipment ? (
       <MachinePage id={equipment.id} client:load />
     ) : (
-      <section class="p-6">
+      <section class="mx-auto w-full max-w-6xl space-y-3 px-5 py-6">
         <>
-          <h1>Equipment not found</h1>
-          <a href="/equipment" class="underline">
+          <h1 class="text-3xl">Equipment not found</h1>
+          <a href="/equipment" class="text-link text-sm">
             Back to equipment
           </a>
         </>

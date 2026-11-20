@@ -227,6 +227,8 @@ test("a Review part offers Approve, and Send back won't go without a reason", as
     .locator('[aria-current="step"]', { hasText: "Done" })
     .waitFor();
   assert.equal(posted("gusset", "approve").length, 1);
+  // A Done part keeps the bar as a read-only line, with no buttons.
+  await bar().getByText("Done", { exact: true }).waitFor();
   assert.equal(await bar().getByRole("button").count(), 0);
 });
 

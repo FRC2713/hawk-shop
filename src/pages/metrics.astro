@@ -1,4 +1,5 @@
 ---
+import { ChevronRight } from "lucide-react";
 import AppLayout from "../layouts/AppLayout.astro";
 import { getMetrics, parseMetricsRange } from "../server/kanbanApi/metrics";
 let range = parseMetricsRange(new URLSearchParams());
@@ -11,169 +12,429 @@ try {
   Astro.response.status = 400;
 }
 const metrics = error ? null : await getMetrics(range);
-function duration(ms: number | null) {
-  if (ms === null) return "No data";
-  if (ms < 60000) return "<1 min";
-  if (ms < 3600000) return `${(ms / 60000).toFixed(1)} min`;
-  if (ms < 86400000) return `${(ms / 3600000).toFixed(1)} h`;
-  return `${(ms / 86400000).toFixed(1)} d`;
+// After an invalid range, show what was entered next to the error.
+const startValue = error
+  ? (Astro.url.searchParams.get("start") ?? range.start)
+  : range.start;
+const endValue = error
+  ? (Astro.url.searchParams.get("end") ?? range.end)
+  : range.end;
+
+/** Splits a duration into its figure and unit, so only figures are mono. */
+function duration(ms: number | null): { figure: string; unit: string } | null {
+  if (ms === null) return null;
+  if (ms < 60000) return { figure: "<1", unit: "min" };
+  if (ms < 3600000) return { figure: (ms / 60000).toFixed(1), unit: "min" };
+  if (ms < 86400000) return { figure: (ms / 3600000).toFixed(1), unit: "h" };
+  return { figure: (ms / 86400000).toFixed(1), unit: "d" };
 }
+
+const day = (offset: number) => {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+};
+const today = day(0);
+const presets = [
+  { label: "7 days", start: day(6), end: today },
+  { label: "30 days", start: day(29), end: today },
+  { label: "90 days", start: day(89), end: today },
+].map((preset) => ({
+  ...preset,
+  href: `?start=${preset.start}&end=${preset.end}`,
+  current: !error && preset.start === range.start && preset.end === range.end,
+}));
+
+const weekLabel = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const weekTitle = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "long",
+  timeZone: "UTC",
+});
+const cardsDone = metrics
+  ? metrics.weeks.reduce((sum, row) => sum + row.cards_done, 0)
+  : 0;
+const busiestWeek = metrics
+  ? Math.max(1, ...metrics.weeks.map((row) => row.cards_done))
+  : 1;
+const cycle = metrics ? duration(metrics.cycle.median_ms) : null;
+
+const headerCell =
+  "eyebrow px-2 pb-2 pt-1 align-bottom whitespace-nowrap font-semibold";
+const figureCell = "brand-figures px-2 py-2.5 text-right whitespace-nowrap";
+const rowClass = "border-border/60 border-b last:border-0";
+const inputClass =
+  "border-input bg-background dark:bg-input/30 h-9 rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive aria-invalid:ring-destructive/20";
 ---
 
 <AppLayout title="Shop metrics">
-  <main class="space-y-6">
-    <header class="space-y-2">
-      <h1 class="text-2xl">Shop metrics</h1>
-      <p class="text-muted-foreground text-sm">
-        Time and rework across the shop, from recorded status history.
-      </p>
-    </header>
-    <form
-      method="get"
-      class="bg-card flex flex-wrap items-end gap-4 rounded-lg border p-4"
+  <main class="space-y-8">
+    <div
+      class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"
     >
-      <label class="grid gap-1 text-sm"
-        >Start date<input
-          class="bg-background rounded border p-2"
-          type="date"
-          name="start"
-          value={range.start}
-          required
-        /></label
+      <header class="min-w-0 space-y-2">
+        <h1 class="text-2xl">Shop metrics</h1>
+        <p class="text-muted-foreground text-sm">
+          Time and rework across the shop, from recorded status history.{" "}
+          <span id="metrics-range-hint">Dates use UTC.</span>
+        </p>
+      </header>
+      <div
+        class="flex flex-wrap items-end gap-x-5 gap-y-3 lg:shrink-0 lg:flex-nowrap"
       >
-      <label class="grid gap-1 text-sm"
-        >End date<input
-          class="bg-background rounded border p-2"
-          type="date"
-          name="end"
-          value={range.end}
-          required
-        /></label
-      >
-      <button
-        class="bg-primary text-primary-foreground rounded px-4 py-2 text-sm font-semibold"
-        type="submit">Apply dates</button
-      >
-    </form>
+        <div class="grid gap-1">
+          <span class="text-sm font-medium" aria-hidden="true">Quick range</span
+          >
+          <nav
+            aria-label="Date presets"
+            class="bg-card flex h-11 gap-0.5 rounded-md border p-0.5 sm:h-9"
+          >
+            {
+              presets.map((preset) => (
+                <a
+                  href={preset.href}
+                  aria-current={preset.current ? "page" : undefined}
+                  class:list={[
+                    "focus-visible:ring-ring/50 inline-flex items-center rounded px-2.5 text-xs font-semibold whitespace-nowrap outline-none focus-visible:ring-[3px]",
+                    preset.current
+                      ? "bg-primary text-primary-foreground"
+                      : "text-foreground hover:bg-muted",
+                  ]}
+                >
+                  <span class="sr-only">Last </span>
+                  {preset.label}
+                </a>
+              ))
+            }
+          </nav>
+        </div>
+        <form method="get" class="flex flex-wrap items-end gap-3">
+          <label class="grid gap-1 text-sm font-medium"
+            >Start date<input
+              class={inputClass}
+              type="date"
+              name="start"
+              value={startValue}
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby="metrics-range-hint"
+              required
+            /></label
+          >
+          <label class="grid gap-1 text-sm font-medium"
+            >End date<input
+              class={inputClass}
+              type="date"
+              name="end"
+              value={endValue}
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby="metrics-range-hint"
+              required
+            /></label
+          >
+          <button
+            class="bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring/50 h-9 rounded-md px-4 text-sm font-semibold outline-none focus-visible:ring-[3px]"
+            type="submit">Apply dates</button
+          >
+        </form>
+      </div>
+    </div>
     {
       error && (
-        <p role="alert" class="border-destructive border-l-4 p-4">
+        <p role="alert" class="callout callout-red text-sm">
           {error}
         </p>
       )
     }
-    <p class="text-muted-foreground text-sm">
-      Dates use UTC. Completed status visits count when they end in the range;
-      ongoing visits are excluded. Cycle time and throughput count each card's
-      first recorded entry into the current last column. Cycle time requires a
-      recorded release. Earlier moves are never guessed.
-    </p>
     {
       metrics && (
         <>
-          <section class="bg-card rounded-lg border p-4">
-            <h2>Release to done</h2>
-            <p class="brand-figures my-2 text-2xl">
-              {duration(metrics.cycle.median_ms)}
-            </p>
-            <p class="text-muted-foreground text-sm">
-              Median cycle time across {metrics.cycle.samples} cards with a
-              recorded release.
-            </p>
-          </section>
-          <section class="bg-card space-y-3 rounded-lg border p-4">
-            <h2>Time in each status</h2>
-            {metrics.statuses.length ? (
-              <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
-                  <caption class="sr-only">
-                    Completed visits and backward moves by status
-                  </caption>
-                  <thead>
-                    <tr class="border-b">
-                      <th scope="col" class="p-2">
-                        Status
-                      </th>
-                      <th scope="col" class="p-2">
-                        Visits
-                      </th>
-                      <th scope="col" class="p-2">
-                        Median
-                      </th>
-                      <th scope="col" class="p-2">
-                        P90
-                      </th>
-                      <th scope="col" class="p-2">
-                        Slowest
-                      </th>
-                      <th scope="col" class="p-2">
-                        Backward moves
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {metrics.statuses.map((row) => (
-                      <tr class="border-b">
-                        <th scope="row" class="p-2 font-normal">
-                          {row.status}
-                        </th>
-                        <td class="brand-figures p-2">{row.samples}</td>
-                        <td class="brand-figures p-2 whitespace-nowrap">
-                          {duration(row.median_ms)}
-                        </td>
-                        <td class="brand-figures p-2 whitespace-nowrap">
-                          {duration(row.p90_ms)}
-                        </td>
-                        <td class="brand-figures p-2 whitespace-nowrap">
-                          {duration(row.max_ms)}
-                        </td>
-                        <td class="brand-figures p-2">{row.backward_moves}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <section aria-labelledby="metrics-summary" class="space-y-1">
+            <h2 id="metrics-summary" class="sr-only">
+              Summary
+            </h2>
+            <dl class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+              <div class="bg-card border-l-primary col-span-2 rounded-lg border border-l-4 p-4 sm:col-span-1">
+                <dt class="eyebrow">Release to done</dt>
+                {metrics.cycle.samples === 0 || !cycle ? (
+                  <dd class="text-muted-foreground mt-2 text-sm">
+                    No cards finished with a recorded release in this range.
+                  </dd>
+                ) : (
+                  <>
+                    <dd class="mt-1.5">
+                      <span class="brand-figures text-4xl font-semibold tracking-tight">
+                        {cycle.figure}
+                      </span>
+                      <span class="text-muted-foreground ml-1.5 text-xl font-medium">
+                        {{ d: "days", h: "hours", min: "min" }[cycle.unit]}
+                      </span>
+                    </dd>
+                    <dd class="text-muted-foreground mt-1.5 text-xs">
+                      Median cycle time
+                    </dd>
+                  </>
+                )}
               </div>
-            ) : (
-              <p class="text-sm">
-                No completed status visits or backward moves in this range.
+              <div class="bg-card rounded-lg border p-3 sm:p-4">
+                <dt class="eyebrow">Cards released</dt>
+                <dd class="mt-1.5">
+                  <span class="brand-figures text-3xl font-semibold tracking-tight sm:text-4xl">
+                    {metrics.cycle.samples}
+                  </span>
+                </dd>
+                <dd class="text-muted-foreground mt-1.5 text-xs">
+                  Counted in the median
+                </dd>
+              </div>
+              <div class="bg-card rounded-lg border p-3 sm:p-4">
+                <dt class="eyebrow">Cards done</dt>
+                <dd class="mt-1.5">
+                  <span class="brand-figures text-3xl font-semibold tracking-tight sm:text-4xl">
+                    {cardsDone}
+                  </span>
+                </dd>
+                <dd class="text-muted-foreground mt-1.5 text-xs">
+                  Reached the last column
+                </dd>
+              </div>
+            </dl>
+            <details class="group">
+              <summary class="text-foreground focus-visible:ring-ring/50 inline-flex min-h-11 cursor-pointer list-none items-center gap-1 rounded text-sm font-medium outline-none focus-visible:ring-[3px] sm:min-h-8 [&::-webkit-details-marker]:hidden">
+                <ChevronRight
+                  className="text-icon-accent size-4 transition-transform group-open:rotate-90"
+                  aria-hidden="true"
+                />
+                How these are counted
+              </summary>
+              <p class="text-muted-foreground max-w-prose pb-1 pl-5 text-xs">
+                Completed status visits count when they end in the range;
+                ongoing visits are excluded. Cycle time and throughput count
+                each card's first recorded entry into the current last column.
+                Cycle time requires a recorded release. Earlier moves are never
+                guessed.
               </p>
-            )}
-            <p class="text-muted-foreground text-xs">
-              P90 is the time within which 90% of completed visits finished.
-              Backward moves are grouped by the status left, using column order
-              at the time.
-            </p>
+            </details>
           </section>
-          <div class="grid gap-4 lg:grid-cols-2">
-            <section class="bg-card space-y-3 rounded-lg border p-4">
-              <h2>Cycle time by process</h2>
+          <div class="grid items-start gap-4 lg:grid-cols-5">
+            <div class="grid gap-4 lg:col-span-3">
+              <section class="bg-card space-y-3 rounded-lg border p-4">
+                <h2 class="section-title">Time in each status</h2>
+                {metrics.statuses.length ? (
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                      <caption class="sr-only">
+                        Completed visits and backward moves by status
+                      </caption>
+                      <thead>
+                        <tr class="border-b">
+                          <th
+                            scope="col"
+                            class:list={[
+                              headerCell,
+                              "bg-card sticky left-0 w-full",
+                            ]}
+                          >
+                            Status
+                          </th>
+                          <th
+                            scope="col"
+                            class:list={[headerCell, "w-20 text-right"]}
+                          >
+                            Visits
+                          </th>
+                          <th
+                            scope="col"
+                            class:list={[headerCell, "w-20 text-right"]}
+                          >
+                            Median
+                          </th>
+                          <th
+                            scope="col"
+                            class:list={[
+                              headerCell,
+                              "hidden w-20 text-right sm:table-cell",
+                            ]}
+                          >
+                            P90
+                          </th>
+                          <th
+                            scope="col"
+                            class:list={[
+                              headerCell,
+                              "hidden w-20 text-right sm:table-cell",
+                            ]}
+                          >
+                            Slowest
+                          </th>
+                          <th
+                            scope="col"
+                            class:list={[headerCell, "w-20 text-right"]}
+                          >
+                            Sent back
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {metrics.statuses.map((row) => (
+                          <tr class={rowClass}>
+                            <th
+                              scope="row"
+                              class="bg-card sticky left-0 px-2 py-2.5 font-normal whitespace-nowrap"
+                            >
+                              {row.status}
+                            </th>
+                            <td class={figureCell}>{row.samples}</td>
+                            {[row.median_ms, row.p90_ms, row.max_ms].map(
+                              (ms, index) => {
+                                const value = duration(ms);
+                                return (
+                                  <td
+                                    class:list={[
+                                      figureCell,
+                                      index > 0 && "hidden sm:table-cell",
+                                    ]}
+                                  >
+                                    {value ? (
+                                      <>
+                                        {value.figure}
+                                        <span class="text-muted-foreground ml-0.5 font-sans text-xs">
+                                          {value.unit}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span class="text-muted-foreground font-sans">
+                                        No data
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              }
+                            )}
+                            <td class={figureCell}>{row.backward_moves}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p class="text-sm">
+                    No completed status visits or backward moves in this range.
+                  </p>
+                )}
+                <p class="text-muted-foreground text-xs">
+                  P90 is the time within which 90% of completed visits finished.
+                  Sent back counts backward moves, grouped by the status left,
+                  using column order at the time.{" "}
+                  <span class="sm:hidden">
+                    Wider screens also show P90 and slowest visit.
+                  </span>
+                </p>
+              </section>
+              <section class="bg-card space-y-3 rounded-lg border p-4">
+                <h2 class="section-title">Weekly throughput</h2>
+                {metrics.weeks.length ? (
+                  <table class="w-full text-left text-sm">
+                    <thead>
+                      <tr class="border-b">
+                        <th scope="col" class={headerCell}>
+                          Week of
+                        </th>
+                        <th scope="col" class:list={[headerCell, "text-right"]}>
+                          Cards done
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.weeks.map((row) => {
+                        const date = new Date(`${row.week_start}T00:00:00Z`);
+                        return (
+                          <tr class={rowClass}>
+                            <th
+                              scope="row"
+                              class="w-20 px-2 py-2.5 font-normal whitespace-nowrap"
+                            >
+                              <time
+                                datetime={row.week_start}
+                                title={`Week of Monday ${weekTitle.format(date)}`}
+                              >
+                                {weekLabel.format(date)}
+                              </time>
+                            </th>
+                            <td class="px-2 py-2.5">
+                              <div class="flex items-center justify-end gap-3">
+                                <div
+                                  class="bg-muted h-2 flex-1 overflow-hidden rounded"
+                                  aria-hidden="true"
+                                >
+                                  <div
+                                    class="h-full rounded bg-[var(--hawk-teal)]"
+                                    style={`width: ${(row.cards_done / busiestWeek) * 100}%`}
+                                  />
+                                </div>
+                                <span class="brand-figures w-8 text-right">
+                                  {row.cards_done}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p class="text-sm">No cards completed in this range.</p>
+                )}
+                <p class="text-muted-foreground text-xs">
+                  Weeks start on Monday.
+                </p>
+              </section>
+            </div>
+            <section class="bg-card space-y-3 rounded-lg border p-4 lg:col-span-2">
+              <h2 class="section-title">Cycle time by process</h2>
               {metrics.processes.length ? (
                 <table class="w-full text-left text-sm">
                   <thead>
                     <tr class="border-b">
-                      <th scope="col" class="p-2">
+                      <th scope="col" class={headerCell}>
                         Process
                       </th>
-                      <th scope="col" class="p-2">
+                      <th scope="col" class:list={[headerCell, "text-right"]}>
                         Cards
                       </th>
-                      <th scope="col" class="p-2">
+                      <th scope="col" class:list={[headerCell, "text-right"]}>
                         Median
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {metrics.processes.map((row) => (
-                      <tr class="border-b">
-                        <th scope="row" class="p-2 font-normal">
-                          {row.process}
-                        </th>
-                        <td class="brand-figures p-2">{row.samples}</td>
-                        <td class="brand-figures p-2">
-                          {duration(row.median_ms)}
-                        </td>
-                      </tr>
-                    ))}
+                    {metrics.processes.map((row) => {
+                      const value = duration(row.median_ms);
+                      return (
+                        <tr class={rowClass}>
+                          <th scope="row" class="px-2 py-2.5 font-normal">
+                            {row.process}
+                          </th>
+                          <td class={figureCell}>{row.samples}</td>
+                          <td class={figureCell}>
+                            {value ? (
+                              <>
+                                {value.figure}
+                                <span class="text-muted-foreground ml-0.5 font-sans text-xs">
+                                  {value.unit}
+                                </span>
+                              </>
+                            ) : (
+                              <span class="text-muted-foreground font-sans">
+                                No data
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               ) : (
@@ -186,35 +447,6 @@ function duration(ms: number | null) {
                 processes are unknown. A card with several processes appears in
                 each process.
               </p>
-            </section>
-            <section class="bg-card space-y-3 rounded-lg border p-4">
-              <h2>Weekly throughput</h2>
-              {metrics.weeks.length ? (
-                <table class="w-full text-left text-sm">
-                  <thead>
-                    <tr class="border-b">
-                      <th scope="col" class="p-2">
-                        Week of Monday
-                      </th>
-                      <th scope="col" class="p-2">
-                        Cards done
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {metrics.weeks.map((row) => (
-                      <tr class="border-b">
-                        <th scope="row" class="brand-figures p-2 font-normal">
-                          {row.week_start}
-                        </th>
-                        <td class="brand-figures p-2">{row.cards_done}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p class="text-sm">No cards completed in this range.</p>
-              )}
             </section>
           </div>
         </>

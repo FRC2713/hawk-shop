@@ -2,6 +2,7 @@ import { renderSVG } from "uqr";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
+import { Search } from "lucide-react";
 import { usersQuery } from "~/lib/api/users";
 import { queryKeys } from "~/lib/api/keys";
 import { claimCard } from "~/lib/api/workflow";
@@ -35,7 +36,7 @@ function MemberButton({
   useEffect(() => cancel, []);
   return (
     <button
-      className="station-control"
+      className="station-control station-control--secondary"
       disabled={disabled}
       aria-describedby={roster ? "station-remove-help" : undefined}
       onPointerDown={(event) => {
@@ -164,31 +165,38 @@ export function StationClaim({
             if (busy) event.preventDefault();
           }}
         >
-          <Dialog.Title>Who's making this?</Dialog.Title>
-          <Dialog.Description>
-            {card.title} · {machine.name}
+          <Dialog.Title className="station-claim-title">
+            Who's making this?
+          </Dialog.Title>
+          <Dialog.Description className="station-claim-subject">
+            <span className="station-claim-part">{card.title}</span>
+            <span className="station-claim-machine">
+              <span className="sr-only">on </span>
+              {machine.name}
+            </span>
           </Dialog.Description>
           <div className="station-claim-options">
             <div className="station-claim-members">
               <label htmlFor="station-member-search">Search all members</label>
-              <input
-                id="station-member-search"
-                value={search}
-                disabled={busy}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+              <div className="station-claim-search">
+                <Search aria-hidden="true" />
+                <input
+                  id="station-member-search"
+                  placeholder="Type a name"
+                  autoComplete="off"
+                  value={search}
+                  disabled={busy}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
               <h3>{term ? "Matching members" : "At this station today"}</h3>
-              <p id="station-remove-help">
-                Hold a name to remove it from today's list, or focus it and
-                press Delete.
-              </p>
               {removing ? (
-                <section aria-label="Remove member">
+                <section aria-label="Remove member" className="station-remove">
                   <p>
                     Remove {removing.name || "this member"} from today's list?
                   </p>
                   <button
-                    className="station-control"
+                    className="station-control station-control--primary"
                     disabled={busy}
                     autoFocus
                     onClick={() => removal.mutate(removing)}
@@ -196,7 +204,7 @@ export function StationClaim({
                     Remove name
                   </button>
                   <button
-                    className="station-control"
+                    className="station-control station-control--ghost"
                     disabled={busy}
                     onClick={() => setRemoving(null)}
                   >
@@ -228,6 +236,10 @@ export function StationClaim({
                   )}
                 </div>
               )}
+              <p id="station-remove-help" className="station-remove-help">
+                Hold a name to remove it from today's list, or focus it and
+                press Delete.
+              </p>
               {(term ? users.isPending : roster.isPending) && (
                 <p role="status">Loading members…</p>
               )}
@@ -248,12 +260,19 @@ export function StationClaim({
                 alt="Scan to claim on your phone"
               />
               <p>Scan, sign in as yourself, then tap Claim.</p>
-              <a className="station-control" href={phoneUrl}>
+              <a
+                className="station-control station-control--secondary"
+                href={phoneUrl}
+              >
                 Open on your phone
               </a>
             </aside>
           </div>
-          <button className="station-control" disabled={busy} onClick={close}>
+          <button
+            className="station-control station-control--ghost station-claim-cancel"
+            disabled={busy}
+            onClick={close}
+          >
             Cancel claim
           </button>
         </Dialog.Content>

@@ -293,7 +293,7 @@ test("queue rows show the facts and claim at this machine", async () => {
     );
     assert.deepEqual(await queueRows(page), [
       "Counter Sunk Head | PLA · ×3 · due Fri | Claim",
-      "Torx drive 4x | PETG · ×4 · overdue, due Nov 16 | any 3D Printing | Claim",
+      "Torx drive 4x | PETG · ×4 | overdue, due Nov 16 | any 3D Printing | Claim",
     ]);
     const overdue = page
       .getByRole("listitem")
@@ -325,7 +325,7 @@ test("the operator's part shows its facts, notes and SOP, and Done sends it to r
     await onPrinter2(page);
     const working = page.getByRole("region", { name: "Working on" });
     await working.getByRole("heading", { name: "Socket Cap Head" }).waitFor();
-    await working.getByText("You're making on Printer 2").waitFor();
+    await working.getByText("Making now · Printer 2").waitFor();
     assert.equal(
       await working.locator('[data-fact="Quantity"]').textContent(),
       "×2"

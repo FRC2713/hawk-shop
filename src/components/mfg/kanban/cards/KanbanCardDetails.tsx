@@ -1,6 +1,6 @@
 import { ErrorMessage } from "~/components/mfg/ErrorDisplay";
 import { openProblemReport } from "~/lib/api/reports";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, type ReactNode } from "react";
 import {
   Calendar,
   Clock,
@@ -13,7 +13,10 @@ import {
   Flag,
   Hash,
   FolderKanban,
+  Cog,
+  GitCommitHorizontal,
   MoreHorizontal,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectPicker } from "~/components/mfg/ProjectPicker";
@@ -70,6 +73,7 @@ import { SubmitterNotes } from "./SubmitterNotes";
 import { WorkflowActions } from "./WorkflowActions";
 import { cardOnshapeUrl } from "~/lib/onshapeLinks";
 import { ProcessIcon } from "~/components/mfg/processes/ProcessIcon";
+import { cn } from "~/lib/utils";
 import {
   MATERIAL_UNKNOWN,
   needsOnshapeSnapshot,
@@ -90,6 +94,79 @@ function formatDate(dateString: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/** A moment in history: "Nov 13, 10:14 PM", with the year only when it differs. */
+function formatMoment(dateString: string): string {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return "Invalid date";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== new Date().getFullYear()
+      ? { year: "numeric" }
+      : {}),
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** Sheet section headings: Barlow semibold, per the brand's subsection rule. */
+const SECTION_HEADING = "font-heading text-base font-semibold";
+
+/** One row of the Details table: a fixed label column and a value. */
+function DetailRow({
+  icon: Icon,
+  label,
+  labelFor,
+  alignTop = false,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  labelFor?: string;
+  alignTop?: boolean;
+  children: ReactNode;
+}) {
+  const LabelTag = labelFor ? "label" : "span";
+  return (
+    <tr>
+      <td
+        className={cn(
+          "text-muted-foreground w-36 py-2 pr-2 pl-3 text-sm font-medium whitespace-nowrap",
+          alignTop && "align-top"
+        )}
+      >
+        <div className={cn("flex items-center gap-2", alignTop && "h-9")}>
+          <div className="bg-muted flex size-6 shrink-0 items-center justify-center rounded-full">
+            <Icon className="text-foreground size-3.5" aria-hidden="true" />
+          </div>
+          <LabelTag htmlFor={labelFor}>{label}</LabelTag>
+        </div>
+      </td>
+      <td className="py-2 pr-3">{children}</td>
+    </tr>
+  );
+}
+
+/** A read-only value, inset to line up with the text inside the pickers. */
+function PlainValue({
+  children,
+  muted = false,
+}: {
+  children: ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-9 items-center px-3 text-sm",
+        muted && "text-muted-foreground"
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -299,13 +376,13 @@ export function KanbanCardDetails({
         </SheetDescription>
       </SheetHeader>
 
-      <div className="mt-6 flex-1 space-y-6 overflow-y-auto px-4">
+      <div className="flex-1 space-y-6 overflow-y-auto px-4 pb-4">
         {!!card.release_issues?.length && (
           <section
             aria-label="Release warnings"
-            className="border-border bg-muted border-l-4 p-3"
+            className="callout callout-red"
           >
-            <h4 className="font-semibold">Release warnings</h4>
+            <h4 className={SECTION_HEADING}>Release warnings</h4>
             <p className="text-muted-foreground mt-1 text-xs">
               Recorded when this part was released.
             </p>
@@ -321,23 +398,19 @@ export function KanbanCardDetails({
         )}
         {/* Image Section */}
         {imageUrl && !imageError && (
-          <div className="overflow-hidden">
-            <div className="relative w-full" style={{ height: "300px" }}>
-              <img
-                src={imageUrl}
-                alt={card.title}
-                className="absolute inset-0 size-full object-contain"
-                onError={() => setImageError(true)}
-              />
-            </div>
+          <div className="bg-muted relative h-44 w-full overflow-hidden rounded-lg">
+            <img
+              src={imageUrl}
+              alt={card.title}
+              className="absolute inset-0 size-full object-contain p-2"
+              onError={() => setImageError(true)}
+            />
           </div>
         )}
 
         {!!card.review_notes?.length && (
           <section aria-label="Sent back" className="space-y-2">
-            <h4 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
-              Sent back
-            </h4>
+            <h4 className={SECTION_HEADING}>Sent back</h4>
             <ol className="divide-y rounded-lg border">
               {card.review_notes.map((note) => (
                 <li key={note.id} className="space-y-1 px-4 py-3 text-sm">
@@ -349,9 +422,9 @@ export function KanbanCardDetails({
                   </p>
                   <time
                     dateTime={note.created_at}
-                    className="brand-figures text-muted-foreground block text-xs"
+                    className="text-muted-foreground block text-xs"
                   >
-                    {new Date(note.created_at).toLocaleString()}
+                    {formatMoment(note.created_at)}
                   </time>
                 </li>
               ))}
@@ -369,249 +442,134 @@ export function KanbanCardDetails({
         {/* Details Table */}
         {hasMeta && (
           <div className="space-y-2">
-            <h4 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
-              Details
-            </h4>
+            <h4 className={SECTION_HEADING}>Details</h4>
             <div className="bg-card overflow-hidden rounded-lg border">
               <table className="w-full">
                 <tbody className="divide-y">
-                  {/* Column / Status */}
-                  <tr>
-                    <td className="text-muted-foreground w-1/3 px-4 py-3 text-sm font-medium">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-primary/10 flex size-6 items-center justify-center rounded-full">
-                          <Columns3 className="text-primary size-3.5" />
-                        </div>
-                        <span>Status</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="space-y-1">
-                        <Select
-                          value={card.column_id}
-                          onValueChange={(value) =>
-                            moveCardMutation.mutate(value)
-                          }
-                          disabled={moveCardMutation.isPending}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {columns
-                              .slice()
-                              .sort((a, b) => a.position - b.position)
-                              .map((col) => (
-                                <SelectItem key={col.id} value={col.id}>
-                                  {col.title}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                        {moveCardMutation.isPending && (
-                          <p className="text-muted-foreground text-xs">
-                            Updating...
-                          </p>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                  <DetailRow icon={Columns3} label="Status">
+                    <Select
+                      value={card.column_id}
+                      onValueChange={(value) => moveCardMutation.mutate(value)}
+                      disabled={moveCardMutation.isPending}
+                    >
+                      <SelectTrigger className="w-full" aria-label="Status">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {columns
+                          .slice()
+                          .sort((a, b) => a.position - b.position)
+                          .map((col) => (
+                            <SelectItem key={col.id} value={col.id}>
+                              {col.title}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {moveCardMutation.isPending && (
+                      <p className="text-muted-foreground mt-1 px-3 text-xs">
+                        Updating...
+                      </p>
+                    )}
+                  </DetailRow>
 
-                  {/* Project */}
-                  <tr>
-                    <td className="text-muted-foreground w-1/3 px-4 py-3 text-sm font-medium">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-muted flex size-6 items-center justify-center rounded-full">
-                          <FolderKanban className="text-foreground size-3.5" />
-                        </div>
-                        <label htmlFor={`project-${card.id}`}>Project</label>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <ProjectPicker
-                        id={`project-${card.id}`}
-                        value={card.project_id}
-                        onChange={(projectId) => {
-                          if (projectId !== card.project_id)
-                            projectMutation.mutate(projectId);
-                        }}
-                        disabled={projectMutation.isPending}
-                      />
-                    </td>
-                  </tr>
+                  <DetailRow
+                    icon={FolderKanban}
+                    label="Project"
+                    labelFor={`project-${card.id}`}
+                  >
+                    <ProjectPicker
+                      id={`project-${card.id}`}
+                      value={card.project_id}
+                      onChange={(projectId) => {
+                        if (projectId !== card.project_id)
+                          projectMutation.mutate(projectId);
+                      }}
+                      disabled={projectMutation.isPending}
+                    />
+                  </DetailRow>
 
-                  {/* Assignee */}
-                  <tr>
-                    <td className="text-muted-foreground w-1/3 px-4 py-3 text-sm font-medium">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-primary/10 flex size-6 items-center justify-center rounded-full">
-                          <User className="text-primary size-3.5" />
-                        </div>
-                        <span>Assignee</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <AssignCardDialog card={card} />
-                    </td>
-                  </tr>
+                  <DetailRow icon={User} label="Assignee">
+                    <AssignCardDialog card={card} />
+                  </DetailRow>
 
-                  {/* Material */}
-                  {hasOnshapeProperties && (
-                    <tr>
-                      <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-muted flex size-6 items-center justify-center rounded-full">
-                            <Box className="text-foreground size-3.5" />
-                          </div>
-                          <span>Material</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
+                  <DetailRow icon={Wrench} label="Machine">
+                    <MachineSelectDialog card={card} />
+                  </DetailRow>
+
+                  {card.quantity_to_make && (
+                    <DetailRow icon={Hash} label="Quantity">
+                      <PlainValue>
+                        <span className="brand-figures">
+                          {card.quantity_to_make}
+                        </span>
+                      </PlainValue>
+                    </DetailRow>
+                  )}
+
+                  {card.processes && card.processes.length > 0 && (
+                    <DetailRow icon={Cog} label="Processes" alignTop>
+                      <div className="flex min-h-9 flex-wrap items-center gap-1 px-3">
+                        {card.processes.map((process) => (
+                          <Badge
+                            key={process.id}
+                            variant="secondary"
+                            className="gap-1 text-xs"
+                          >
+                            <ProcessIcon
+                              process={process}
+                              className="size-3.5"
+                            />
+                            {process.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </DetailRow>
+                  )}
+
+                  {card.due_date && dueDateUrgency && (
+                    <DetailRow icon={Calendar} label="Due date">
+                      <PlainValue>
                         <span
                           className={
-                            material && material !== MATERIAL_UNKNOWN
-                              ? "text-sm"
-                              : "text-muted-foreground text-sm"
+                            dueDateUrgency.variant === "destructive"
+                              ? "text-emphasis font-semibold"
+                              : undefined
                           }
                         >
-                          {snapshotPending
-                            ? "Loading..."
-                            : material === null
-                              ? "Unknown"
-                              : material || "Not set"}
-                        </span>
-                      </td>
-                    </tr>
-                  )}
-
-                  {/* Version Name */}
-                  {showVersion && (
-                    <tr>
-                      <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-muted flex size-6 items-center justify-center rounded-full">
-                            <Box className="text-foreground size-3.5" />
-                          </div>
-                          <span>Version</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm">
-                          {snapshotPending
-                            ? "Loading..."
-                            : versionName || "Unknown"}
-                        </span>
-                      </td>
-                    </tr>
-                  )}
-
-                  {/* Machine */}
-                  <tr>
-                    <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-muted flex size-6 items-center justify-center rounded-full">
-                          <Wrench className="text-foreground size-3.5" />
-                        </div>
-                        <span>Machine</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <MachineSelectDialog card={card} />
-                    </td>
-                  </tr>
-
-                  {/* Quantity to make */}
-                  {card.quantity_to_make && (
-                    <tr>
-                      <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-muted flex size-6 items-center justify-center rounded-full">
-                            <Hash className="text-foreground size-3.5" />
-                          </div>
-                          <span>Quantity to make</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm">{card.quantity_to_make}</span>
-                      </td>
-                    </tr>
-                  )}
-
-                  {/* Required Processes */}
-                  {card.processes && card.processes.length > 0 && (
-                    <tr>
-                      <td className="text-muted-foreground px-4 py-3 align-top text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-muted flex size-6 items-center justify-center rounded-full">
-                            <Wrench className="text-foreground size-3.5" />
-                          </div>
-                          <span>Required Processes</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {card.processes.map((process) => (
-                            <Badge
-                              key={process.id}
-                              variant="secondary"
-                              className="gap-1 text-xs"
-                            >
-                              <ProcessIcon
-                                process={process}
-                                className="size-3.5"
-                              />
-                              {process.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-
-                  {/* Due Date */}
-                  {card.due_date && dueDateUrgency && (
-                    <tr>
-                      <td className="text-muted-foreground px-4 py-3 text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`flex size-6 items-center justify-center rounded-full ${
-                              dueDateUrgency.variant === "destructive"
-                                ? "bg-destructive/10"
-                                : dueDateUrgency.className
-                                  ? "bg-muted"
-                                  : "bg-muted"
-                            }`}
-                          >
-                            <Calendar
-                              className={`size-3.5 ${
-                                dueDateUrgency.variant === "destructive"
-                                  ? "text-destructive"
-                                  : dueDateUrgency.className
-                                    ? "text-foreground"
-                                    : "text-muted-foreground"
-                              }`}
-                            />
-                          </div>
-                          <span>Due Date</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-sm ${
-                            dueDateUrgency.variant === "destructive"
-                              ? "text-destructive"
-                              : dueDateUrgency.className
-                                ? "text-foreground"
-                                : ""
-                          }`}
-                        >
                           {formatDate(card.due_date)}
-                          <span className="text-muted-foreground ml-2 text-xs">
-                            ({formatRelativeTime(dueDateDiffDays)})
-                          </span>
                         </span>
-                      </td>
-                    </tr>
+                        <span className="text-muted-foreground ml-2 text-xs">
+                          {dueDateUrgency.variant === "destructive"
+                            ? `Overdue, ${formatRelativeTime(dueDateDiffDays).toLowerCase()}`
+                            : formatRelativeTime(dueDateDiffDays)}
+                        </span>
+                      </PlainValue>
+                    </DetailRow>
+                  )}
+
+                  {hasOnshapeProperties && (
+                    <DetailRow icon={Box} label="Material">
+                      <PlainValue
+                        muted={!material || material === MATERIAL_UNKNOWN}
+                      >
+                        {snapshotPending
+                          ? "Loading..."
+                          : material === null
+                            ? "Unknown"
+                            : material || "Not set"}
+                      </PlainValue>
+                    </DetailRow>
+                  )}
+
+                  {showVersion && (
+                    <DetailRow icon={GitCommitHorizontal} label="Version">
+                      <PlainValue>
+                        {snapshotPending
+                          ? "Loading..."
+                          : versionName || "Unknown"}
+                      </PlainValue>
+                    </DetailRow>
                   )}
                 </tbody>
               </table>
@@ -620,9 +578,7 @@ export function KanbanCardDetails({
         )}
 
         <section aria-label="Status history" className="space-y-2">
-          <h4 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
-            Status history
-          </h4>
+          <h4 className={SECTION_HEADING}>Status history</h4>
           {detailsQuery.isPending ? (
             <p className="text-muted-foreground text-sm" role="status">
               Loading status history...
@@ -656,9 +612,9 @@ export function KanbanCardDetails({
                   </p>
                   <time
                     dateTime={entry.moved_at}
-                    className="brand-figures text-muted-foreground block text-xs"
+                    className="text-muted-foreground block text-xs"
                   >
-                    {new Date(entry.moved_at).toLocaleString()}
+                    {formatMoment(entry.moved_at)}
                   </time>
                 </li>
               ))}
@@ -668,7 +624,7 @@ export function KanbanCardDetails({
       </div>
 
       {/* Actions - Sticky at bottom */}
-      <div className="mt-auto space-y-2 border-t pt-4">
+      <div className="bg-background mt-auto space-y-2 border-t p-4">
         <WorkflowActions card={card} />
         {/* Open in Onshape Button */}
         {onshapeUrl && (

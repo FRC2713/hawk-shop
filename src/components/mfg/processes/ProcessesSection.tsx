@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Layers, Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import type { ProcessRow } from "~/server/db/types";
 import { processesQuery } from "~/lib/api";
@@ -36,61 +35,59 @@ export function ProcessesSection() {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight">
-              Manufacturing Processes
+      <section
+        aria-labelledby="processes-heading"
+        className="flex flex-col gap-3"
+      >
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id="processes-heading" className="section-title">
+              Manufacturing processes
             </h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Manage processes that can be assigned to equipment and kanban
-              cards
+            <p className="text-muted-foreground mt-0.5 text-sm">
+              Processes you can assign to equipment and parts.
             </p>
           </div>
           <Button
+            variant="outline"
             onClick={() => setAddDialogOpen(true)}
-            className="w-full sm:w-auto"
+            className="min-h-11 lg:min-h-9"
           >
-            <Plus className="mr-2 size-4" />
-            Add Process
+            <Plus aria-hidden="true" />
+            Add process
           </Button>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-24 rounded-lg" />
-              ))}
-            </div>
-          ) : processes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-              <div className="bg-primary/10 mb-4 flex size-16 items-center justify-center rounded-full">
-                <Layers className="text-primary size-8" />
-              </div>
-              <h3 className="mb-2 text-lg font-semibold">No processes yet</h3>
-              <p className="text-muted-foreground mb-6 max-w-sm text-sm">
-                Add manufacturing processes to assign to equipment and kanban
-                cards.
-              </p>
-              <Button onClick={() => setAddDialogOpen(true)}>
-                <Plus className="mr-2 size-4" />
-                Add Process
-              </Button>
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {processes.map((process) => (
+        </div>
+        {isLoading ? (
+          <div className="grid gap-3 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 rounded-lg lg:h-24" />
+            ))}
+          </div>
+        ) : processes.length === 0 ? (
+          <div className="bg-card flex flex-col items-center justify-center rounded-xl border border-dashed p-8 text-center">
+            <Layers
+              className="text-icon-accent mb-3 size-8"
+              aria-hidden="true"
+            />
+            <h3 className="mb-1 text-base font-semibold">No processes yet</h3>
+            <p className="text-muted-foreground max-w-sm text-sm">
+              Add manufacturing processes to assign to equipment and parts.
+            </p>
+          </div>
+        ) : (
+          <ul className="bg-card divide-y overflow-hidden rounded-xl border shadow-xs lg:grid lg:grid-cols-3 lg:gap-3 lg:divide-y-0 lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:shadow-none">
+            {processes.map((process) => (
+              <li key={process.id} className="min-w-0">
                 <ProcessCard
-                  key={process.id}
                   process={process}
                   onEdit={() => handleEdit(process)}
                   onDelete={() => handleDelete(process)}
                 />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <AddProcessDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
       <EditProcessDialog

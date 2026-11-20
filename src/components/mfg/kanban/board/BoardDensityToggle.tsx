@@ -24,11 +24,11 @@ export function BoardDensityToggle({
         <Button
           key={option.value}
           type="button"
-          variant={density === option.value ? "secondary" : "ghost"}
+          variant="ghost"
           size="sm"
           aria-pressed={density === option.value}
           onClick={() => onChange(option.value)}
-          className="rounded-none"
+          className="aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:hover:bg-foreground/90 aria-pressed:hover:text-background rounded-none aria-pressed:font-semibold"
         >
           {option.label}
         </Button>

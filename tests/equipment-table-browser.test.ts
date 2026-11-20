@@ -152,8 +152,10 @@ test("desktop equipment table groups machines, links rows and SOPs, and contains
       name: "Printing equipment table",
     });
     await expect(scrollBox).toHaveCSS("overflow-x", "auto");
+    // Fixed column widths wrap a long name inside its cell instead of
+    // widening the table past the page.
     assert.equal(
-      await scrollBox.evaluate((box) => box.scrollWidth > box.clientWidth),
+      await scrollBox.evaluate((box) => box.scrollWidth <= box.clientWidth),
       true
     );
     await page.emulateMedia({ colorScheme: "dark" });

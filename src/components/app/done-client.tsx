@@ -10,6 +10,42 @@ import { useQuery } from "@tanstack/react-query";
 import { kanbanCardsQuery, kanbanConfigQuery, usersQuery } from "~/lib/api";
 import { Input } from "~/components/ui/input";
 import { buildCardSearchIndex, buildCardUsersMap } from "~/lib/card-search";
+import { plural } from "~/lib/plural";
+import type { KanbanCardWithProcesses } from "~/lib/api/kanban";
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** "Today", "Yesterday", a weekday within the week, else "Nov 10". */
+function dayHeading(date: Date, now: Date) {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  const daysAgo = Math.round((midnight.getTime() - day.getTime()) / DAY);
+  if (daysAgo <= 0) return "Today";
+  if (daysAgo === 1) return "Yesterday";
+  if (daysAgo < 7) return date.toLocaleDateString("en-US", { weekday: "long" });
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
+/** Consecutive cards (already newest first) grouped under day headings. */
+function groupByDay(cards: KanbanCardWithProcesses[], now: number) {
+  const groups: { heading: string; cards: KanbanCardWithProcesses[] }[] = [];
+  for (const card of cards) {
+    const date = new Date(card.date_updated);
+    const heading = isNaN(date.getTime())
+      ? "Unknown date"
+      : dayHeading(date, new Date(now));
+    const last = groups[groups.length - 1];
+    if (last?.heading === heading) last.cards.push(card);
+    else groups.push({ heading, cards: [card] });
+  }
+  return groups;
+}
 
 export function DoneClient() {
   const { searchQuery, changeSearch, searchRef } = useUrlSearch();
@@ -65,6 +101,10 @@ export function DoneClient() {
       });
   }, [doneCards, searchScores, projectIds]);
   const narrowed = searchQuery.trim() !== "" || projectIds.length > 0;
+  const dayGroups = useMemo(
+    () => groupByDay(sortedCards, now),
+    [sortedCards, now]
+  );
 
   return (
     <main className="bg-background flex h-full flex-1 flex-col overflow-hidden">
@@ -87,12 +127,12 @@ export function DoneClient() {
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-                  Done Cards
+                  Done parts
                 </h1>
                 <p className="text-muted-foreground mt-1 text-sm">
                   {isLoadingCards
                     ? "Loading..."
-                    : `${sortedCards.length} completed card${sortedCards.length !== 1 ? "s" : ""}`}
+                    : `${plural(sortedCards.length, "done part")}, newest first`}
                 </p>
               </div>
             </div>
@@ -105,7 +145,7 @@ export function DoneClient() {
                 <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
                 <Input
                   ref={searchRef}
-                  aria-label="Search completed cards"
+                  aria-label="Search done parts"
                   aria-keyshortcuts="/"
                   type="text"
                   placeholder="Search by part number or name..."
@@ -132,7 +172,7 @@ export function DoneClient() {
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+      <div className="flex-1 overflow-y-auto p-4">
         {isLoadingCards ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
@@ -144,23 +184,43 @@ export function DoneClient() {
             <div className="text-center">
               <CheckCircle2 className="text-muted-foreground mx-auto mb-4 size-12" />
               <h3 className="mb-2 text-lg font-semibold">
-                {narrowed
-                  ? "No matching completed cards"
-                  : "No completed cards"}
+                {narrowed ? "No matching done parts" : "No done parts yet"}
               </h3>
               <p className="text-muted-foreground text-sm">
                 {narrowed
-                  ? "Try another search or project, or clear them to see all completed cards."
-                  : "Cards that have been in the Done column for more than 24 hours will appear here."}
+                  ? "Try another search or project, or clear them to see every done part."
+                  : "Parts land here when they reach Done. The board shows only the ones done today."}
               </p>
             </div>
           </div>
         ) : (
-          <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {sortedCards.map((card) => (
-              <div key={card.id} className="w-full">
-                <KanbanCard card={card} usersMap={usersMap} now={now} />
-              </div>
+          <div className="space-y-6">
+            {dayGroups.map((group) => (
+              <section
+                key={group.heading}
+                aria-labelledby={`done-${group.heading}`}
+                className="space-y-2"
+              >
+                <h2
+                  id={`done-${group.heading}`}
+                  className="font-heading flex items-baseline gap-2 text-base font-semibold"
+                >
+                  {group.heading}
+                  <span className="brand-figures text-muted-foreground text-xs font-normal">
+                    {group.cards.length}
+                  </span>
+                </h2>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {group.cards.map((card) => (
+                    <KanbanCard
+                      key={card.id}
+                      card={card}
+                      usersMap={usersMap}
+                      now={now}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}

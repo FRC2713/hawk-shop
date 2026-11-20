@@ -149,11 +149,11 @@ export function BoardFilterBar({
           groups={[{ options: submitters }]}
         />
         <Button
-          variant={filters.warnings ? "secondary" : "outline"}
+          variant="outline"
           size="sm"
           aria-pressed={filters.warnings}
           onClick={() => onChange({ warnings: !filters.warnings })}
-          className="gap-2"
+          className="aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:hover:bg-foreground/90 aria-pressed:hover:text-background gap-2"
         >
           <AlertTriangle className="size-4" aria-hidden="true" />
           Has warnings
@@ -175,7 +175,8 @@ export function BoardFilterBar({
           </SelectContent>
         </Select>
         {hasActiveFilters(filters) && (
-          <Button variant="ghost" size="sm" onClick={onClear}>
+          <Button variant="outline" size="sm" onClick={onClear}>
+            <X className="size-4" aria-hidden="true" />
             Clear filters
           </Button>
         )}

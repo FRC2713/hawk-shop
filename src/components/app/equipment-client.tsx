@@ -69,7 +69,7 @@ export function EquipmentClient() {
 
   return (
     <div className="h-full min-h-0 min-w-0 overflow-y-auto">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 pt-6 pb-28 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-5 pt-6 pb-28">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-3xl leading-9">Equipment</h1>
           <div className="flex flex-wrap items-center gap-2">
@@ -123,7 +123,7 @@ export function EquipmentClient() {
             ))}
           </div>
           <label className="ml-auto hidden items-center gap-2 py-1 lg:flex">
-            <span className="text-xs font-semibold">Group by</span>
+            <span className="text-muted-foreground text-sm">Group by</span>
             <select
               value={groupBy}
               onChange={(event) =>

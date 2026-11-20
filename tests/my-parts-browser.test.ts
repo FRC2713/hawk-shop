@@ -233,10 +233,10 @@ test("My parts puts what needs the submitter first, then groups the rest by stat
       "Button Head 4x Size | Printer 2 · Sam Park",
     ]);
     assert.deepEqual(await group("Waiting"), [
-      "Hex drive x4 | 2nd for Printer 2",
-      "Torx drive 4x | Any 3D Printing",
+      "Hex drive x4 | 2nd in line · Printer 2",
+      "Torx drive 4x | Any machine · 3D Printing",
     ]);
-    assert.deepEqual(await group("In review"), ["Phillips 4x | since 2 h"]);
+    assert.deepEqual(await group("In review"), ["Phillips 4x | 2 h in review"]);
     await page.getByRole("heading", { name: "Being made · 2" }).waitFor();
     await page.getByRole("heading", { name: "Waiting · 2" }).waitFor();
     await page.getByRole("heading", { name: "In review · 1" }).waitFor();
@@ -286,12 +286,27 @@ test("My parts includes releases in custom statuses", async () => {
     });
     await open(page, script, [
       card("Stock bracket", { column_id: "waiting-for-stock" }),
+      card("Own spacer", {
+        column_id: "in-progress",
+        assignee: viewer,
+        machine_id: "printer-2",
+        linked_machine: printer2,
+      }),
     ]);
     await page
       .getByRole("heading", { name: "Waiting for stock · 1" })
       .waitFor();
     await page.getByRole("link", { name: /Stock bracket/ }).waitFor();
-    assert.match(await page.locator("main").innerText(), /1 active/);
+    assert.match(await page.locator("main").innerText(), /2 active/);
+    // With nothing sent back or warned, the subtitle says so outright.
+    await page
+      .getByText("Released by you · 2 active · nothing needs you")
+      .waitFor();
+    // The viewer making their own part reads as "You", not their name.
+    assert.deepEqual(
+      await rows(page.getByRole("list", { name: "Being made" })),
+      ["Own spacer | Printer 2 · You"]
+    );
   } finally {
     await browser.close();
   }
